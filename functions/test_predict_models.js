@@ -69,7 +69,7 @@ async function testAll() {
   console.log('=== Feature Verification ===');
   console.log(`✓ V3 refactored to separate file`);
   console.log(`✓ V4 supports prev_route (lastRoute: ${context.lastRoute})`);
-  console.log(`✓ V5 supports prev_route + transfer_rarity`);
+  console.log(`✓ V4/V5 use agency-scoped route labels and previous-route context`);
 }
 
 testAll().catch(console.error);

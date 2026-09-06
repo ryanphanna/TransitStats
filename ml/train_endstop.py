@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 import firebase_admin
 from firebase_admin import credentials, firestore
-from route_normalization import normalize_route_for_ml, load_policies
+from route_normalization import agency_id, normalize_route_for_ml, scoped_route_key, load_policies
 
 
 def compute_primary_agency_map(df):
@@ -149,13 +149,20 @@ def clean(df, lib):
     primary_map = compute_primary_agency_map(df)
 
     def _normalize_route(row, col):
-        agency = row.get(col)
+        agency = row.get('prev_agency') if col == 'prev_route' else row.get(col)
+        agency = agency or row.get('agency')
         user_id = row.get('user_id')
         primary = primary_map.get(user_id) if user_id else None
         return normalize_route_for_ml(route=row.get(col), agency=agency, primary_agency=primary)
 
     df["route_base"] = df.apply(lambda row: _normalize_route(row, "route"), axis=1)
     df["prev_route_base"] = df.apply(lambda row: _normalize_route(row, "prev_route"), axis=1)
+    df["agency_id"] = df["agency"].map(agency_id)
+    df["route_key"] = df.apply(lambda row: scoped_route_key(row["route"], row["agency"]), axis=1)
+    df["prev_route_key"] = df.apply(
+        lambda row: scoped_route_key(row["prev_route"], row.get("prev_agency") or row["agency"]),
+        axis=1,
+    )
     df["start_stop"] = df["start_stop"].apply(lambda x: canonicalize_stop(x, lib))
     df["end_stop"] = df["end_stop"].apply(lambda x: canonicalize_stop(x, lib))
     df["direction_norm"] = df["direction"].apply(normalize_direction)
@@ -170,13 +177,14 @@ def clean(df, lib):
     df["gap_log"] = np.log1p(df["gap_minutes_capped"]) / math.log1p(720)
 
     # Filter to combos with >= 5 trips
-    counts = df.groupby(["route_base", "start_stop"])["end_stop"].count()
-    valid  = counts[counts >= 5].reset_index()[["route_base", "start_stop"]]
-    df = df.merge(valid, on=["route_base", "start_stop"], how="inner")
+    counts = df.groupby(["route_key", "start_stop"])["end_stop"].count()
+    valid  = counts[counts >= 5].reset_index()[["route_key", "start_stop"]]
+    df = df.merge(valid, on=["route_key", "start_stop"], how="inner")
 
     # Filter to end_stop classes with >= 10 occurrences
-    end_counts = df["end_stop"].value_counts()
-    df = df[df["end_stop"].isin(end_counts[end_counts >= 10].index)]
+    df["end_stop_key"] = df.apply(lambda row: f"{row['agency_id']}::{row['end_stop']}", axis=1)
+    end_counts = df["end_stop_key"].value_counts()
+    df = df[df["end_stop_key"].isin(end_counts[end_counts >= 10].index)]
 
     print(f"After cleaning: {len(df)} trips, {df['end_stop'].nunique()} end stop classes")
     return df
@@ -200,8 +208,8 @@ def build_features(df):
         "gap_missing": df["gap_missing"],
     }, index=df.index)
 
-    route_dummies = pd.get_dummies(df["route_base"].str.lower().str.strip(), prefix="route")
-    prev_route_dummies = pd.get_dummies(df["prev_route_base"].str.lower().str.strip(), prefix="prev_route")
+    route_dummies = pd.get_dummies(df["route_key"].str.lower().str.strip(), prefix="route")
+    prev_route_dummies = pd.get_dummies(df["prev_route_key"].fillna("none").str.lower().str.strip(), prefix="prev_route")
     stop_dummies  = pd.get_dummies(df["start_stop"].apply(_sanitize), prefix="stop")
     last_stop_dummies = pd.get_dummies(df["last_end_stop"].apply(_sanitize), prefix="last_stop")
     dir_dummies = pd.get_dummies(df["direction_norm"], prefix="dir")
@@ -271,6 +279,8 @@ def export_v4(model, le, feature_names, top1, top3, n_trips, agencies):
         "coef": model.coef_.tolist(),
         "feature_schema_version": 2,
         "agencies": sorted(agencies),
+        "label_schema": "agency::end_stop",
+        "evaluation_method": "chronological_holdout_20_percent",
     }
     path = os.path.join(OUT_DIR, "model_v4_endstop.json")
     with open(path, "w") as f: json.dump(out, f)
@@ -281,6 +291,7 @@ def export_v4(model, le, feature_names, top1, top3, n_trips, agencies):
         "classes": le.classes_.tolist(), "feature_names": feature_names,
         "top1_accuracy": round(top1, 4), "top3_accuracy": round(top3, 4), "n_trips": n_trips,
         "feature_schema_version": 2, "agencies": sorted(agencies),
+        "label_schema": "agency::end_stop", "evaluation_method": "chronological_holdout_20_percent",
     }
     with open(os.path.join(OUT_DIR, "model_v4_endstop_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
@@ -302,6 +313,7 @@ def export_v5(model, le, feature_names, top1, top3, n_trips, agencies):
         "feature_names": feature_names, "top1_accuracy": round(top1, 4),
         "top3_accuracy": round(top3, 4), "n_trips": n_trips,
         "feature_schema_version": 2, "agencies": sorted(agencies),
+        "label_schema": "agency::end_stop", "evaluation_method": "chronological_holdout_20_percent",
     }
     with open(os.path.join(OUT_DIR, "model_v5_endstop_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
@@ -325,7 +337,7 @@ def main():
     if len(df) < 20: sys.exit(1)
     weights = compute_ride_count_weights(df)
     X = build_features(df)
-    y = df["end_stop"]
+    y = df["end_stop_key"]
     classes = sorted(y.unique())
     feature_names = list(X.columns)
     split = max(1, int(len(df) * 0.2))
@@ -336,7 +348,7 @@ def main():
     y_train, y_test = y.loc[train_index], y.loc[test_index]
     weight_series = pd.Series(weights, index=df.index)
     w_train, w_test = weight_series.loc[train_index].values, weight_series.loc[test_index].values
-    agencies = df['agency'].fillna('unknown').astype(str).str.strip().unique().tolist()
+    agencies = sorted(df['agency_id'].dropna().unique().tolist())
     v4_m, v4_le = train_v4(X_train, y_train, classes, weights_train=w_train)
     v4_t1, v4_t3 = evaluate(v4_m, X_test, y_test, v4_le, "V4")
     export_v4(v4_m, v4_le, feature_names, v4_t1, v4_t3, len(df), agencies)

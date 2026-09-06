@@ -29,6 +29,7 @@ COLUMNS = [
     "user_id",
     "route",
     "prev_route",
+    "prev_agency",
     "start_stop",
     "end_stop",
     "direction",
@@ -138,6 +139,7 @@ def main():
             "user_id":       d.get("userId", ""),
             "route":         str(d.get("route", "")).strip(),
             "prev_route":    "",
+            "prev_agency":   "",
             "start_stop":    (d.get("startStopName") or d.get("startStop") or "").strip(),
             "end_stop":      (d.get("endStopName")   or d.get("endStop")   or "").strip(),
             "direction":     (d.get("direction") or "").strip(),
@@ -159,6 +161,7 @@ def main():
         prev = last_by_user.get(row["user_id"])
         if prev:
             row["prev_route"] = prev["route"]
+            row["prev_agency"] = prev["agency"]
             try:
                 prev_start = datetime.fromisoformat(prev["start_time"])
                 curr_start = datetime.fromisoformat(row["start_time"])

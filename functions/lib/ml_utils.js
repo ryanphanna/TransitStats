@@ -128,6 +128,30 @@ function normalizeRouteForMl(route, agency = null, primaryAgency = null) {
   return policyFn(routeStr);
 }
 
+function agencyId(agency) {
+  if (agency == null) return null;
+  const key = agency.toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  return key || null;
+}
+
+function scopedRouteKey(route, agency, primaryAgency = null) {
+  const normalized = normalizeRouteForMl(route, agency, primaryAgency);
+  const key = agencyId(agency);
+  return normalized == null || !key ? null : `${key}::${normalized}`;
+}
+
+function displayScopedRouteLabel(label) {
+  const value = String(label || '');
+  const separator = value.indexOf('::');
+  return separator >= 0 ? value.slice(separator + 2) : value;
+}
+
+function displayScopedStopLabel(label) {
+  const value = String(label || '');
+  const separator = value.indexOf('::');
+  return separator >= 0 ? value.slice(separator + 2) : value;
+}
+
 // ---------------------------------------------------------------------------
 // File loading + lifecycle (JSON only — no new dependencies for functions)
 // ---------------------------------------------------------------------------
@@ -220,6 +244,10 @@ module.exports = {
   getStopFeature,
   normalizeDirectionForMl,
   normalizeRouteForMl,
+  agencyId,
+  scopedRouteKey,
+  displayScopedRouteLabel,
+  displayScopedStopLabel,
   getGapFeatures,
   // Policy configuration (full parity with Python side)
   registerPolicy,

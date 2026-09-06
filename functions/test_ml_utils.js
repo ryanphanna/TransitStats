@@ -5,6 +5,10 @@ const {
   canonicalizeStop,
   getStopFeature,
   normalizeRouteForMl,
+  scopedRouteKey,
+  displayScopedRouteLabel,
+  displayScopedStopLabel,
+  normalizeDirectionForMl,
   getGapFeatures,
   configureFromDict,
 } = require('./lib/ml_utils');
@@ -27,6 +31,18 @@ test('normalizeRouteForMl preserves distinct non-TTC route identities', () => {
   assert.equal(normalizeRouteForMl('n', 'Muni'), 'N');
   assert.equal(normalizeRouteForMl('18c', 'GO Transit'), '18C');
   assert.equal(normalizeRouteForMl('1t', 'AC Transit'), '1T');
+});
+
+test('scoped model labels cannot collide across agencies', () => {
+  assert.equal(scopedRouteKey('1', 'TTC'), 'ttc::1');
+  assert.equal(scopedRouteKey('1', 'PRT'), 'prt::1');
+  assert.equal(displayScopedRouteLabel('prt::1'), '1');
+  assert.equal(displayScopedStopLabel('prt::Downtown Station'), 'Downtown Station');
+});
+
+test('semantic directions remain available to ML features', () => {
+  assert.equal(normalizeDirectionForMl('Downtown'), 'downtown');
+  assert.equal(normalizeDirectionForMl('Northbound'), 'northbound');
 });
 
 test('canonicalizeStop and getStopFeature normalize aliases consistently', () => {

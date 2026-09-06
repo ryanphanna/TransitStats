@@ -10,6 +10,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ### Changed
 
+- **Rebuilt V4/V5 model artifacts with agency-scoped route and end-stop labels**, so identical route numbers and stop names in different agencies cannot collide during prediction or training.
 - **Prediction history is now agency-separated and model use is gated by clean agency history and verified artifact coverage**, so one-off trips in another city cannot contaminate habits, transfers, or machine-learning predictions.
 - **Added anonymous GA4 website-usage measurement** for the main app, dashboard, import flow, and marketing pages, so product usage can be understood without sending trip or location data.
 - **Login codes are now protected against bot/spam abuse, and fail clearly instead of hanging.** Requesting a text code goes through an invisible bot check before the SMS is sent, so opening sign-up to the public won't risk someone racking up texting costs by spamming fake numbers; if the check or API hangs, the request now fails clearly instead of leaving the button stuck on “Sending…”.

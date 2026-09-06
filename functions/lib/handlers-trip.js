@@ -255,9 +255,11 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
     const now = new Date();
     const eligibility = getEligibility(history, resolvedAgency);
     const mlRouteReady = eligibility.routeEligible &&
-      artifactSupportsAgency(routeV4Meta, resolvedAgency) && artifactSupportsAgency(routeV5Meta, resolvedAgency);
+      artifactSupportsAgency(routeV4Meta, resolvedAgency, 'agency::route') &&
+      artifactSupportsAgency(routeV5Meta, resolvedAgency, 'agency::route');
     const mlEndStopReady = eligibility.endStopEligible &&
-      artifactSupportsAgency(endStopV4Meta, resolvedAgency) && artifactSupportsAgency(endStopV5Meta, resolvedAgency);
+      artifactSupportsAgency(endStopV4Meta, resolvedAgency, 'agency::end_stop') &&
+      artifactSupportsAgency(endStopV5Meta, resolvedAgency, 'agency::end_stop');
     const mlReady = experimentalIntelligence && (mlRouteReady || mlEndStopReady);
     logger.info('Prediction eligibility', {
       agency: resolvedAgency,
@@ -469,9 +471,11 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
     const now = new Date();
     const confirmEligibility = getEligibility(history, newTrip.agency);
     const confirmMlRouteReady = confirmEligibility.routeEligible &&
-      artifactSupportsAgency(routeV4Meta, newTrip.agency) && artifactSupportsAgency(routeV5Meta, newTrip.agency);
+      artifactSupportsAgency(routeV4Meta, newTrip.agency, 'agency::route') &&
+      artifactSupportsAgency(routeV5Meta, newTrip.agency, 'agency::route');
     const confirmMlEndStopReady = confirmEligibility.endStopEligible &&
-      artifactSupportsAgency(endStopV4Meta, newTrip.agency) && artifactSupportsAgency(endStopV5Meta, newTrip.agency);
+      artifactSupportsAgency(endStopV4Meta, newTrip.agency, 'agency::end_stop') &&
+      artifactSupportsAgency(endStopV5Meta, newTrip.agency, 'agency::end_stop');
     const confirmMlReady = experimentalIntelligence && (confirmMlRouteReady || confirmMlEndStopReady);
     const lastTrip = history.length > 0 ? history[0] : null;
     const lastEndStopName = lastTrip?.endStopName || lastTrip?.endStop || null;

@@ -8,7 +8,7 @@
 const path = require('path');
 const meta = require('./model_v5_meta.json');
 const endStopMeta = require('./model_v5_endstop_meta.json');
-const { getStopFeature, normalizeRouteForMl, normalizeDirectionForMl, getGapFeatures, loadPolicies } = require('./ml_utils');
+const { getStopFeature, scopedRouteKey, normalizeDirectionForMl, displayScopedRouteLabel, displayScopedStopLabel, getGapFeatures, loadPolicies } = require('./ml_utils');
 const logger = require('./logger');
 const TopologyConstraints = require('./topology-constraints');
 
@@ -70,7 +70,7 @@ const PredictionEngineV5 = {
       ? getStopFeature(context.lastEndStopName, context.stopsLibrary).replace('stop_', '')
       : 'none';
     const lastStopFeature = `last_stop_${lastStopKey}`;
-    const prevRoute = normalizeRouteForMl(context.lastRoute, context.agency, context.primaryAgency || context.defaultAgency) || 'none';
+    const prevRoute = scopedRouteKey(context.lastRoute, context.agency, context.primaryAgency || context.defaultAgency) || 'none';
     const prevRouteFeature = `prev_route_${prevRoute.toString().toLowerCase()}`;
     const agencyFeature = `agency_${String(context.agency || 'unknown').toLowerCase().trim().replace(/[^a-z0-9]/g, '_')}`;
 
@@ -103,7 +103,7 @@ const PredictionEngineV5 = {
       const probs = results.probabilities.data;
 
       return Array.from(probs)
-        .map((p, i) => ({ route: String(meta.classes[i]), confidence: Math.round(p * 100), version: this.VERSION }))
+        .map((p, i) => ({ route: displayScopedRouteLabel(meta.classes[i]), confidence: Math.round(p * 100), version: this.VERSION }))
         .sort((a, b) => b.confidence - a.confidence)
         .slice(0, topN);
     } catch (err) {
@@ -128,8 +128,8 @@ const PredictionEngineV5 = {
     const day_sin  = Math.sin(2 * Math.PI * pyDay / 7);
     const day_cos  = Math.cos(2 * Math.PI * pyDay / 7);
 
-    const cleanRoute = normalizeRouteForMl(context.route, context.agency, context.primaryAgency || context.defaultAgency).toString().toLowerCase();
-    const prevRoute = normalizeRouteForMl(context.lastRoute, context.agency, context.primaryAgency || context.defaultAgency) || 'none';
+    const cleanRoute = scopedRouteKey(context.route, context.agency, context.primaryAgency || context.defaultAgency).toString().toLowerCase();
+    const prevRoute = scopedRouteKey(context.lastRoute, context.agency, context.primaryAgency || context.defaultAgency) || 'none';
     const stopFeature = getStopFeature(context.startStopName, context.stopsLibrary);
     const lastStopKey = context.lastEndStopName
       ? getStopFeature(context.lastEndStopName, context.stopsLibrary).replace('stop_', '')
@@ -164,13 +164,14 @@ const PredictionEngineV5 = {
       const tensor = new ort.Tensor('float32', x, [1, endStopMeta.feature_names.length]);
       const results = await session.run({ float_input: tensor });
       const probs = Array.from(results.probabilities.data);
+      const displayClasses = endStopMeta.classes.map(displayScopedStopLabel);
       const rawTopIdx = probs.reduce((best, value, idx, arr) => value > arr[best] ? idx : best, 0);
 
       // Topology/GTFS-derived masks are the authoritative physical constraint.
       // NetworkEngine is observational and can only narrow within that legal set.
       const { NetworkEngine } = require('./network.js');
-      const networkMask = NetworkEngine.getMask(context.networkGraph, endStopMeta.classes, context.startStopName, context.direction);
-      const topology = TopologyConstraints.getMask(_topology, context.route, context.startStopName, context.direction, endStopMeta.classes);
+      const networkMask = NetworkEngine.getMask(context.networkGraph, displayClasses, context.startStopName, context.direction);
+      const topology = TopologyConstraints.getMask(_topology, context.route, context.startStopName, context.direction, displayClasses);
       const mask = TopologyConstraints.combineMasks(topology, networkMask);
       const constraintSource = topology && networkMask ? 'topology+network' : (topology ? 'topology' : (networkMask ? 'network' : 'none'));
       if (mask) mask.forEach((keep, i) => { if (!keep) probs[i] = 0; });
@@ -189,13 +190,13 @@ const PredictionEngineV5 = {
           route: context.route,
           startStopName: context.startStopName,
           direction: context.direction,
-          rawTopStop: endStopMeta.classes[rawTopIdx],
+          rawTopStop: displayClasses[rawTopIdx],
         });
       }
 
       const total = probs.reduce((s, p) => s + p, 0);
       return probs
-        .map((p, i) => ({ stop: endStopMeta.classes[i], prob: total > 0 ? p / total : 0 }))
+        .map((p, i) => ({ stop: displayClasses[i], prob: total > 0 ? p / total : 0 }))
         .filter(v => v.prob > 0)
         .sort((a, b) => b.prob - a.prob)
         .slice(0, topN)

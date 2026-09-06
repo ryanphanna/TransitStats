@@ -5,6 +5,21 @@ One entry per trained version. See `docs/INTELLIGENCE.md` for full engineering n
 
 ---
 
+## Agency-scoped rebuild — 2026-09-05
+
+The route and end-stop artifacts now use `agency::label` classes, explicit agency features, semantic directions, and chronological holdouts. Legacy artifacts are no longer accepted by runtime eligibility checks.
+
+| Model | Top-1 | Top-3 | Classes | Trips | Agencies |
+|---|---:|---:|---:|---:|---|
+| V5 route | 57.0% | 81.5% | 21 | 676 | 5 |
+| V4 route | 55.6% | 83.7% | 21 | 676 | 5 |
+| V5 end-stop | 73.3% | 96.7% | 9 | 304 | 1 |
+| V4 end-stop | 78.3% | 98.3% | 9 | 304 | 1 |
+
+These chronological metrics replace the earlier random-split numbers for promotion decisions.
+
+---
+
 ## Auto-retrain — 2026-08-10
 
 ### End-Stop Models

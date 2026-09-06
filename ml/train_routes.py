@@ -23,7 +23,7 @@ import sys
 
 import numpy as np
 import pandas as pd
-from route_normalization import normalize_route_for_ml, load_policies
+from route_normalization import agency_id, normalize_route_for_ml, scoped_route_key, load_policies
 
 KEY_PATH = os.path.expanduser("~/Desktop/Dev/Credentials/Firebase for Transit Stats.json")
 CSV_PATH = os.path.join(os.path.dirname(__file__), "trips.csv")
@@ -114,6 +114,11 @@ def clean(df, lib):
         return normalize_route_for_ml(agency=agency, route=row.get('route'), primary_agency=primary)
 
     df['route_base'] = df.apply(_normalize_route, axis=1)
+    df['agency_id'] = df['agency'].map(agency_id)
+    df['route_key'] = df.apply(
+        lambda row: scoped_route_key(row.get('route'), row.get('agency'), primary_map.get(row.get('user_id'))),
+        axis=1,
+    )
     df['start_time'] = pd.to_datetime(df['start_time'], format='ISO8601', utc=True)
     
     # Canonicalize stops
@@ -128,10 +133,10 @@ def clean(df, lib):
     def _normalize_prev_route(row):
         if pd.isna(row['prev_route']) or not row['prev_route']:
             return "none"
-        agency = row.get('agency')
+        agency = row.get('prev_agency') or row.get('agency')
         user_id = row.get('user_id')
         primary = primary_map.get(user_id) if user_id else None
-        normalized = normalize_route_for_ml(agency=agency, route=row['prev_route'], primary_agency=primary)
+        normalized = scoped_route_key(row['prev_route'], agency, primary)
         return normalized if normalized else "none"
     
     df["prev_route_base"] = df.apply(_normalize_prev_route, axis=1)
@@ -139,8 +144,8 @@ def clean(df, lib):
     df = df.dropna(subset=['route_base', 'start_stop', 'hour_of_day', 'day_of_week'])
     
     # Filter to routes with >= 3 trips
-    counts = df['route_base'].value_counts()
-    df = df[df['route_base'].isin(counts[counts >= 3].index)]
+    counts = df['route_key'].value_counts()
+    df = df[df['route_key'].isin(counts[counts >= 3].index)]
     
     print(f"{len(df)} trips kept after cleaning")
     return df
@@ -221,6 +226,8 @@ def export_v4(model, feature_names, stop_columns, top1, top3, n_trips, agencies)
         'stop_columns': stop_columns,
         'feature_schema_version': 2,
         'agencies': sorted(agencies),
+        'label_schema': 'agency::route',
+        'evaluation_method': 'chronological_holdout_20_percent',
     }
     path = os.path.join(OUT_DIR, 'model_v4.json')
     with open(path, 'w') as f:
@@ -237,6 +244,7 @@ def export_v4(model, feature_names, stop_columns, top1, top3, n_trips, agencies)
         'classes': model.classes_.tolist(), 'feature_names': feature_names,
         'top1_accuracy': round(top1, 4), 'top3_accuracy': round(top3, 4), 'n_trips': n_trips,
         'feature_schema_version': 2, 'agencies': sorted(agencies),
+        'label_schema': 'agency::route', 'evaluation_method': 'chronological_holdout_20_percent',
     }
     for dest in [os.path.join(OUT_DIR, 'model_v4_meta.json'),
                  os.path.join(LIB_DIR, 'model_v4_meta.json')]:
@@ -276,6 +284,8 @@ def export_v5(model, le, feature_names, top1, top3, n_trips, agencies):
         'n_trips': n_trips,
         'feature_schema_version': 2,
         'agencies': sorted(agencies),
+        'label_schema': 'agency::route',
+        'evaluation_method': 'chronological_holdout_20_percent',
     }
     for dest in [os.path.join(OUT_DIR, 'model_v5_meta.json'),
                  os.path.join(LIB_DIR, 'model_v5_meta.json')]:
@@ -292,7 +302,7 @@ def main():
     df = clean(df, lib)
     features, stop_columns = build_features(df)
     feature_names = features.columns.tolist()
-    labels = df['route_base']
+    labels = df['route_key']
 
     split = max(1, int(len(df) * 0.2))
     ordered = df.sort_values('start_time').index
@@ -312,7 +322,7 @@ def main():
     top1_v4, top3_v4, top1_v5, top3_v5 = evaluate(v4_model, v5_model, v5_le, X_test, y_test)
 
     print("\nExporting models...")
-    agencies = df['agency'].fillna('unknown').astype(str).str.strip().unique().tolist()
+    agencies = sorted(df['agency_id'].dropna().unique().tolist())
     export_v4(v4_model, feature_names, stop_columns, top1_v4, top3_v4, len(df), agencies)
     export_v5(v5_model, v5_le, feature_names, top1_v5, top3_v5, len(df), agencies)
 

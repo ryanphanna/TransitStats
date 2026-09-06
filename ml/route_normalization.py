@@ -127,6 +127,23 @@ _POLICY_REGISTRY: dict[str, RouteNormalizationPolicy] = {}
 _default_policy: RouteNormalizationPolicy = DefaultPreservePolicy()
 
 
+def agency_id(agency: str | None) -> str | None:
+    """Return a stable, display-name-independent agency key."""
+    if agency is None:
+        return None
+    value = re.sub(r"[^a-z0-9]+", "_", str(agency).strip().lower()).strip("_")
+    return value or None
+
+
+def scoped_route_key(route: str | None, agency: str | None, primary_agency: str | None = None) -> str | None:
+    """Return the model identity for a route without cross-agency collisions."""
+    normalized = normalize_route_for_ml(route, agency, primary_agency)
+    key = agency_id(agency)
+    if normalized is None or not key:
+        return None
+    return f"{key}::{normalized}"
+
+
 _POLICY_NAME_TO_CLASS: dict[str, type[RouteNormalizationPolicy]] = {
     "collapse": TTCCollapsePolicy,
     "preserve_variant": DefaultPreservePolicy,

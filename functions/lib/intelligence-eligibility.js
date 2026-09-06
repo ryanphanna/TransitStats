@@ -20,9 +20,10 @@ function cleanTripsForAgency(history, agency) {
   });
 }
 
-function artifactSupportsAgency(meta, agency) {
+function artifactSupportsAgency(meta, agency, labelSchema = null) {
   const key = agencyKey(agency);
   if (!key || !meta || meta.feature_schema_version !== 2) return false;
+  if (labelSchema && meta.label_schema !== labelSchema) return false;
   const agencies = Array.isArray(meta.agencies) ? meta.agencies.map(agencyKey) : [];
   return agencies.includes(key);
 }
@@ -41,7 +42,16 @@ function getEligibility(history, agency, thresholds = DEFAULT_THRESHOLDS) {
 function isModelReady(history, agency, metaA, metaB, kind = 'route', thresholds = DEFAULT_THRESHOLDS) {
   const eligibility = getEligibility(history, agency, thresholds);
   const countReady = kind === 'endStop' ? eligibility.endStopEligible : eligibility.routeEligible;
-  return countReady && artifactSupportsAgency(metaA, agency) && artifactSupportsAgency(metaB, agency);
+  const labelSchema = kind === 'endStop' ? 'agency::end_stop' : 'agency::route';
+  return countReady && artifactSupportsAgency(metaA, agency, labelSchema) &&
+    artifactSupportsAgency(metaB, agency, labelSchema);
 }
 
-module.exports = { DEFAULT_THRESHOLDS, agencyKey, cleanTripsForAgency, artifactSupportsAgency, getEligibility, isModelReady };
+module.exports = {
+  DEFAULT_THRESHOLDS,
+  agencyKey,
+  cleanTripsForAgency,
+  artifactSupportsAgency,
+  getEligibility,
+  isModelReady,
+};
