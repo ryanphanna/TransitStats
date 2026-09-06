@@ -13,6 +13,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Sign-in security check policy**: Allow Cloudflare Turnstile’s script, frame, and verification requests through the production security policy.
 - **Sign-in security check startup**: Corrected Cloudflare’s required script-loading mode so the widget can initialize.
 - **Sign-in security check startup**: Explicitly disable asynchronous script execution for Cloudflare’s readiness API.
+- **Sign-in security check compatibility**: Updated the widget configuration for Cloudflare’s current size and execution options.
 
 ### Changed
 

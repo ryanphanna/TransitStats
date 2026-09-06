@@ -50,7 +50,7 @@ window.onTurnstileToken = (token) => {
     turnstileWaiters = [];
 };
 function rejectTurnstileWaiters(message) {
-    turnstileWaiters.forEach(waiter => waiter.reject(new Error(message)));
+    turnstileWaiters.forEach(waiter => waiter.reject?.(new Error(message)));
     turnstileWaiters = [];
 }
 function loadTurnstile() {
@@ -73,7 +73,9 @@ async function initTurnstile() {
     await new Promise(resolve => turnstile.ready(resolve));
     turnstileWidgetId = turnstile.render(DOM.turnstile, {
         sitekey: TURNSTILE_SITE_KEY,
-        size: 'invisible',
+        size: 'compact',
+        appearance: 'interaction-only',
+        execution: 'execute',
         action: 'turnstile-spin-v1',
         callback: window.onTurnstileToken,
         'error-callback': () => {
