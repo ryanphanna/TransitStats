@@ -70,15 +70,19 @@ function loadTurnstile() {
 async function initTurnstile() {
     if (turnstileWidgetId !== null || !DOM.turnstile) return;
     const turnstile = await loadTurnstile();
-    turnstileWidgetId = window.turnstile.render(DOM.turnstile, {
+    await new Promise(resolve => turnstile.ready(resolve));
+    turnstileWidgetId = turnstile.render(DOM.turnstile, {
         sitekey: TURNSTILE_SITE_KEY,
         size: 'invisible',
         action: 'turnstile-spin-v1',
-        callback: 'onTurnstileToken',
-        'error-callback': () => rejectTurnstileWaiters('Cloudflare security check failed.'),
+        callback: window.onTurnstileToken,
+        'error-callback': () => {
+            rejectTurnstileWaiters('Cloudflare security check failed.');
+            return true;
+        },
         'expired-callback': () => { turnstileToken = ''; },
     });
-    turnstile.execute(turnstileWidgetId);
+    turnstile.execute(DOM.turnstile);
 }
 async function getTurnstileToken() {
     await initTurnstile();

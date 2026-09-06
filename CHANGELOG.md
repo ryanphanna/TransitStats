@@ -10,6 +10,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 - **Sign-in security check reliability**: Fixed the production phone-login check failing to initialize before code requests.
 - **Sign-in security check loading**: Load Cloudflare’s check only when needed so phone login can recover from slow or blocked page startup.
+- **Sign-in security check policy**: Allow Cloudflare Turnstile’s script, frame, and verification requests through the production security policy.
 
 ### Changed
 
