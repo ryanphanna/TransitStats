@@ -19,7 +19,7 @@
         gtag('config', 'G-Z8L60LPC8G');
     </script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer onload="window.onTurnstileLoaded?.()" onerror="window.onTurnstileLoadError?.()"></script>
 </head>
 <body>
     <main id="app-root">
@@ -49,7 +49,7 @@
                                 <i data-lucide="smartphone" aria-hidden="true"></i>
                                 <input type="tel" id="auth-phone" inputmode="tel" autocomplete="off" placeholder="Phone number">
                             </div>
-                            <div class="cf-turnstile" id="auth-turnstile" data-sitekey="0x4AAAAAAEk8ciKktVYaFU9J" data-size="invisible" data-action="turnstile-spin-v1" data-callback="onTurnstileToken"></div>
+                            <div class="cf-turnstile" id="auth-turnstile"></div>
                             <button id="btn-auth-request-code" class="btn btn-primary full-width">Text me a code <i data-lucide="arrow-right" aria-hidden="true"></i></button>
                             <button id="btn-auth-email-mode" class="btn btn-link full-width hidden" type="button">Use email instead</button>
                         </div>

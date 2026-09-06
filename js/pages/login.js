@@ -18,6 +18,7 @@ const DOM = {
     phoneMode: document.getElementById('btn-auth-phone-mode'),
     emailInput: document.getElementById('auth-email'),
     passwordInput: document.getElementById('auth-password'),
+    turnstile: document.getElementById('auth-turnstile'),
     emailLogin: document.getElementById('btn-auth-email-login'),
     resetPassword: document.getElementById('btn-auth-reset-password'),
     verifyCode: document.getElementById('btn-auth-verify-code'),
@@ -40,12 +41,31 @@ const RESEND_COOLDOWN_SECONDS = 60;
 // if it isn't ready yet.
 let turnstileToken = '';
 let turnstileWaiters = [];
+let turnstileWidgetId = null;
 window.onTurnstileToken = (token) => {
     turnstileToken = token;
     turnstileWaiters.forEach(waiter => waiter.resolve(token));
     turnstileWaiters = [];
 };
+window.onTurnstileLoadError = () => {
+    turnstileWaiters.forEach(waiter => waiter.reject(new Error('Security check did not load. Please disable any blocker for challenges.cloudflare.com and refresh.')));
+    turnstileWaiters = [];
+};
+function initTurnstile() {
+    if (turnstileWidgetId !== null || !window.turnstile || !DOM.turnstile) return;
+    turnstileWidgetId = window.turnstile.render(DOM.turnstile, {
+        sitekey: '0x4AAAAAAEk8ciKktVYaFU9J',
+        size: 'invisible',
+        action: 'turnstile-spin-v1',
+        callback: 'onTurnstileToken',
+        'error-callback': 'onTurnstileLoadError',
+        'expired-callback': () => { turnstileToken = ''; },
+    });
+    window.turnstile.execute(turnstileWidgetId);
+}
+window.onTurnstileLoaded = initTurnstile;
 function getTurnstileToken() {
+    initTurnstile();
     if (turnstileToken) return Promise.resolve(turnstileToken);
     return new Promise((resolve, reject) => {
         const waiter = {
@@ -63,7 +83,10 @@ function getTurnstileToken() {
 }
 function resetTurnstile() {
     turnstileToken = '';
-    if (window.turnstile) window.turnstile.reset('#auth-turnstile');
+    if (window.turnstile && turnstileWidgetId !== null) {
+        window.turnstile.reset(turnstileWidgetId);
+        window.turnstile.execute(turnstileWidgetId);
+    }
 }
 
 // The real shape of the TTC subway/LRT network (Lines 1, 2, 4, 5), simplified

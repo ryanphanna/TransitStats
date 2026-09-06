@@ -8,6 +8,8 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Sign-in security check reliability**: Fixed the production phone-login check failing to initialize before code requests.
+
 ### Changed
 
 - **Rebuilt V4/V5 model artifacts with agency-scoped route and end-stop labels**, so identical route numbers and stop names in different agencies cannot collide during prediction or training.
