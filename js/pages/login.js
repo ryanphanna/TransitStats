@@ -60,6 +60,7 @@ function loadTurnstile() {
     turnstileLoadPromise = new Promise((resolve, reject) => {
         const script = document.createElement('script');
         script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        script.async = false;
         script.onload = () => window.turnstile ? resolve(window.turnstile) : reject(new Error('Cloudflare security check loaded without its API.'));
         script.onerror = () => reject(new Error('Security check did not load. Please disable any blocker for challenges.cloudflare.com and refresh.'));
         document.head.appendChild(script);
