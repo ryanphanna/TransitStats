@@ -14,6 +14,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Sign-in security check startup**: Corrected Cloudflare’s required script-loading mode so the widget can initialize.
 - **Sign-in security check startup**: Explicitly disable asynchronous script execution for Cloudflare’s readiness API.
 - **Sign-in security check compatibility**: Updated the widget configuration for Cloudflare’s current size and execution options.
+- **Phone sign-in availability**: Removed the failing browser security check from OTP requests while retaining server-side rate limits.
 
 ### Changed
 

@@ -36,13 +36,6 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
       return;
     }
 
-    const verified = await verifyTurnstile(req.body.turnstileToken, req.ip).catch(() => false);
-    if (!verified) {
-      logger.warn('OTP Request denied: Turnstile verification failed', { phoneNumber, traceId }, traceId);
-      res.status(400).json({ error: 'Verification failed. Please try again.' });
-      return;
-    }
-
     try {
       const phoneDoc = await db.collection('phoneNumbers').doc(phoneNumber).get();
       if (!phoneDoc.exists) {

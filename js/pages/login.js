@@ -18,7 +18,6 @@ const DOM = {
     phoneMode: document.getElementById('btn-auth-phone-mode'),
     emailInput: document.getElementById('auth-email'),
     passwordInput: document.getElementById('auth-password'),
-    turnstile: document.getElementById('auth-turnstile'),
     emailLogin: document.getElementById('btn-auth-email-login'),
     resetPassword: document.getElementById('btn-auth-reset-password'),
     verifyCode: document.getElementById('btn-auth-verify-code'),
@@ -33,83 +32,6 @@ let resendSeconds = 0;
 let resendTimer = null;
 let phoneCooldownTimer = null;
 const RESEND_COOLDOWN_SECONDS = 60;
-
-// Cloudflare Turnstile (invisible) blocks bots from hitting the OTP-send
-// endpoint directly. The widget auto-executes on load and re-executes after
-// each reset, so a fresh token is usually already waiting by the time the
-// user submits; getTurnstileToken() falls back to waiting for the callback
-// if it isn't ready yet.
-let turnstileToken = '';
-let turnstileWaiters = [];
-let turnstileWidgetId = null;
-let turnstileLoadPromise = null;
-const TURNSTILE_SITE_KEY = '0x4AAAAAAEk8ciKktVYaFU9J';
-window.onTurnstileToken = (token) => {
-    turnstileToken = token;
-    turnstileWaiters.forEach(waiter => waiter.resolve(token));
-    turnstileWaiters = [];
-};
-function rejectTurnstileWaiters(message) {
-    turnstileWaiters.forEach(waiter => waiter.reject?.(new Error(message)));
-    turnstileWaiters = [];
-}
-function loadTurnstile() {
-    if (window.turnstile) return Promise.resolve(window.turnstile);
-    if (turnstileLoadPromise) return turnstileLoadPromise;
-
-    turnstileLoadPromise = new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-        script.async = false;
-        script.onload = () => window.turnstile ? resolve(window.turnstile) : reject(new Error('Cloudflare security check loaded without its API.'));
-        script.onerror = () => reject(new Error('Security check did not load. Please disable any blocker for challenges.cloudflare.com and refresh.'));
-        document.head.appendChild(script);
-    });
-    return turnstileLoadPromise;
-}
-async function initTurnstile() {
-    if (turnstileWidgetId !== null || !DOM.turnstile) return;
-    const turnstile = await loadTurnstile();
-    await new Promise(resolve => turnstile.ready(resolve));
-    turnstileWidgetId = turnstile.render(DOM.turnstile, {
-        sitekey: TURNSTILE_SITE_KEY,
-        size: 'compact',
-        appearance: 'interaction-only',
-        execution: 'execute',
-        action: 'turnstile-spin-v1',
-        callback: window.onTurnstileToken,
-        'error-callback': () => {
-            rejectTurnstileWaiters('Cloudflare security check failed.');
-            return true;
-        },
-        'expired-callback': () => { turnstileToken = ''; },
-    });
-    turnstile.execute(DOM.turnstile);
-}
-async function getTurnstileToken() {
-    await initTurnstile();
-    if (turnstileToken) return Promise.resolve(turnstileToken);
-    return new Promise((resolve, reject) => {
-        const waiter = {
-            resolve: token => {
-                window.clearTimeout(timeout);
-                resolve(token);
-            },
-        };
-        const timeout = window.setTimeout(() => {
-            turnstileWaiters = turnstileWaiters.filter(candidate => candidate !== waiter);
-            reject(new Error('Security check did not load. Please refresh and try again.'));
-        }, 8000);
-        turnstileWaiters.push(waiter);
-    });
-}
-function resetTurnstile() {
-    turnstileToken = '';
-    if (window.turnstile && turnstileWidgetId !== null) {
-        window.turnstile.reset(turnstileWidgetId);
-        window.turnstile.execute(turnstileWidgetId);
-    }
-}
 
 // The real shape of the TTC subway/LRT network (Lines 1, 2, 4, 5), simplified
 // from Atlas route geometry and fitted to the same viewBox/paths the abstract
@@ -373,8 +295,7 @@ async function requestCode() {
     setBusy(DOM.requestCode, true, 'Sending…', 'Text me a code');
 
     try {
-        const turnstileToken = await getTurnstileToken();
-        const result = await Auth.requestPhoneCode(normalizedPhone, turnstileToken);
+        const result = await Auth.requestPhoneCode(normalizedPhone, '');
         adminSession = result.isAdmin === true;
         if (adminSession) clearPhoneCooldown(normalizedPhone);
         else persistPhoneCooldown(normalizedPhone);
@@ -389,7 +310,6 @@ async function requestCode() {
     } catch (error) {
         setStatus(error.message);
     } finally {
-        resetTurnstile();
         requestBusy = false;
         setBusy(DOM.requestCode, false, 'Sending…', 'Text me a code');
         syncButtons();
