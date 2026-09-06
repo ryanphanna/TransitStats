@@ -42,30 +42,46 @@ const RESEND_COOLDOWN_SECONDS = 60;
 let turnstileToken = '';
 let turnstileWaiters = [];
 let turnstileWidgetId = null;
+let turnstileLoadPromise = null;
+const TURNSTILE_SITE_KEY = '0x4AAAAAAEk8ciKktVYaFU9J';
 window.onTurnstileToken = (token) => {
     turnstileToken = token;
     turnstileWaiters.forEach(waiter => waiter.resolve(token));
     turnstileWaiters = [];
 };
-window.onTurnstileLoadError = () => {
-    turnstileWaiters.forEach(waiter => waiter.reject(new Error('Security check did not load. Please disable any blocker for challenges.cloudflare.com and refresh.')));
+function rejectTurnstileWaiters(message) {
+    turnstileWaiters.forEach(waiter => waiter.reject(new Error(message)));
     turnstileWaiters = [];
-};
-function initTurnstile() {
-    if (turnstileWidgetId !== null || !window.turnstile || !DOM.turnstile) return;
+}
+function loadTurnstile() {
+    if (window.turnstile) return Promise.resolve(window.turnstile);
+    if (turnstileLoadPromise) return turnstileLoadPromise;
+
+    turnstileLoadPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        script.async = true;
+        script.onload = () => window.turnstile ? resolve(window.turnstile) : reject(new Error('Cloudflare security check loaded without its API.'));
+        script.onerror = () => reject(new Error('Security check did not load. Please disable any blocker for challenges.cloudflare.com and refresh.'));
+        document.head.appendChild(script);
+    });
+    return turnstileLoadPromise;
+}
+async function initTurnstile() {
+    if (turnstileWidgetId !== null || !DOM.turnstile) return;
+    const turnstile = await loadTurnstile();
     turnstileWidgetId = window.turnstile.render(DOM.turnstile, {
-        sitekey: '0x4AAAAAAEk8ciKktVYaFU9J',
+        sitekey: TURNSTILE_SITE_KEY,
         size: 'invisible',
         action: 'turnstile-spin-v1',
         callback: 'onTurnstileToken',
-        'error-callback': 'onTurnstileLoadError',
+        'error-callback': () => rejectTurnstileWaiters('Cloudflare security check failed.'),
         'expired-callback': () => { turnstileToken = ''; },
     });
-    window.turnstile.execute(turnstileWidgetId);
+    turnstile.execute(turnstileWidgetId);
 }
-window.onTurnstileLoaded = initTurnstile;
-function getTurnstileToken() {
-    initTurnstile();
+async function getTurnstileToken() {
+    await initTurnstile();
     if (turnstileToken) return Promise.resolve(turnstileToken);
     return new Promise((resolve, reject) => {
         const waiter = {
