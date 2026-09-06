@@ -76,6 +76,8 @@ const TransferEngine = {
         transfers.push({
           routeA: prev.route?.toString(),
           routeB: next.route?.toString(),
+          agencyA: prev.agency || null,
+          agencyB: next.agency || null,
           endStop: prev.endStopName,
           startStop: next.startStopName,
           endHubId,
@@ -178,6 +180,8 @@ const TransferEngine = {
     const nextStartHubId = nextTrip.startHubId;
     const routeA = prevTrip.route?.toString();
     const routeB = nextTrip.route?.toString();
+    const agencyA = prevTrip.agency || null;
+    const agencyB = nextTrip.agency || null;
     const hour = nextStart.getHours();
 
     const transfers = this.extractTransfers(history);
@@ -199,6 +203,8 @@ const TransferEngine = {
 
     // Stop pair matches (by Name or HubId)
     const stopPairMatches = transfers.filter(t => {
+      if (t.agencyA && !this._sameAgency(t.agencyA, agencyA)) return false;
+      if (t.agencyB && !this._sameAgency(t.agencyB, agencyB)) return false;
       const hubMatch = (prevEndHubId && t.endHubId && prevEndHubId === t.endHubId) &&
                        (nextStartHubId && t.startHubId && nextStartHubId === t.startHubId);
       
@@ -210,7 +216,9 @@ const TransferEngine = {
 
     // Route pair matches
     const routePairMatches = transfers.filter(t =>
-      t.routeA === routeA && t.routeB === routeB
+      t.routeA === routeA && t.routeB === routeB &&
+      (!t.agencyA || this._sameAgency(t.agencyA, agencyA)) &&
+      (!t.agencyB || this._sameAgency(t.agencyB, agencyB))
     );
 
     let confidence = 0;
@@ -263,6 +271,10 @@ const TransferEngine = {
   _normalizeKey(s) {
     if (!s) return '';
     return s.toString().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+  },
+
+  _sameAgency(a, b) {
+    return a != null && b != null && a.toString().trim().toLowerCase() === b.toString().trim().toLowerCase();
   },
 
   _sortedPair(a, b) {

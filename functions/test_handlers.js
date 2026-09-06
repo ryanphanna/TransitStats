@@ -622,7 +622,7 @@ test('handleMmsTrip: single-route snap-to-start preserves startTime/source metad
   assert.equal(calls.createTrip[0].parsed_by, 'mms');
 });
 
-test('handleTripLog: GTFS correction picks route supported by routesAtStop for V4/V5', async () => {
+test('handleTripLog: legacy V4/V5 artifacts are not used for predictions', async () => {
   const { handlers, calls, restore } = loadHandlers({
     dbModule: {
       getRoutesAtStop: async () => ['510'],
@@ -654,11 +654,11 @@ test('handleTripLog: GTFS correction picks route supported by routesAtStop for V
   }
 
   assert.equal(calls.createTrip.length, 1);
-  assert.equal(calls.createTrip[0].predictionV4.route, '510');
-  assert.equal(calls.createTrip[0].predictionV5.route, '510');
+  assert.equal(calls.createTrip[0].predictionV4, null);
+  assert.equal(calls.createTrip[0].predictionV5, null);
 });
 
-test('handleTripLog: experimental models receive previous-route and learned-network context', async () => {
+test('handleTripLog: experimental models stay off without eligible agency history and artifacts', async () => {
   let routeContext;
   let endStopContext;
   const networkGraph = { edges: { learned: { tripCount: 3 } } };
@@ -690,13 +690,11 @@ test('handleTripLog: experimental models receive previous-route and learned-netw
     restore();
   }
 
-  assert.equal(routeContext.lastRoute, '506');
-  assert.equal(routeContext.primaryAgency, 'TTC');
-  assert.equal(endStopContext.primaryAgency, 'TTC');
-  assert.equal(endStopContext.networkGraph, networkGraph);
+  assert.equal(routeContext, undefined);
+  assert.equal(endStopContext, undefined);
 });
 
-test('fillPredictions: fallback inference receives the same model context', async () => {
+test('fillPredictions: fallback inference stays off without eligible agency artifacts', async () => {
   let routeContext;
   let endStopContext;
   const networkGraph = { edges: { learned: { tripCount: 3 } } };
@@ -734,10 +732,8 @@ test('fillPredictions: fallback inference receives the same model context', asyn
     restore();
   }
 
-  assert.equal(routeContext.lastRoute, '506');
-  assert.equal(routeContext.primaryAgency, 'TTC');
-  assert.equal(endStopContext.primaryAgency, 'TTC');
-  assert.equal(endStopContext.networkGraph, networkGraph);
+  assert.equal(routeContext, undefined);
+  assert.equal(endStopContext, undefined);
 });
 
 test('handleTripLog: skips V4/V5 shadow inference when experimental access is disabled', async () => {
@@ -781,6 +777,7 @@ test('handleTripLog: end-to-end prediction prompt does not surface illegal 506 d
     const endTime = new Date(startTime.getTime() + 25 * 60 * 1000);
     return {
       route: '506',
+      agency: 'TTC',
       startStopName: 'College Station',
       endStopName,
       direction: 'Westbound',

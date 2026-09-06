@@ -24,6 +24,11 @@ const {
   correctPredictionByGtfs,
 } = require('./handlers-utils');
 const { handleTripLog } = require('./handlers-trip');
+const { isModelReady } = require('./intelligence-eligibility');
+const routeV4Meta = require('./model_v4_meta.json');
+const routeV5Meta = require('./model_v5_meta.json');
+const endStopV4Meta = require('./model_v4_endstop_meta.json');
+const endStopV5Meta = require('./model_v5_endstop_meta.json');
 
 /**
  * Run V4/V5 predictions for a trip that was created during stop disambiguation
@@ -35,7 +40,6 @@ async function fillPredictions(user, tripId, stopName, route, direction, agency,
     const profile = await getUserProfile(user.userId);
     if (!(await isExperimentalIntelligenceEnabled(user.email))) return;
     const defaultAgency = getConfiguredPrimaryAgency(profile);
-    if (!defaultAgency || agency !== defaultAgency) return;
 
     const [history, stopsLibrary, networkGraph] = await Promise.all([
       getRecentCompletedTrips(user.userId, 200),
@@ -44,6 +48,9 @@ async function fillPredictions(user, tripId, stopName, route, direction, agency,
     ]);
 
     const now = new Date();
+    const routeReady = isModelReady(history, agency, routeV4Meta, routeV5Meta);
+    const endStopReady = isModelReady(history, agency, endStopV4Meta, endStopV5Meta, 'endStop');
+    if (!routeReady && !endStopReady) return;
     const lastTrip = history.length > 0 ? history[0] : null;
     const lastEndStopName = lastTrip?.endStopName || null;
     const lastRoute = lastTrip?.route || null;
@@ -55,6 +62,7 @@ async function fillPredictions(user, tripId, stopName, route, direction, agency,
       time: now,
       lastEndStopName,
       lastRoute,
+      agency,
       stopsLibrary,
       primaryAgency: defaultAgency,
     };
@@ -73,10 +81,10 @@ async function fillPredictions(user, tripId, stopName, route, direction, agency,
     };
 
     const [rawTopV4, rawTopV5, topV4, topV5] = await Promise.all([
-      Promise.resolve(PredictionEngineV4.guessTopRoutes(routeContext, 5)),
-      PredictionEngineV5.guessTopRoutes(routeContext, 5),
-      PredictionEngineV4.guessTopEndStops(endStopContext, 1),
-      PredictionEngineV5.guessTopEndStops(endStopContext, 1),
+      routeReady ? Promise.resolve(PredictionEngineV4.guessTopRoutes(routeContext, 5)) : [],
+      routeReady ? PredictionEngineV5.guessTopRoutes(routeContext, 5) : [],
+      endStopReady ? PredictionEngineV4.guessTopEndStops(endStopContext, 1) : [],
+      endStopReady ? PredictionEngineV5.guessTopEndStops(endStopContext, 1) : [],
     ]);
 
     // No routesAtStop available here — apply confidence floor only

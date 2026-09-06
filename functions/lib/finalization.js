@@ -32,7 +32,7 @@ async function gradeAllPredictions(activeTrip, user, endStopData, duration) {
     // V3
     const s = activeTrip.prediction;
     if (s) {
-      const hit = (s.route.toString() === activeTrip.route.toString()) &&
+      const hit = normalize(s.route, activeTrip.agency) === normalize(activeTrip.route, activeTrip.agency) &&
         (!s.direction || !activeTrip.direction || PredictionEngine._normalizeDirection(s.direction) === PredictionEngine._normalizeDirection(activeTrip.direction));
       const partial = !hit && /* simplified */ false;
 

@@ -202,7 +202,7 @@ function getGapFeatures(minutesSinceLastTrip) {
 
 /**
  * Normalize a direction string to a canonical ML feature key.
- * Returns 'northbound' | 'southbound' | 'eastbound' | 'westbound' | null.
+ * Returns a canonical cardinal or semantic direction key, or null.
  * Mirrors the normalization in ml/train_endstop.py.
  */
 function normalizeDirectionForMl(dir) {
@@ -212,7 +212,7 @@ function normalizeDirectionForMl(dir) {
   if (d === 's' || d === 'sb' || d === 'south') return 'southbound';
   if (d === 'e' || d === 'eb' || d === 'east' || d === 'eastward') return 'eastbound';
   if (d === 'w' || d === 'wb' || d === 'west') return 'westbound';
-  return null;
+  return d || null;
 }
 
 module.exports = {

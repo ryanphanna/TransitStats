@@ -44,7 +44,7 @@ const PredictionEngineV3 = {
   /**
    * Guess the next route given the current stop and time.
    * @param {Array} history - Completed trips (should exclude the trip being evaluated)
-   * @param {Object} context - { stopName, time, routesAtStop?, lastEndStopName? }
+   * @param {Object} context - { stopName, time, routesAtStop?, lastEndStopName?, agency? }
    *   routesAtStop: optional array of routeShortNames known to serve this stop.
    *   lastEndStopName: optional name of the stop where the user just finished a trip.
    * @returns {Object|null} { route, direction, stop, confidence, version }
@@ -58,6 +58,10 @@ const PredictionEngineV3 = {
     let candidates = stopName
       ? history.filter(t => this._isValidTrip(t) && this._stopMatch(t.startStopName, stopName))
       : history.filter(t => this._isValidTrip(t));
+
+    if (context.agency) {
+      candidates = candidates.filter(t => this._sameAgency(t.agency, context.agency));
+    }
 
     if (candidates.length === 0) return null;
 
@@ -155,6 +159,7 @@ const PredictionEngineV3 = {
     let candidates = history.filter(t => {
       if (!this._isValidTrip(t)) return false;
       if (!t.endStopName) return false;
+      if (context.agency && !this._sameAgency(t.agency, context.agency)) return false;
       return this._baseRoute(t.route) === routeFamily &&
         this._stopMatch(t.startStopName, startStopName);
     });
@@ -275,6 +280,10 @@ const PredictionEngineV3 = {
   _stopMatch: function (a, b) {
     if (!a || !b) return false;
     return this._canonicalizeStop(a) === this._canonicalizeStop(b);
+  },
+
+  _sameAgency: function (a, b) {
+    return a != null && b != null && a.toString().trim().toLowerCase() === b.toString().trim().toLowerCase();
   },
 
   // Pre-compute per-trip ride counts: for each trip, how many same-agency

@@ -44,6 +44,11 @@ const {
   lookupAgencyTimezone,
 } = require('./gemini');
 const { parseStopInput } = require('./parsing');
+const { getEligibility, artifactSupportsAgency } = require('./intelligence-eligibility');
+const routeV4Meta = require('./model_v4_meta.json');
+const routeV5Meta = require('./model_v5_meta.json');
+const endStopV4Meta = require('./model_v4_endstop_meta.json');
+const endStopV5Meta = require('./model_v5_endstop_meta.json');
 const {
   correctPredictionByGtfs,
   agencySuffix,
@@ -248,7 +253,22 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       || resolvedAgency
       || null;
     const now = new Date();
-    const habitMatch = HabitEngine.match(habits, startStopName, now, { route, direction });
+    const eligibility = getEligibility(history, resolvedAgency);
+    const mlRouteReady = eligibility.routeEligible &&
+      artifactSupportsAgency(routeV4Meta, resolvedAgency) && artifactSupportsAgency(routeV5Meta, resolvedAgency);
+    const mlEndStopReady = eligibility.endStopEligible &&
+      artifactSupportsAgency(endStopV4Meta, resolvedAgency) && artifactSupportsAgency(endStopV5Meta, resolvedAgency);
+    const mlReady = experimentalIntelligence && (mlRouteReady || mlEndStopReady);
+    logger.info('Prediction eligibility', {
+      agency: resolvedAgency,
+      cleanTripCount: eligibility.cleanTripCount,
+      routeEligible: eligibility.routeEligible,
+      endStopEligible: eligibility.endStopEligible,
+      routeArtifactReady: mlRouteReady,
+      endStopArtifactReady: mlEndStopReady,
+      traceId,
+    }, traceId);
+    const habitMatch = HabitEngine.match(habits, startStopName, now, { route, direction, agency: resolvedAgency });
     habitPrediction = habitMatch ? {
       stop: habitMatch.stop,
       route: habitMatch.route,
@@ -270,6 +290,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       time: now,
       lastEndStopName,
       lastRoute,
+      agency: resolvedAgency,
       stopsLibrary,
       primaryAgency: defaultAgency,
     };
@@ -321,15 +342,15 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
         time: now,
         routesAtStop: routesAtStop || undefined,
         lastEndStopName,
+        agency: resolvedAgency,
       });
-      // V4/V5 only run when the trip is on the user's default agency —
-      // the models are trained on one agency's data and produce garbage elsewhere.
-      if (experimentalIntelligence && resolvedAgency === defaultAgency) {
+      // Experimental models only run after both clean-history and artifact coverage checks.
+      if (mlReady) {
         const [rawTopV4, rawTopV5, topEndV4, topEndV5] = await Promise.all([
-          Promise.resolve(PredictionEngineV4.guessTopRoutes(routeContext, 5)),
-          PredictionEngineV5.guessTopRoutes(routeContext, 5),
-          PredictionEngineV4.guessTopEndStops(endStopContext, 1),
-          PredictionEngineV5.guessTopEndStops(endStopContext, 1),
+          mlRouteReady ? Promise.resolve(PredictionEngineV4.guessTopRoutes(routeContext, 5)) : [],
+          mlRouteReady ? PredictionEngineV5.guessTopRoutes(routeContext, 5) : [],
+          mlEndStopReady ? PredictionEngineV4.guessTopEndStops(endStopContext, 1) : [],
+          mlEndStopReady ? PredictionEngineV5.guessTopEndStops(endStopContext, 1) : [],
         ]);
         // Correct: pick best prediction that GTFS confirms serves this stop; floor at 25%
         predictionV4 = correctPredictionByGtfs(rawTopV4, routesAtStop);
@@ -446,14 +467,20 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
       || newTrip.agency
       || null;
     const now = new Date();
+    const confirmEligibility = getEligibility(history, newTrip.agency);
+    const confirmMlRouteReady = confirmEligibility.routeEligible &&
+      artifactSupportsAgency(routeV4Meta, newTrip.agency) && artifactSupportsAgency(routeV5Meta, newTrip.agency);
+    const confirmMlEndStopReady = confirmEligibility.endStopEligible &&
+      artifactSupportsAgency(endStopV4Meta, newTrip.agency) && artifactSupportsAgency(endStopV5Meta, newTrip.agency);
+    const confirmMlReady = experimentalIntelligence && (confirmMlRouteReady || confirmMlEndStopReady);
     const lastTrip = history.length > 0 ? history[0] : null;
     const lastEndStopName = lastTrip?.endStopName || lastTrip?.endStop || null;
     
     // Resolve hubId for the new trip
     newStopData = await lookupStop(newTrip.stopCode, newTrip.stopName, newTrip.agency, newTrip.route, newTrip.direction);
     
-    const confirmRouteContext = { stopName: newTrip.stopName, time: now, lastEndStopName, stopsLibrary };
-    const confirmEndStopContext = { route: newTrip.route, startStopName: newTrip.stopName, direction: newTrip.direction, time: now, lastEndStopName, stopsLibrary, networkGraph: confirmNetworkGraph || null };
+    const confirmRouteContext = { stopName: newTrip.stopName, time: now, lastEndStopName, agency: newTrip.agency, stopsLibrary };
+    const confirmEndStopContext = { route: newTrip.route, startStopName: newTrip.stopName, direction: newTrip.direction, time: now, lastEndStopName, agency: newTrip.agency, stopsLibrary, networkGraph: confirmNetworkGraph || null };
     const confirmEndStopConstraint = PredictionEngine.getEndStopConstraint(confirmEndStopContext);
     confirmEndStopConstraintSource = confirmEndStopConstraint.source;
     logger.info('Confirm-start end-stop constraint', {
@@ -485,13 +512,14 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
       time: now,
       routesAtStop: routesAtStop || undefined,
       lastEndStopName,
+      agency: newTrip.agency,
     });
-    if (experimentalIntelligence && newTrip.agency === confirmDefaultAgency) {
+    if (confirmMlReady) {
       const [confirmRawV4, confirmRawV5, confirmTopV4, confirmTopV5] = await Promise.all([
-        Promise.resolve(PredictionEngineV4.guessTopRoutes(confirmRouteContext, 5)),
-        PredictionEngineV5.guessTopRoutes(confirmRouteContext, 5),
-        PredictionEngineV4.guessTopEndStops(confirmEndStopContext, 1),
-        PredictionEngineV5.guessTopEndStops(confirmEndStopContext, 1),
+        confirmMlRouteReady ? Promise.resolve(PredictionEngineV4.guessTopRoutes(confirmRouteContext, 5)) : [],
+        confirmMlRouteReady ? PredictionEngineV5.guessTopRoutes(confirmRouteContext, 5) : [],
+        confirmMlEndStopReady ? PredictionEngineV4.guessTopEndStops(confirmEndStopContext, 1) : [],
+        confirmMlEndStopReady ? PredictionEngineV5.guessTopEndStops(confirmEndStopContext, 1) : [],
       ]);
       confirmPredictionV4 = correctPredictionByGtfs(confirmRawV4, routesAtStop);
       confirmPredictionV5 = correctPredictionByGtfs(confirmRawV5, routesAtStop);

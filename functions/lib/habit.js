@@ -39,11 +39,12 @@ const HabitEngine = {
       const day = time.getDay();
       const hour = time.getHours();
       const bucket = Math.floor(hour / 2) * 2; // 2-hour buckets: 0, 2, 4, ..., 22
-      const key = `${this._norm(trip.startStopName)}|${trip.route}|${trip.direction}|${day}|${bucket}`;
+      const key = `${this._norm(trip.agency)}|${this._norm(trip.startStopName)}|${trip.route}|${trip.direction}|${day}|${bucket}`;
 
       if (!groups[key]) {
         groups[key] = {
           stop: trip.startStopName,
+          agency: trip.agency || null,
           route: trip.route.toString(),
           direction: trip.direction,
           day,
@@ -110,9 +111,10 @@ const HabitEngine = {
    * @param {Object} [filters] - Optional route/direction filters
    * @param {string} [filters.route] - Only match habits for this route
    * @param {string} [filters.direction] - Only match habits for this direction
+   * @param {string} [filters.agency] - Only match habits for this agency
    * @returns {Object|null} Best matching habit, or null if none qualify
    */
-  match(habits, stop, now, { route = null, direction = null } = {}) {
+  match(habits, stop, now, { route = null, direction = null, agency = null } = {}) {
     if (!habits || !habits.length || !stop || !now) return null;
 
     const day = now.getDay();
@@ -129,6 +131,7 @@ const HabitEngine = {
       if (confidence < this.CONFIDENCE_THRESHOLD) return false;
       if (route && this._norm(h.route) !== this._norm(route.toString())) return false;
       if (direction && this._norm(h.direction) !== this._norm(direction)) return false;
+      if (agency && this._norm(h.agency) !== this._norm(agency)) return false;
       return true;
     });
 
@@ -189,12 +192,12 @@ const HabitEngine = {
     const recentHabits = this.extractHabits(trips, thirtyDaysAgo);
     const recentBySlot = {};
     for (const h of recentHabits) {
-      const slot = `${this._norm(h.stop)}|${h.day}|${h.bucket}`;
+      const slot = `${this._norm(h.agency)}|${this._norm(h.stop)}|${h.day}|${h.bucket}`;
       if (!recentBySlot[slot]) recentBySlot[slot] = [];
       recentBySlot[slot].push(h);
     }
     for (const habit of habits) {
-      const slot = `${this._norm(habit.stop)}|${habit.day}|${habit.bucket}`;
+      const slot = `${this._norm(habit.agency)}|${this._norm(habit.stop)}|${habit.day}|${habit.bucket}`;
       const recent = recentBySlot[slot] || [];
       const replacement = recent.find(r =>
         (this._norm(r.route) !== this._norm(habit.route) ||

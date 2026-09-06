@@ -3,7 +3,7 @@ TransitStats — Route Prediction Training Script
 Trains V4 (logistic regression) and V5 (XGBoost) route classifiers.
 Replaces the manual notebook workflow for V4/V5 route models.
 
-Features: start_stop (one-hot), hour (sin/cos), day (sin/cos)
+Features: agency/start_stop/last_stop/previous_route (one-hot), hour (sin/cos), day (sin/cos)
 Target: route_base (agency-aware normalized route family)
 
 Outputs:
@@ -152,26 +152,16 @@ def build_features(df):
     df['day_sin']  = np.sin(2 * np.pi * df['day_of_week'] / 7)
     df['day_cos']  = np.cos(2 * np.pi * df['day_of_week'] / 7)
     
-    # Transfer rarity: rare transfers are high-signal (e.g., 506 → 510B)
-    # Compute transfer frequency: how often does prev_route → route occur?
-    transfer_counts = df.groupby(['prev_route_base', 'route_base']).size()
-    transfer_freq = transfer_counts.reset_index(name='freq')
-    transfer_freq['rarity'] = 1.0 / (transfer_freq['freq'] + 1)  # inverse frequency
-    
-    # Merge rarity scores back to df
-    df = df.merge(transfer_freq[['prev_route_base', 'route_base', 'rarity']], 
-                  on=['prev_route_base', 'route_base'], how='left')
-    df['transfer_rarity'] = df['rarity'].fillna(0.5)  # default 0.5 for unseen transfers
-    
     def _sanitize(s):
         return re.sub(r'[^a-z0-9]', '_', str(s).lower().strip())
 
     stop_dummies = pd.get_dummies(df['start_stop'].apply(_sanitize), prefix='stop')
     last_stop_dummies = pd.get_dummies(df['last_end_stop'].apply(_sanitize), prefix='last_stop')
     prev_route_dummies = pd.get_dummies(df['prev_route_base'].str.lower().str.strip(), prefix='prev_route')
+    agency_dummies = pd.get_dummies(df['agency'].fillna('unknown').map(_sanitize), prefix='agency')
     
-    features = pd.concat([df[['hour_sin', 'hour_cos', 'day_sin', 'day_cos', 'transfer_rarity']], 
-                          stop_dummies, last_stop_dummies, prev_route_dummies], axis=1)
+    features = pd.concat([df[['hour_sin', 'hour_cos', 'day_sin', 'day_cos']],
+                          agency_dummies, stop_dummies, last_stop_dummies, prev_route_dummies], axis=1)
     return features, stop_dummies.columns.tolist()
 
 
@@ -222,13 +212,15 @@ def evaluate(v4_model, v5_model, v5_le, X_test, y_test):
     return top1_v4, top3_v4, top1_v5, top3_v5
 
 
-def export_v4(model, feature_names, stop_columns, top1, top3, n_trips):
+def export_v4(model, feature_names, stop_columns, top1, top3, n_trips, agencies):
     export = {
         'classes': model.classes_.tolist(),
         'coef': model.coef_.tolist(),
         'intercept': model.intercept_.tolist(),
         'feature_names': feature_names,
         'stop_columns': stop_columns,
+        'feature_schema_version': 2,
+        'agencies': sorted(agencies),
     }
     path = os.path.join(OUT_DIR, 'model_v4.json')
     with open(path, 'w') as f:
@@ -244,6 +236,7 @@ def export_v4(model, feature_names, stop_columns, top1, top3, n_trips):
         'type': 'logistic_regression_route', 'version': '4',
         'classes': model.classes_.tolist(), 'feature_names': feature_names,
         'top1_accuracy': round(top1, 4), 'top3_accuracy': round(top3, 4), 'n_trips': n_trips,
+        'feature_schema_version': 2, 'agencies': sorted(agencies),
     }
     for dest in [os.path.join(OUT_DIR, 'model_v4_meta.json'),
                  os.path.join(LIB_DIR, 'model_v4_meta.json')]:
@@ -252,7 +245,7 @@ def export_v4(model, feature_names, stop_columns, top1, top3, n_trips):
         print(f"V4 meta → {dest}")
 
 
-def export_v5(model, le, feature_names, top1, top3, n_trips):
+def export_v5(model, le, feature_names, top1, top3, n_trips, agencies):
     # Export via XGBoost's native ONNX support (XGBoost 1.7+)
     import onnxmltools
     from onnxmltools.convert.common.data_types import FloatTensorType
@@ -281,6 +274,8 @@ def export_v5(model, le, feature_names, top1, top3, n_trips):
         'top1_accuracy': round(top1, 4),
         'top3_accuracy': round(top3, 4),
         'n_trips': n_trips,
+        'feature_schema_version': 2,
+        'agencies': sorted(agencies),
     }
     for dest in [os.path.join(OUT_DIR, 'model_v5_meta.json'),
                  os.path.join(LIB_DIR, 'model_v5_meta.json')]:
@@ -290,8 +285,6 @@ def export_v5(model, le, feature_names, top1, top3, n_trips):
 
 
 def main():
-    from sklearn.model_selection import train_test_split
-
     load_policies()
 
     df = load_data()
@@ -301,9 +294,12 @@ def main():
     feature_names = features.columns.tolist()
     labels = df['route_base']
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        features, labels, test_size=0.2, random_state=42, stratify=labels
-    )
+    split = max(1, int(len(df) * 0.2))
+    ordered = df.sort_values('start_time').index
+    test_index = ordered[-split:]
+    train_index = ordered[:-split]
+    X_train, X_test = features.loc[train_index], features.loc[test_index]
+    y_train, y_test = labels.loc[train_index], labels.loc[test_index]
     print(f"\nTrain: {len(X_train)}  Test: {len(X_test)}")
     print(f"Features: {len(feature_names)}  |  Route classes: {labels.nunique()}\n")
 
@@ -316,8 +312,9 @@ def main():
     top1_v4, top3_v4, top1_v5, top3_v5 = evaluate(v4_model, v5_model, v5_le, X_test, y_test)
 
     print("\nExporting models...")
-    export_v4(v4_model, feature_names, stop_columns, top1_v4, top3_v4, len(df))
-    export_v5(v5_model, v5_le, feature_names, top1_v5, top3_v5, len(df))
+    agencies = df['agency'].fillna('unknown').astype(str).str.strip().unique().tolist()
+    export_v4(v4_model, feature_names, stop_columns, top1_v4, top3_v4, len(df), agencies)
+    export_v5(v5_model, v5_le, feature_names, top1_v5, top3_v5, len(df), agencies)
 
     print("\nDone. Models copied to functions/lib/.")
     return top1_v4, top3_v4, top1_v5, top3_v5

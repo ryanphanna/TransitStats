@@ -92,7 +92,7 @@ def normalize_direction(d):
     if not d or (isinstance(d, float) and math.isnan(d)): return None
     s = str(d).strip().lower()
     s = re.sub(r"bound$", "", s).strip()
-    return _DIRECTION_MAP.get(s, None)
+    return _DIRECTION_MAP.get(s, s or None)
 
 def _normalize_stop_str(s):
     s = str(s).strip().lower()
@@ -206,7 +206,8 @@ def build_features(df):
     last_stop_dummies = pd.get_dummies(df["last_end_stop"].apply(_sanitize), prefix="last_stop")
     dir_dummies = pd.get_dummies(df["direction_norm"], prefix="dir")
 
-    X = pd.concat([time_features, route_dummies, prev_route_dummies, stop_dummies, last_stop_dummies, dir_dummies], axis=1)
+    agency_dummies = pd.get_dummies(df["agency"].fillna("unknown").map(_sanitize), prefix="agency")
+    X = pd.concat([time_features, agency_dummies, route_dummies, prev_route_dummies, stop_dummies, last_stop_dummies, dir_dummies], axis=1)
     return X
 
 
@@ -260,7 +261,7 @@ def evaluate(model, X_test, y_test, le, label):
 # 3. Export
 # ---------------------------------------------------------------------------
 
-def export_v4(model, le, feature_names, top1, top3, n_trips):
+def export_v4(model, le, feature_names, top1, top3, n_trips, agencies):
     out = {
         "type": "logistic_regression_endstop",
         "version": "4",
@@ -268,6 +269,8 @@ def export_v4(model, le, feature_names, top1, top3, n_trips):
         "feature_names": feature_names,
         "intercept": model.intercept_.tolist(),
         "coef": model.coef_.tolist(),
+        "feature_schema_version": 2,
+        "agencies": sorted(agencies),
     }
     path = os.path.join(OUT_DIR, "model_v4_endstop.json")
     with open(path, "w") as f: json.dump(out, f)
@@ -277,11 +280,12 @@ def export_v4(model, le, feature_names, top1, top3, n_trips):
         "type": "logistic_regression_endstop", "version": "4",
         "classes": le.classes_.tolist(), "feature_names": feature_names,
         "top1_accuracy": round(top1, 4), "top3_accuracy": round(top3, 4), "n_trips": n_trips,
+        "feature_schema_version": 2, "agencies": sorted(agencies),
     }
     with open(os.path.join(OUT_DIR, "model_v4_endstop_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
 
-def export_v5(model, le, feature_names, top1, top3, n_trips):
+def export_v5(model, le, feature_names, top1, top3, n_trips, agencies):
     import onnxmltools
     from onnxmltools.convert.common.data_types import FloatTensorType
     path_onnx = os.path.join(OUT_DIR, "model_v5_endstop.onnx")
@@ -297,6 +301,7 @@ def export_v5(model, le, feature_names, top1, top3, n_trips):
         "type": "xgboost_endstop", "version": "5", "classes": le.classes_.tolist(),
         "feature_names": feature_names, "top1_accuracy": round(top1, 4),
         "top3_accuracy": round(top3, 4), "n_trips": n_trips,
+        "feature_schema_version": 2, "agencies": sorted(agencies),
     }
     with open(os.path.join(OUT_DIR, "model_v5_endstop_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
@@ -312,8 +317,6 @@ def mirror_to_lib():
             print(f"  {fname} → functions/lib/")
 
 def main():
-    from sklearn.model_selection import train_test_split
-
     load_policies()
 
     df = load_data()
@@ -325,15 +328,21 @@ def main():
     y = df["end_stop"]
     classes = sorted(y.unique())
     feature_names = list(X.columns)
-    X_train, X_test, y_train, y_test, w_train, w_test = train_test_split(
-        X, y, weights, test_size=0.2, random_state=42, stratify=y
-    )
+    split = max(1, int(len(df) * 0.2))
+    ordered = df.sort_values('start_time').index
+    test_index = ordered[-split:]
+    train_index = ordered[:-split]
+    X_train, X_test = X.loc[train_index], X.loc[test_index]
+    y_train, y_test = y.loc[train_index], y.loc[test_index]
+    weight_series = pd.Series(weights, index=df.index)
+    w_train, w_test = weight_series.loc[train_index].values, weight_series.loc[test_index].values
+    agencies = df['agency'].fillna('unknown').astype(str).str.strip().unique().tolist()
     v4_m, v4_le = train_v4(X_train, y_train, classes, weights_train=w_train)
     v4_t1, v4_t3 = evaluate(v4_m, X_test, y_test, v4_le, "V4")
-    export_v4(v4_m, v4_le, feature_names, v4_t1, v4_t3, len(df))
+    export_v4(v4_m, v4_le, feature_names, v4_t1, v4_t3, len(df), agencies)
     v5_m, v5_le = train_v5(X_train, y_train, classes, weights_train=w_train)
     v5_t1, v5_t3 = evaluate(v5_m, X_test, y_test, v5_le, "V5")
-    export_v5(v5_m, v5_le, feature_names, v5_t1, v5_t3, len(df))
+    export_v5(v5_m, v5_le, feature_names, v5_t1, v5_t3, len(df), agencies)
     mirror_to_lib()
     print("\nDone. Models copied to functions/lib/.")
 

@@ -54,6 +54,7 @@ const PredictionEngineV4 = {
     const lastStopFeature = `last_stop_${lastStopKey}`;
     const prevRoute = normalizeRouteForMl(context.lastRoute, context.agency, context.primaryAgency || context.defaultAgency) || 'none';
     const prevRouteFeature = `prev_route_${prevRoute.toString().toLowerCase()}`;
+    const agencyFeature = `agency_${String(context.agency || 'unknown').toLowerCase().trim().replace(/[^a-z0-9]/g, '_')}`;
 
     const rarities = _transferRarity
       ? model.classes.map(r => _transferRarity[`${prevRoute}→${r}`]).filter(v => v !== undefined)
@@ -69,6 +70,7 @@ const PredictionEngineV4 = {
       else if (fn === 'hour_cos')         x[i] = hour_cos;
       else if (fn === 'day_sin')          x[i] = day_sin;
       else if (fn === 'day_cos')          x[i] = day_cos;
+      else if (fn === agencyFeature)      x[i] = 1.0;
       else if (fn === 'transfer_rarity')  x[i] = transferRarity;
       else if (fn === stopFeature)        x[i] = 1.0;
       else if (fn === lastStopFeature)    x[i] = 1.0;
@@ -119,6 +121,7 @@ const PredictionEngineV4 = {
     const { gapLog, gapMissing } = getGapFeatures(context.minutesSinceLastTrip);
     const dirNorm = normalizeDirectionForMl(context.direction);
     const dirFeature = dirNorm ? `dir_${dirNorm}` : null;
+    const agencyFeature = `agency_${String(context.agency || 'unknown').toLowerCase().trim().replace(/[^a-z0-9]/g, '_')}`;
 
     const x = new Array(endStopModel.feature_names.length).fill(0);
     for (let i = 0; i < endStopModel.feature_names.length; i++) {
@@ -129,6 +132,7 @@ const PredictionEngineV4 = {
       else if (fn === 'day_cos')             x[i] = day_cos;
       else if (fn === 'gap_log')             x[i] = gapLog;
       else if (fn === 'gap_missing')         x[i] = gapMissing;
+      else if (fn === agencyFeature)         x[i] = 1.0;
       else if (fn === stopFeature)           x[i] = 1.0;
       else if (fn === `route_${cleanRoute}`) x[i] = 1.0;
       else if (fn === prevRouteFeature)      x[i] = 1.0;
