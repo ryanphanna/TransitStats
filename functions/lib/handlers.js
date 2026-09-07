@@ -10,6 +10,7 @@ const {
   handleIncomplete,
   handleRegister,
   handleVerificationCode,
+  handleQuickLinkCode,
   handleSettings,
 } = require('./handlers-commands');
 
@@ -42,6 +43,7 @@ module.exports = {
   handleIncomplete,
   handleRegister,
   handleVerificationCode,
+  handleQuickLinkCode,
   handleSettings,
   handleTripLog,
   handleConfirmStart,

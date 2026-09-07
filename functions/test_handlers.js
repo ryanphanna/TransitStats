@@ -1305,3 +1305,41 @@ test('handleAddNotes: updates most recent completed trip notes', async () => {
   assert.deepEqual(calls.docUpdates[0], { notes: 'crowded but fast' });
   assert.equal(calls.sendSmsReply[0]?.message, 'Added notes to 510 Southbound.');
 });
+
+test('handleQuickLinkCode: links the phone and confirms in one reply when the code is live', async () => {
+  const { handlers, calls, restore } = loadHandlers({
+    dbModule: {
+      consumeQuickLinkCode: async (code) => {
+        assert.equal(code, '206214');
+        return { userId: 'u20', email: 'rider@example.com' };
+      },
+    },
+  });
+
+  try {
+    const linked = await handlers.handleQuickLinkCode('+14165550020', '206214');
+    assert.equal(linked, true);
+  } finally {
+    restore();
+  }
+
+  assert.equal(calls.sendSmsReply.length, 1);
+  assert.match(calls.sendSmsReply[0].message, /all set/i);
+});
+
+test('handleQuickLinkCode: returns false without replying when the code is unknown or expired', async () => {
+  const { handlers, calls, restore } = loadHandlers({
+    dbModule: {
+      consumeQuickLinkCode: async () => null,
+    },
+  });
+
+  try {
+    const linked = await handlers.handleQuickLinkCode('+14165550021', '000000');
+    assert.equal(linked, false);
+  } finally {
+    restore();
+  }
+
+  assert.equal(calls.sendSmsReply.length, 0);
+});

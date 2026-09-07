@@ -50,6 +50,23 @@ async function getVerificationData(phoneNumber) {
   return data;
 }
 
+/**
+ * Consume a one-time SMS quick-link code: reads and deletes it atomically so
+ * it can only ever be used once, even if two texts race each other.
+ * @returns {{userId: string, email: string}|null} null if missing, already used, or expired
+ */
+async function consumeQuickLinkCode(code) {
+  const ref = db.collection('smsQuickCodes').doc(code);
+  return db.runTransaction(async (transaction) => {
+    const snap = await transaction.get(ref);
+    if (!snap.exists) return null;
+    transaction.delete(ref);
+    const data = snap.data();
+    if (!data.expiresAt || data.expiresAt.toDate() < new Date()) return null;
+    return { userId: data.userId, email: data.email };
+  });
+}
+
 module.exports = {
   getUserByPhone,
   getUserProfile,
@@ -58,4 +75,5 @@ module.exports = {
   isExperimentalIntelligenceEnabled,
   storeVerificationCode,
   getVerificationData,
+  consumeQuickLinkCode,
 };

@@ -14,6 +14,7 @@ function buildHarness({
   user = { userId: 'user_1' },
   shouldRespondToUnknown = false,
   pendingState = null,
+  quickLinkResult = false,
 } = {}) {
   const calls = {
     checkIdempotency: 0,
@@ -27,6 +28,7 @@ function buildHarness({
     setPendingState: [],
     clearPendingState: 0,
     handleTripLogArgs: [],
+    handleQuickLinkCode: [],
   };
 
   const handlers = {
@@ -52,6 +54,10 @@ function buildHarness({
     fillPredictions: async () => {},
     handleConfirmStart: async () => {},
     handleVerificationCode: async () => {},
+    handleQuickLinkCode: async (phoneNumber, code) => {
+      calls.handleQuickLinkCode.push({ phoneNumber, code });
+      return quickLinkResult;
+    },
   };
 
   const dbModule = {
@@ -271,6 +277,33 @@ test('dispatcher: MMS from unknown user gets conversational onboarding when allo
   assert.match(calls.sendSmsReply[0].message, /What's your email/);
   assert.equal(calls.setPendingState.length, 1);
   assert.equal(calls.setPendingState[0].type, 'awaiting_email');
+});
+
+test('dispatcher: unregistered number texting a live quick-link code skips the "who is this" prompt', async () => {
+  const { dispatch, calls } = buildHarness({
+    user: null,
+    shouldRespondToUnknown: true,
+    quickLinkResult: true,
+  });
+  await dispatch('+14165550030', 'Hey TransitStats! 206214', 'SM_QUICKLINK_1');
+
+  assert.equal(calls.handleQuickLinkCode.length, 1);
+  assert.deepEqual(calls.handleQuickLinkCode[0], { phoneNumber: '+14165550030', code: '206214' });
+  assert.equal(calls.sendSmsReply.length, 0);
+  assert.equal(calls.setPendingState.length, 0);
+});
+
+test('dispatcher: unregistered number with no matching code still gets the normal onboarding prompt', async () => {
+  const { dispatch, calls } = buildHarness({
+    user: null,
+    shouldRespondToUnknown: true,
+    quickLinkResult: false,
+  });
+  await dispatch('+14165550031', 'Hey TransitStats! 999999', 'SM_QUICKLINK_2');
+
+  assert.equal(calls.handleQuickLinkCode.length, 1);
+  assert.equal(calls.sendSmsReply.length, 1);
+  assert.match(calls.sendSmsReply[0].message, /What's your email/);
 });
 
 test('dispatcher: mms_stop_needed single route uses stop reply and preserves receivedAt', async () => {

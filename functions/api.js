@@ -6,12 +6,13 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { initializeApp, getApps } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, Timestamp } = require('firebase-admin/firestore');
 const { dispatch } = require('./lib/dispatcher');
-const { apiContextStorage, sendSmsReply } = require('./lib/twilio');
+const { apiContextStorage, sendSmsReply, getTwilioPhoneNumber } = require('./lib/twilio');
 const { createOtpHandlers } = require('./lib/otp');
 const { verifyTurnstile, turnstileSecretKey } = require('./lib/turnstile');
 const { createCommandHandler } = require('./lib/api-command');
+const { createQuickCodeHandler } = require('./lib/api-quick-code');
 const logger = require('./lib/logger');
 
 if (getApps().length === 0) {
@@ -47,6 +48,8 @@ const handleAuthenticatedCommand = createCommandHandler({
   logger,
   generateTraceId,
 });
+
+const handleGenerateSmsQuickCode = createQuickCodeHandler({ db, Timestamp, logger, getTwilioPhoneNumber });
 
 async function handleApiRequest(req, res) {
   const traceId = generateTraceId();
@@ -84,6 +87,15 @@ async function handleApiRequest(req, res) {
     } catch (authError) {
       logger.warn('API authentication failed: Invalid ID token', { error: authError.message, traceId }, traceId);
       res.status(401).json({ error: 'Unauthorized: Invalid token' });
+      return;
+    }
+
+    if (action === 'sms_quick_code') {
+      await handleGenerateSmsQuickCode(req, res, {
+        uid: decodedToken.uid,
+        email: decodedToken.email || '',
+        traceId,
+      });
       return;
     }
 
