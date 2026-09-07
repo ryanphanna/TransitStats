@@ -310,7 +310,8 @@ export function initPrestoImporter({ user }) {
             status(statusElement, `${pendingRecords.length} rows processed; ${imported.size} fare payments now stored. Stop matching will continue later, and re-imports will not create duplicates.`, 'success');
             show(actions, false);
         } catch (error) {
-            status(statusElement, error.message || 'Could not import PRESTO activity.');
+            console.error('PRESTO import failed:', error);
+            status(statusElement, "Something went wrong partway through the import. It's safe to try again — already-imported rows won't be duplicated.");
         } finally {
             importButton.disabled = false;
         }

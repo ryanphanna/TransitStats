@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **A failed PRESTO import now shows a plain, reassuring message** instead of a raw technical error, and explains it's safe to retry without creating duplicates.
 - **PRESTO import now shows step-by-step instructions** for getting your Transit Usage Report from PRESTO's site — previously there was no guidance anywhere on how to actually get that file.
 - **New homepage.** The site root used to be a bare login form — it's now a real pitch page leading with "import your PRESTO history," with login moved to its own `/login` page.
 - **PRESTO import is now available to all signed-in users**, not just admins/pilot accounts. It writes to a per-user collection isolated from the trip-review pipeline, so opening it up carries no shared-data risk.
