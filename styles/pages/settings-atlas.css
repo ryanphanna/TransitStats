@@ -241,6 +241,17 @@ html[data-theme="dark"] body.settings-surface .header {
   flex-wrap: wrap;
 }
 
+.presto-howto {
+  flex: 0 0 100%;
+  margin: 4px 0 2px;
+  padding-left: 20px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
+.presto-howto a { color: var(--accent); }
+
 #presto-file-input {
   max-width: 100%;
   color: var(--text-secondary);
