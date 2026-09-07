@@ -102,13 +102,18 @@ function normalizeDirection(input) {
   // Outbound
   if (['OB', 'OUT', 'OUTBOUND'].includes(upper)) return 'Outbound';
 
-  // Up Valley / Down Valley (ski resort and valley transit systems)
-  if (['UV', 'UP', 'UPVALLEY', 'UP VALLEY', 'UP-VALLEY'].includes(upper)) return 'Up Valley';
-  if (['DV', 'DOWN', 'DOWNVALLEY', 'DOWN VALLEY', 'DOWN-VALLEY'].includes(upper)) return 'Down Valley';
+  // Up Valley / Down Valley (ski resort and valley transit systems) — only the
+  // explicit "valley" phrasing counts; bare UP/DOWN shouldn't guess a system type.
+  if (['UV', 'UPVALLEY', 'UP VALLEY', 'UP-VALLEY'].includes(upper)) return 'Up Valley';
+  if (['DV', 'DOWNVALLEY', 'DOWN VALLEY', 'DOWN-VALLEY'].includes(upper)) return 'Down Valley';
 
   // Up Mountain / Down Mountain / Uphill / Downhill (escarpment cities like Hamilton)
   if (['UP MOUNTAIN', 'UPMOUNTAIN', 'UP-MOUNTAIN', 'UPHILL', 'UP HILL', 'UP-HILL'].includes(upper)) return 'Up Mountain';
   if (['DOWN MOUNTAIN', 'DOWNMOUNTAIN', 'DOWN-MOUNTAIN', 'DOWNHILL', 'DOWN HILL', 'DOWN-HILL'].includes(upper)) return 'Down Mountain';
+
+  // Bare Up/Down (inclines, funiculars, and anything without a valley/mountain framing)
+  if (upper === 'UP') return 'Up';
+  if (upper === 'DOWN') return 'Down';
 
   // Return original if no match (e.g. specific destination name)
   return input.trim();
