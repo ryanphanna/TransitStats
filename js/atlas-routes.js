@@ -35,3 +35,23 @@ export async function loadAtlasRoutes(trips = []) {
         .filter(result => result.status === 'fulfilled')
         .flatMap(result => result.value);
 }
+
+export async function loadAtlasRouteInventory(agencies = []) {
+    const uniqueAgencies = [...new Set(agencies.map(agency => String(agency || '').trim()).filter(Boolean))];
+    const results = await Promise.all(uniqueAgencies.map(async agency => {
+        try {
+            const response = await fetch(`${ATLAS_ROUTES_PROXY}?agency=${encodeURIComponent(agency)}&all=true`);
+            if (!response.ok) throw new Error(`Atlas route inventory unavailable for ${agency}`);
+            const data = await response.json();
+            return {
+                agency,
+                routes: Array.isArray(data.routes) ? data.routes : [],
+                error: null,
+            };
+        } catch (error) {
+            return { agency, routes: [], error };
+        }
+    }));
+
+    return results;
+}

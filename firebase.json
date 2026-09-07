@@ -73,7 +73,7 @@
           ]
         },
         {
-          "source": "/{dashboard,public,rocket}",
+          "source": "/{dashboard,public,routes,rocket}",
           "headers": [
             {
               "key": "Cache-Control",
@@ -175,6 +175,10 @@
         {
           "source": "/import",
           "destination": "/import.html"
+        },
+        {
+          "source": "/routes",
+          "destination": "/routes.html"
         },
         {
           "source": "**",
