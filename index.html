@@ -5,7 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TransitStats — Your transit life, mapped.</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
-    <meta name="description" content="Log your transit life by text, then see every ride mapped and explained.">
+    <meta name="description" content="Upload your PRESTO history and see every ride you've taken mapped out, minutes from now.">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="TransitStats — Your transit life, mapped.">
+    <meta property="og:description" content="Upload your PRESTO history and see every ride you've taken mapped out, minutes from now.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://transitstats.fyi">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="TransitStats — Your transit life, mapped.">
+    <meta name="twitter:description" content="Upload your PRESTO history and see every ride you've taken mapped out, minutes from now.">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -22,64 +34,24 @@
 </head>
 <body>
     <main id="app-root">
-        <section id="view-auth" class="view auth-view active">
-            <div class="auth-content">
+        <section class="view auth-view active home-view">
+            <div class="auth-content home-content">
                 <header class="auth-brand" aria-label="TransitStats">
                     <span class="auth-brand-mark"><i data-lucide="zap"></i></span>
                     <span class="logo-text">TransitStats</span>
                 </header>
 
                 <div class="auth-copy">
-                    <h1 class="auth-title">Your transit life, <em>mapped.</em></h1>
+                    <h1 class="auth-title">Every ride you've taken, <em>already on the map.</em></h1>
+                    <p class="auth-subtitle">Upload your PRESTO history and TransitStats turns it into a map of every trip you've taken — no need to start logging from scratch.</p>
                 </div>
 
-                <div class="auth-card card">
-                    <div class="auth-card-heading">
-                        <div>
-                            <h2 id="auth-heading">Get started or log in</h2>
-                        </div>
-                        <i data-lucide="arrow-up-right" aria-hidden="true"></i>
-                    </div>
-
-                    <div class="auth-step-frame">
-                            <div id="auth-phone-step">
-                            <label class="sr-only" for="auth-phone">Phone number</label>
-                        <div class="auth-input-wrap" id="auth-phone-wrap">
-                                <i data-lucide="smartphone" aria-hidden="true"></i>
-                                <input type="tel" id="auth-phone" inputmode="tel" autocomplete="off" placeholder="Phone number">
-                            </div>
-                            <button id="btn-auth-request-code" class="btn btn-primary full-width">Text me a code <i data-lucide="arrow-right" aria-hidden="true"></i></button>
-                            <button id="btn-auth-email-mode" class="btn btn-link full-width hidden" type="button">Use email instead</button>
-                        </div>
-
-                        <div id="auth-email-step" class="hidden">
-                            <label class="sr-only" for="auth-email">Email address</label>
-                            <div class="auth-input-wrap">
-                                <i data-lucide="mail" aria-hidden="true"></i>
-                                <input type="email" id="auth-email" autocomplete="email" placeholder="Email address">
-                            </div>
-                            <label class="sr-only" for="auth-password">Password</label>
-                            <div class="auth-input-wrap">
-                                <i data-lucide="key-round" aria-hidden="true"></i>
-                                <input type="password" id="auth-password" autocomplete="current-password" placeholder="Password">
-                            </div>
-                            <button id="btn-auth-email-login" class="btn btn-primary full-width" type="button">Log in with email <i data-lucide="arrow-right" aria-hidden="true"></i></button>
-                            <button id="btn-auth-reset-password" class="btn btn-link full-width" type="button">Send password reset email</button>
-                            <button id="btn-auth-phone-mode" class="btn btn-link full-width" type="button">Use phone instead</button>
-                        </div>
-
-                        <div id="auth-code-step" class="hidden">
-                            <label class="sr-only" for="auth-code">Verification code</label>
-                            <div class="auth-code-wrap">
-                                <input type="text" id="auth-code" class="auth-code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">
-                                <button id="btn-auth-resend-code" class="btn btn-link">Resend code</button>
-                            </div>
-                            <button id="btn-auth-verify-code" class="btn btn-primary full-width" disabled>Continue <i data-lucide="arrow-right" aria-hidden="true"></i></button>
-                        </div>
-                    </div>
-
-                    <div id="auth-status" class="status-msg hidden" role="status" aria-live="polite"></div>
+                <div class="home-actions">
+                    <a href="/import" class="btn btn-primary home-cta">Import your ride history <i data-lucide="arrow-right" aria-hidden="true"></i></a>
+                    <p class="home-secondary">Rides can also log live over text once you're signed in — set that up any time in Settings.</p>
                 </div>
+
+                <p class="home-login-line">Already have a map going? <a href="/login">Log in</a></p>
 
                 <p class="auth-invite-note"><i data-lucide="lock-keyhole" aria-hidden="true"></i> Invite-only for now.</p>
             </div>
@@ -110,11 +82,13 @@
                     <span>Your city, in motion.</span>
                 </div>
                 <div class="auth-stat-card auth-stat-card-top"><strong>Every ride</strong><span>mapped here</span></div>
-                <div class="auth-stat-card auth-stat-card-bottom"><span>Local favourite</span><strong id="auth-featured-line">Line 2 · Bloor–Danforth</strong></div>
+                <div class="auth-stat-card auth-stat-card-bottom"><span>Local favourite</span><strong>Line 2 · Bloor–Danforth</strong></div>
             </div>
         </section>
     </main>
 
-    <script type="module" src="js/pages/login.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => { if (window.lucide) lucide.createIcons(); });
+    </script>
 </body>
 </html>
