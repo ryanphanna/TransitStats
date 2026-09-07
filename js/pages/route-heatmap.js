@@ -69,8 +69,8 @@ async function init() {
     // stop markers intact while hiding them here so route colour stays legible.
     MapEngine.layers.markers.remove();
     corridorLayer.addTo(MapEngine.map);
-    const { user, isAdmin } = await requireAuth();
-    initHeader({ isAdmin, currentPage: 'route-heatmap' });
+    const { user } = await requireAuth();
+    initHeader({ currentPage: 'route-heatmap' });
 
     TripController.listen(user.uid, trips => {
         MapEngine.updateTrips(trips);

@@ -5,11 +5,11 @@ import { openSettingsPanel } from './settings-panel.js';
  * Shared Header Component
  * Injects navigation into the page.
  */
-export function initHeader({ isAdmin = false, currentPage = '', profileHref = '', shareAction = false } = {}) {
-    _render(isAdmin, currentPage, profileHref, shareAction);
+export function initHeader({ currentPage = '', profileHref = '', shareAction = false } = {}) {
+    _render(currentPage, profileHref, shareAction);
 }
 
-function _render(isAdmin, currentPage, profileHref, shareAction) {
+function _render(currentPage, profileHref, shareAction) {
     const root = document.getElementById('app-root');
     if (!root) return;
 
