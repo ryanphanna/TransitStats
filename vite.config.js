@@ -27,6 +27,7 @@ export default defineConfig(({ mode, command }) => {
             rollupOptions: {
                 input: {
                     index: './index.html',
+                    login: './login.html',
                     public: './public.html',
                     dashboard: './dashboard.html',
                     v2: './v2.html',
