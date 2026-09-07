@@ -5,6 +5,24 @@ One entry per trained version. See `docs/INTELLIGENCE.md` for full engineering n
 
 ---
 
+## Auto-retrain — 2026-09-07
+
+### End-Stop Models
+
+| Model | Top-1 | Top-3 | Classes | Trips |
+|---|---|---|---|---|
+| V5 XGBoost | 75.8% | 95.2% | 9 | 311 |
+| V4 LogReg  | 77.4% | 95.2% | 9 | 311 |
+
+### Route Models
+
+| Model | Top-1 | Top-3 | Classes | Trips |
+|---|---|---|---|---|
+| V5 XGBoost | 60.9% | 82.6% | 21 | 690 |
+| V4 LogReg  | 59.4% | 84.1% | 21 | 690 |
+
+---
+
 ## Agency-scoped rebuild — 2026-09-05
 
 The route and end-stop artifacts now use `agency::label` classes, explicit agency features, semantic directions, and chronological holdouts. Legacy artifacts are no longer accepted by runtime eligibility checks.
