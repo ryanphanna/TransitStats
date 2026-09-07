@@ -10,7 +10,6 @@ import {
     sendSignInLinkToEmail,
     setPersistence,
     signInWithCustomToken,
-    signInWithEmailAndPassword,
     signInWithEmailLink,
     signOut,
 } from 'firebase/auth';
@@ -147,9 +146,6 @@ export const auth = {
         return typeof authClient.authStateReady === 'function'
             ? authClient.authStateReady()
             : Promise.resolve();
-    },
-    signInWithEmailAndPassword(email, password) {
-        return signInWithEmailAndPassword(authClient, email, password);
     },
     sendSignInLinkToEmail(email, settings) {
         return sendSignInLinkToEmail(authClient, email, settings);

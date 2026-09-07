@@ -8,34 +8,6 @@ export const Auth = {
     sharedSessionUrl: '/auth/session',
     _restorePromise: null,
 
-    // --- Rate Limiting ---
-    getRateLimit() {
-        try {
-            return JSON.parse(localStorage.getItem('auth_rl') || '{}');
-        } catch { return {}; }
-    },
-
-    isRateLimited() {
-        const { attempts, lockedUntil } = this.getRateLimit();
-        if (lockedUntil && Date.now() < lockedUntil) return true;
-        if (lockedUntil && Date.now() >= lockedUntil) {
-            localStorage.removeItem('auth_rl');
-        }
-        return false;
-    },
-
-    recordFailure() {
-        const data = this.getRateLimit();
-        const attempts = (data.attempts || 0) + 1;
-        const lockedUntil = attempts >= 5 ? Date.now() + 15 * 60 * 1000 : null;
-        localStorage.setItem('auth_rl', JSON.stringify({ attempts, lockedUntil }));
-        return attempts;
-    },
-
-    clearRateLimit() {
-        localStorage.removeItem('auth_rl');
-    },
-
     // --- Whitelist Check ---
     async checkWhitelist(email, userId = null) {
         try {
@@ -82,24 +54,6 @@ export const Auth = {
     },
 
     // --- Core Methods ---
-    async signInWithPassword(email, password) {
-        if (this.isRateLimited()) throw new Error('Too many attempts. Try again in 15m.');
-        
-        try {
-            await authPersistenceReady;
-            // First check whitelist before even trying to auth? 
-            // Better to auth first then check, but for invite-only we can pre-check or post-check.
-            // Legacy did it post-auth in onAuthStateChanged. Let's keep that for consistency but
-            // wrap the login call.
-            const result = await auth.signInWithEmailAndPassword(email.toLowerCase(), password);
-            this.clearRateLimit();
-            return result;
-        } catch (err) {
-            this.recordFailure();
-            throw err;
-        }
-    },
-
     async sendMagicLink(email, redirectPath = '/') {
         const settings = {
             url: window.location.origin + redirectPath,
@@ -109,19 +63,27 @@ export const Auth = {
         localStorage.setItem('emailForSignIn', email);
     },
 
-    async completeMagicLinkSignIn() {
-        if (auth.isSignInWithEmailLink(window.location.href)) {
-            let email = localStorage.getItem('emailForSignIn');
-            if (!email) email = window.prompt('Please confirm your email:');
-            
-            if (email) {
-                await auth.signInWithEmailLink(email, window.location.href);
-                localStorage.removeItem('emailForSignIn');
-                window.history.replaceState({}, document.title, window.location.pathname);
-            }
-        }
+    // Completes an email sign-in link. The email normally comes from
+    // localStorage (same device/browser that requested the link) — but
+    // opening the link on a different device (e.g. requested on desktop,
+    // opened on a phone) has no localStorage to read, so this returns
+    // { needsEmail: true } instead of guessing. The caller shows a real
+    // "confirm your email" step and calls this again with that value,
+    // rather than this shared module reaching for window.prompt itself.
+    async completeMagicLinkSignIn(explicitEmail = null) {
+        if (!auth.isSignInWithEmailLink(window.location.href)) return { signedIn: false };
+
+        const email = explicitEmail || localStorage.getItem('emailForSignIn');
+        if (!email) return { signedIn: false, needsEmail: true };
+
+        await auth.signInWithEmailLink(email, window.location.href);
+        localStorage.removeItem('emailForSignIn');
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return { signedIn: true };
     },
 
+    // Still used by the existing password credential on Settings' "Reset
+    // password" row — untouched in this pass, see linkEmail below.
     async sendPasswordReset(email) {
         if (!email) throw new Error('Email required');
         await auth.sendPasswordResetEmail(email.toLowerCase());
@@ -239,14 +201,15 @@ export const Auth = {
 
     getErrorMessage(code) {
         switch (code) {
-            case 'auth/wrong-password':
-            case 'auth/user-not-found': return 'Incorrect email or password.';
+            case 'auth/user-not-found': return 'No account found for that email.';
             case 'auth/invalid-email': return 'Invalid email address.';
             case 'auth/user-disabled': return 'Account disabled.';
             case 'auth/email-already-in-use':
             case 'auth/credential-already-in-use': return 'That email is already linked to a different account.';
             case 'auth/weak-password': return 'Choose a stronger password (at least 6 characters).';
             case 'auth/requires-recent-login': return 'Please sign in again before linking an email.';
+            case 'auth/invalid-action-code':
+            case 'auth/expired-action-code': return 'That sign-in link has expired or was already used. Request a new one.';
             default: return 'Authentication failed. Please try again.';
         }
     }

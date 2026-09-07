@@ -50,7 +50,7 @@
                                 <input type="tel" id="auth-phone" inputmode="tel" autocomplete="off" placeholder="Phone number">
                             </div>
                             <button id="btn-auth-request-code" class="btn btn-primary full-width">Text me a code <i data-lucide="arrow-right" aria-hidden="true"></i></button>
-                            <button id="btn-auth-email-mode" class="btn btn-link full-width hidden" type="button">Use email instead</button>
+                            <button id="btn-auth-email-mode" class="btn btn-link full-width" type="button">Use email instead</button>
                         </div>
 
                         <div id="auth-email-step" class="hidden">
@@ -59,13 +59,7 @@
                                 <i data-lucide="mail" aria-hidden="true"></i>
                                 <input type="email" id="auth-email" autocomplete="email" placeholder="Email address">
                             </div>
-                            <label class="sr-only" for="auth-password">Password</label>
-                            <div class="auth-input-wrap">
-                                <i data-lucide="key-round" aria-hidden="true"></i>
-                                <input type="password" id="auth-password" autocomplete="current-password" placeholder="Password">
-                            </div>
-                            <button id="btn-auth-email-login" class="btn btn-primary full-width" type="button">Log in with email <i data-lucide="arrow-right" aria-hidden="true"></i></button>
-                            <button id="btn-auth-reset-password" class="btn btn-link full-width" type="button">Send password reset email</button>
+                            <button id="btn-auth-send-link" class="btn btn-primary full-width" type="button">Email me a sign-in link <i data-lucide="arrow-right" aria-hidden="true"></i></button>
                             <button id="btn-auth-phone-mode" class="btn btn-link full-width" type="button">Use phone instead</button>
                         </div>
 
@@ -76,6 +70,24 @@
                                 <button id="btn-auth-resend-code" class="btn btn-link">Resend code</button>
                             </div>
                             <button id="btn-auth-verify-code" class="btn btn-primary full-width" disabled>Continue <i data-lucide="arrow-right" aria-hidden="true"></i></button>
+                        </div>
+
+                        <div id="auth-check-email-step" class="hidden">
+                            <p class="auth-help">Check <strong id="auth-sent-to"></strong> for a sign-in link. It'll bring you right back here.</p>
+                        </div>
+
+                        <div id="auth-confirm-email-step" class="hidden">
+                            <p class="auth-help">Confirm the email you used to request this link.</p>
+                            <label class="sr-only" for="auth-confirm-email">Email address</label>
+                            <div class="auth-input-wrap">
+                                <i data-lucide="mail" aria-hidden="true"></i>
+                                <input type="email" id="auth-confirm-email" autocomplete="email" placeholder="Email address">
+                            </div>
+                            <button id="btn-auth-confirm-email" class="btn btn-primary full-width" type="button">Continue <i data-lucide="arrow-right" aria-hidden="true"></i></button>
+                        </div>
+
+                        <div id="auth-loading-step" class="hidden">
+                            <p class="loading-state">Signing you in…</p>
                         </div>
                     </div>
 
