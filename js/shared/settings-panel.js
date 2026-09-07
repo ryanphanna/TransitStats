@@ -155,6 +155,13 @@ function panelMarkup() {
                                     </div>
                                     <input type="checkbox" id="settings-public-profile" aria-label="Allow others to view your shared stats page">
                                 </div>
+                                <div class="settings-row">
+                                    <div class="settings-label-group">
+                                        <span class="settings-main-label">Join the leaderboard</span>
+                                        <span class="settings-sub-label">Show your public identity and completed logged-trip count on the opt-in leaderboard.</span>
+                                    </div>
+                                    <input type="checkbox" id="settings-leaderboard-opt-in" aria-label="Join the leaderboard">
+                                </div>
                                 <div class="settings-row settings-identity-row">
                                     <span class="settings-main-label">Public identity</span>
                                     <div id="emoji-identity-picker" class="emoji-picker-container">
@@ -255,6 +262,7 @@ async function initPanelData() {
     await Profile.load(user);
     await Profile.loadAgencies(user);
     await Profile.init();
+    await Profile.syncUI(user.email);
 
     // Admins already get every premium perk (see hasPremiumAccess on the
     // backend), so the plan shown here reflects what the account actually

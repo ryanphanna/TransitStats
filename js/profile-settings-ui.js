@@ -16,6 +16,7 @@ export function setupProfileListeners(profile) {
     const customUsernameEditor = document.getElementById('settings-custom-username-editor');
     const betaPredictions = document.getElementById('settings-beta-predictions');
     const publicProfile = document.getElementById('settings-public-profile');
+    const leaderboardOptIn = document.getElementById('settings-leaderboard-opt-in');
     const mapStopModeSelect = document.getElementById('settings-map-stop-mode');
 
     if (agencySelect) {
@@ -110,6 +111,15 @@ export function setupProfileListeners(profile) {
             console.error('Trip sync failed:', error);
             UI.showNotification('Failed to sync trips: ' + error.message);
         }
+    });
+
+    leaderboardOptIn?.addEventListener('change', async event => {
+        if (!profile.data?.username) {
+            event.target.checked = false;
+            UI.showNotification('Choose your public identity first.');
+            return;
+        }
+        await profile.updateSetting('leaderboardOptIn', event.target.checked);
     });
 
     mapStopModeSelect?.addEventListener('change', event => {

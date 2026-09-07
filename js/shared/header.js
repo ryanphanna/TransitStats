@@ -5,11 +5,11 @@ import { openSettingsPanel } from './settings-panel.js';
  * Shared Header Component
  * Injects navigation into the page.
  */
-export function initHeader({ currentPage = '', profileHref = '', routesHref = '', shareAction = false } = {}) {
-    _render(currentPage, profileHref, routesHref, shareAction);
+export function initHeader({ currentPage = '', profileHref = '', routesHref = '', leaderboardHref = '', shareAction = false } = {}) {
+    _render(currentPage, profileHref, routesHref, leaderboardHref, shareAction);
 }
 
-function _render(currentPage, profileHref, routesHref, shareAction) {
+function _render(currentPage, profileHref, routesHref, leaderboardHref, shareAction) {
     const root = document.getElementById('app-root');
     if (!root) return;
 
@@ -35,6 +35,10 @@ function _render(currentPage, profileHref, routesHref, shareAction) {
                     ${routesHref ? `
                         <a href="${routesHref}" class="header-action-link ${currentPage === 'routes' ? 'active' : ''}" title="Routes">
                             <span>Routes</span>
+                        </a>` : ''}
+                    ${leaderboardHref ? `
+                        <a href="${leaderboardHref}" class="header-action-link ${currentPage === 'leaderboard' ? 'active' : ''}" title="Leaderboard">
+                            <span>Leaderboard</span>
                         </a>` : ''}
                     <button id="btn-header-settings" class="header-action-link" title="Settings" type="button">
                         <span>Settings</span>

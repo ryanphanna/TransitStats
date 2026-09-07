@@ -168,6 +168,7 @@ export const Profile = {
             isPremium: false,
             isAdmin: false,
             isPublic: false,
+            leaderboardOptIn: false,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp()
         };
@@ -221,6 +222,11 @@ export const Profile = {
 
         if (publicProfileEl) {
             publicProfileEl.checked = !!this.data?.isPublic;
+        }
+
+        const leaderboardOptInEl = document.getElementById('settings-leaderboard-opt-in');
+        if (leaderboardOptInEl) {
+            leaderboardOptInEl.checked = this.data?.leaderboardOptIn === true;
         }
 
         window.TransitTheme?.apply();

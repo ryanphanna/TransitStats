@@ -164,6 +164,7 @@ describe('firestore.rules: profile privilege boundaries', () => {
             displayName: 'New Name',
             defaultAgency: 'GO',
             isPublic: true,
+            leaderboardOptIn: true,
             betaFeatures: { rocket: true },
             updatedAt: new Date(),
         }));

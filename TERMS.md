@@ -39,7 +39,7 @@ See [SECURITY.md](./docs/SECURITY.md) for the full technical breakdown. In summa
 
 ## Your data
 
-You can request deletion of your account and trip data at any time by contacting the operator. Public Profiles (if you opt in) expose only aggregate stats (trip/hour totals, an anonymized location heatmap) — never individual trip details, routes, or timestamps.
+You can request deletion of your account and trip data at any time by contacting the operator. Public Profiles (if you opt in) expose only aggregate stats (trip/hour totals, an anonymized location heatmap) — never individual trip details, routes, or timestamps. The separate leaderboard is also opt-in and exposes your chosen public identity and completed logged-trip count.
 
 ## No warranty
 

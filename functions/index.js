@@ -24,6 +24,11 @@ const { atlasRoutes } = require('./atlas-routes');
 const { publicProfile } = require('./lib/public-profile');
 const { publicProfileOg } = require('./lib/public-profile-og');
 const { publicProfilePage } = require('./lib/public-profile-page');
+const {
+  leaderboard,
+  onTripLeaderboardChanged,
+  onProfileLeaderboardChanged,
+} = require('./lib/leaderboard');
 const { onDocumentWritten, onDocumentCreated } = require('firebase-functions/v2/firestore');
 const finalization = require('./lib/finalization');
 const { enrichStopDoc } = require('./lib/atlas-enrich');
@@ -55,6 +60,9 @@ exports.publicProfile = publicProfile;
 exports.publicProfileOg = publicProfileOg;
 exports.publicProfilePage = publicProfilePage;
 
+// Public leaderboard contains only opt-in aggregate scores and identity.
+exports.leaderboard = leaderboard;
+
 // Background trigger: fill Layer-2 facts (direction, routes, official-name alias)
 // on newly created stop docs from Atlas R2 stops-meta. No-ops gracefully while
 // the artifact doesn't exist yet; never touches the user-chosen name.
@@ -69,6 +77,9 @@ exports.onStopCreated = onDocumentCreated('stops/{stopId}', async (event) => {
     console.error('onStopCreated enrichment failed', err.message);
   }
 });
+
+exports.onTripLeaderboardChanged = onTripLeaderboardChanged;
+exports.onProfileLeaderboardChanged = onProfileLeaderboardChanged;
 
 // Background trigger: runs post-end finalization (learning, grading, journey linking, etc.)
 // when a trip first receives endTime. Heavy side-effects are fully out of the SMS path.

@@ -3,7 +3,7 @@
 TransitStats is built with privacy and security as its foundation.
 
 - **Authentication & Authorization**: A multi-tier model using invite-only whitelists and role-based access control (RBAC).
-- **Data Ownership**: Firestore rules ensure users only access their own trips, profiles, and templates. Trip documents are tied to your account (`userId`) and are never publicly readable, even when a trip is marked public on your profile — only aggregate stats (trip/hour totals, an anonymized location heatmap) are exposed there, computed server-side.
+- **Data Ownership**: Firestore rules ensure users only access their own trips, profiles, and templates. Trip documents are tied to your account (`userId`) and are never publicly readable, even when a trip is marked public on your profile — only aggregate stats (trip/hour totals, an anonymized location heatmap) are exposed there, computed server-side. The separate leaderboard is opt-in and exposes only the chosen public identity and completed logged-trip count through a server-maintained projection.
 - **Stop-Sign Photos**: MMS photos sent to log a trip are fetched into memory, sent directly to Gemini for parsing, and discarded — they are never written to Cloud Storage, Firestore, or disk. Image EXIF metadata (which can carry a phone's GPS location) is never read or extracted; the only location data TransitStats stores is your phone's own GPS reading at trip start/end.
 - **AI Privacy**: TransitStats uses Gemini to interpret and process location-based trip data.
     - **Privacy Commitment**: Covered by [Google's Enterprise Privacy protections](https://cloud.google.com/vertex-ai/docs/generative-ai/learn/privacy).

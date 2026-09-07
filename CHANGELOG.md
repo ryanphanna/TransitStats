@@ -10,6 +10,8 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ### Added
 
+- **Opt-in leaderboard** — users can appear by public identity and completed logged-trip count without exposing their private trip records.
+
 - **Routes ridden page** — see route progress grouped by agency, with a percentage based on each agency’s current Atlas route inventory.
 
 - **Email login no longer uses a password.** The main sign-in page now sends a one-tap email link instead, matching how the Import page already worked. Fixes a "Use email instead" button on the login page that was invisible and unreachable. Existing password credentials aren't revoked, but nothing in the app asks for or shows a password anymore.

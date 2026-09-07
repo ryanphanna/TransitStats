@@ -93,7 +93,7 @@ async function init() {
     const profileHref = Profile.data?.isPublic && Profile.data?.username
         ? `/user/${encodeURIComponent(Profile.data.username)}`
         : '';
-    initHeader({ currentPage: 'dashboard', profileHref, routesHref: '/routes' });
+    initHeader({ currentPage: 'dashboard', profileHref, routesHref: '/routes', leaderboardHref: '/leaderboard' });
     setupShareMap();
 
     const tripsInitPromise = Trips.init();

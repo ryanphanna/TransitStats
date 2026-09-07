@@ -17,6 +17,7 @@
 @import url('./pages/settings-atlas.css');
 @import url('./pages/legal.css');
 @import url('./pages/routes.css');
+@import url('./pages/leaderboard.css');
 
 /* Triple Emoji Identity */
 .emoji-picker-container {

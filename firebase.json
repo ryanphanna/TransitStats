@@ -73,7 +73,7 @@
           ]
         },
         {
-          "source": "/{dashboard,public,routes,rocket}",
+          "source": "/{dashboard,public,routes,leaderboard,rocket}",
           "headers": [
             {
               "key": "Cache-Control",
@@ -179,6 +179,17 @@
         {
           "source": "/routes",
           "destination": "/routes.html"
+        },
+        {
+          "source": "/leaderboard",
+          "destination": "/leaderboard.html"
+        },
+        {
+          "source": "/leaderboard-data",
+          "function": {
+            "functionId": "leaderboard",
+            "region": "us-central1"
+          }
         },
         {
           "source": "**",

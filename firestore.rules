@@ -25,7 +25,7 @@ service cloud.firestore {
         request.resource.data.isPremium == resource.data.isPremium &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'displayName', 'username', 'defaultAgency', 'defaultAgencyMode', 'primaryAgency', 'isPublic',
-          'betaFeatures', 'updatedAt', 'isAdmin', 'isPremium'
+          'betaFeatures', 'leaderboardOptIn', 'updatedAt', 'isAdmin', 'isPremium'
         ])
       );
       allow delete: if ownsDoc(userId) || isAdmin();
@@ -155,6 +155,12 @@ service cloud.firestore {
     match /predictionAccuracy/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow write: if false; // Only written/updated by Admin SDK/Functions
+    }
+
+    // Leaderboard projections are maintained by Cloud Functions and exposed
+    // through the aggregate-only HTTP endpoint, never directly to clients.
+    match /leaderboardEntries/{userId} {
+      allow read, write: if false;
     }
 
     // Rocket Research — public read for research transparency, owner write
