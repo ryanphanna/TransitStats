@@ -5,6 +5,7 @@ import { UI } from '../ui-utils.js';
 import { ModalManager } from './modal-engine.js';
 import { refreshIcons } from './icons.js';
 import { initPrestoImporter } from '../presto-importer.js';
+import { formatPhoneNumber } from '../profile-fields.js';
 
 const TABS = [
     { id: 'account', label: 'Account' },
@@ -66,6 +67,14 @@ function panelMarkup() {
                                 <div class="settings-label-group">
                                     <span class="settings-main-label">Phone</span>
                                     <span id="settings-phone" class="settings-main-label settings-account-value text-xs">Loading...</span>
+                                </div>
+                            </div>
+                            <div id="sms-connect-row" class="settings-row">
+                                <div class="settings-label-group">
+                                    <span class="settings-main-label">Text trip logging</span>
+                                    <span class="settings-sub-label">Log trips by text instead of the website. Connect your phone once to turn it on.</span>
+                                    <button id="btn-sms-connect" class="btn btn-sm btn-primary" type="button">Connect for text logging</button>
+                                    <div id="sms-connect-result" class="settings-sub-label hidden"></div>
                                 </div>
                             </div>
                             <div class="settings-row">
@@ -314,6 +323,50 @@ async function initPanelData() {
         } finally {
             saveLinkButton.disabled = false;
             saveLinkButton.textContent = 'Link account';
+        }
+    });
+
+    document.getElementById('btn-sms-connect')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const resultEl = document.getElementById('sms-connect-result');
+        if (button.disabled) return;
+        button.disabled = true;
+        button.textContent = 'Connecting…';
+        try {
+            const idToken = await user.getIdToken();
+            const response = await fetch(Auth.phoneApiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+                body: JSON.stringify({ action: 'sms_quick_code' }),
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                resultEl.textContent = data.error || 'Could not connect right now. Try again.';
+                resultEl.classList.remove('hidden');
+                button.classList.add('hidden');
+                return;
+            }
+
+            const messageText = `Hey TransitStats! ${data.code}`;
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const isMobile = isIOS || /Android/i.test(navigator.userAgent);
+
+            if (isMobile) {
+                // iOS and Android disagree on the sms: URI separator before "body=".
+                const separator = isIOS ? '&' : '?';
+                const smsHref = `sms:${data.smsNumber}${separator}body=${encodeURIComponent(messageText)}`;
+                resultEl.innerHTML = `<a class="btn btn-sm btn-primary" href="${smsHref}">Open Messages to finish connecting</a>`;
+            } else {
+                resultEl.textContent = `From your phone, text ${data.code} to ${formatPhoneNumber(data.smsNumber)} to connect it. This code expires in 10 minutes.`;
+            }
+            resultEl.classList.remove('hidden');
+            button.classList.add('hidden');
+        } catch (error) {
+            UI.showNotification('Could not connect right now. Try again.');
+        } finally {
+            button.disabled = false;
+            button.textContent = 'Connect for text logging';
         }
     });
 

@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Connecting your phone for text trip-logging is now one tap.** Settings has a "Connect for text logging" button: on a phone it opens Messages with everything pre-filled, on desktop it shows the code and number to text. Replaces the old REGISTER-by-email flow, which needed an email round trip and wasn't shown anywhere in the app.
 - **A failed PRESTO import now shows a plain, reassuring message** instead of a raw technical error, and explains it's safe to retry without creating duplicates.
 - **PRESTO import now shows step-by-step instructions** for getting your Transit Usage Report from PRESTO's site — previously there was no guidance anywhere on how to actually get that file.
 - **New homepage.** The site root used to be a bare login form — it's now a real pitch page leading with "import your PRESTO history," with login moved to its own `/login` page.
