@@ -129,7 +129,10 @@ async function checkContentDuplicate(phoneNumber, body) {
   if (!phoneNumber || !body) return false;
   const key = crypto.createHash('sha256').update(phoneNumber + '|' + body).digest('hex');
   const ref = db.collection('processedMessages').doc('content_' + key);
-  const WINDOW_MS = 60000;
+  // Wide enough to absorb carrier-level SMS retries on spotty signal (subway,
+  // tunnels, inclines), which can redeliver the same text a couple minutes
+  // late with a new MessageSid, bypassing checkIdempotency.
+  const WINDOW_MS = 300000;
 
   try {
     await ref.create({

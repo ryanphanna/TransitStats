@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Fixed false "trip not ended" prompts on spotty signal.** A duplicate-text safeguard only looked back 60 seconds, so when your phone silently retried a trip-start text a couple minutes later (common in tunnels, subways, inclines), TransitStats treated it as a second trip and flagged the real one as abandoned. The safeguard now covers a 5-minute window.
 - **Sign-in security check reliability**: Fixed the production phone-login check failing to initialize before code requests.
 - **Sign-in security check loading**: Load Cloudflare’s check only when needed so phone login can recover from slow or blocked page startup.
 - **Sign-in security check policy**: Allow Cloudflare Turnstile’s script, frame, and verification requests through the production security policy.
