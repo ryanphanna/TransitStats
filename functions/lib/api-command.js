@@ -14,7 +14,7 @@ function createCommandHandler({ db, apiContextStorage, dispatch, logger, generat
     if (phoneQuery.empty) {
       logger.warn('API request failed: No registered phone number', { uid, email, traceId }, traceId);
       res.status(400).json({
-        error: 'Failed: No registered phone number found for this account. Please register your phone number first.',
+        error: 'Failed: No phone number linked to this account. Connect your phone from Settings first.',
       });
       return;
     }
