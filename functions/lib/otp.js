@@ -41,7 +41,7 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
       if (!phoneDoc.exists) {
         logger.warn('OTP Request denied: Phone number not registered', { phoneNumber, traceId }, traceId);
         res.status(400).json({
-          error: 'This phone number is not registered. Please register your number via SMS first.',
+          error: 'This phone number is not linked to an account. Sign in with email and connect your phone from Settings first.',
         });
         return;
       }

@@ -9,6 +9,16 @@ const CODE_TTL_MS = 10 * 60 * 1000;
  */
 function createQuickCodeHandler({ db, Timestamp, logger, getTwilioPhoneNumber }) {
   return async function handleGenerateSmsQuickCode(req, res, { uid, email, traceId }) {
+    // Check for an existing link before requiring an email: a phone-primary
+    // account (signed in via phone OTP) has no email on the Firebase user at
+    // all, but already has a phoneNumbers doc — "already linked" is the true
+    // answer for that account, not "no email".
+    const existingPhone = await db.collection('phoneNumbers').where('userId', '==', uid).limit(1).get();
+    if (!existingPhone.empty) {
+      res.status(400).json({ error: 'A phone number is already linked to this account.' });
+      return;
+    }
+
     if (!email) {
       res.status(400).json({ error: 'No email on account' });
       return;
@@ -18,12 +28,6 @@ function createQuickCodeHandler({ db, Timestamp, logger, getTwilioPhoneNumber })
     if (!allowedDoc.exists) {
       logger.warn('SMS quick-code denied: not whitelisted', { email, traceId }, traceId);
       res.status(403).json({ error: 'Access denied: User is not whitelisted' });
-      return;
-    }
-
-    const existingPhone = await db.collection('phoneNumbers').where('userId', '==', uid).limit(1).get();
-    if (!existingPhone.empty) {
-      res.status(400).json({ error: 'A phone number is already linked to this account.' });
       return;
     }
 
