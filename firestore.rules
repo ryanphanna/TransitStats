@@ -78,6 +78,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // SMS quick-link codes - one-time codes minted for the tap-to-text
+    // registration button; only cloud functions can read/write (admin SDK)
+    match /smsQuickCodes/{code} {
+      allow read, write: if false;
+    }
+
     // Mail queue - only cloud functions can write (for sending emails)
     match /mail/{mailId} {
       allow read, write: if false;

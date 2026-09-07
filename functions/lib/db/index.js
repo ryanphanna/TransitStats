@@ -11,6 +11,7 @@ const {
   isExperimentalIntelligenceEnabled,
   storeVerificationCode,
   getVerificationData,
+  consumeQuickLinkCode,
 } = require('./users');
 const { getActiveTrip, createTrip, getRecentCompletedTrips, hasBlockingCorrection, getPendingState, setPendingState, clearPendingState, getLastTripAgency, getTripCount } = require('./trips');
 const { lookupStop, findMatchingStops, getRoutesAtStop, getStopsLibrary } = require('./stops');
@@ -33,6 +34,7 @@ module.exports = {
   isExperimentalIntelligenceEnabled,
   storeVerificationCode,
   getVerificationData,
+  consumeQuickLinkCode,
   getActiveTrip,
   createTrip,
   getRecentCompletedTrips,

@@ -133,6 +133,14 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
   // 5. User Authentication
   const user = await getUserByPhone(phoneNumber);
   if (!user) {
+    // A tap-to-text quick-link code (from the Settings "Connect by text" button)
+    // arrives as a single message from an unrecognized number — check it before
+    // falling through to the generic "who is this?" prompt.
+    const quickCodeMatch = body.match(/\b(\d{6})\b/);
+    if (quickCodeMatch && await handlers.handleQuickLinkCode(phoneNumber, quickCodeMatch[1], trace)) {
+      return '';
+    }
+
     if (await shouldRespondToUnknown(phoneNumber)) {
       await setPendingState(phoneNumber, { type: 'awaiting_email' });
       await sendSmsReply(phoneNumber, 'Welcome to TransitStats! What\'s your email address? (No account yet? Sign up at transitstats.fyi first.)');
