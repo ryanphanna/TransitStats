@@ -7,6 +7,9 @@ const DOM = {
     phoneStep: document.getElementById('auth-phone-step'),
     emailStep: document.getElementById('auth-email-step'),
     codeStep: document.getElementById('auth-code-step'),
+    checkEmailStep: document.getElementById('auth-check-email-step'),
+    confirmEmailStep: document.getElementById('auth-confirm-email-step'),
+    loadingStep: document.getElementById('auth-loading-step'),
     stepFrame: document.querySelector('.auth-step-frame'),
     heading: document.getElementById('auth-heading'),
     phoneInput: document.getElementById('auth-phone'),
@@ -17,13 +20,20 @@ const DOM = {
     emailMode: document.getElementById('btn-auth-email-mode'),
     phoneMode: document.getElementById('btn-auth-phone-mode'),
     emailInput: document.getElementById('auth-email'),
-    passwordInput: document.getElementById('auth-password'),
-    emailLogin: document.getElementById('btn-auth-email-login'),
-    resetPassword: document.getElementById('btn-auth-reset-password'),
+    sendLink: document.getElementById('btn-auth-send-link'),
+    sentTo: document.getElementById('auth-sent-to'),
+    confirmEmailInput: document.getElementById('auth-confirm-email'),
+    confirmEmail: document.getElementById('btn-auth-confirm-email'),
     verifyCode: document.getElementById('btn-auth-verify-code'),
     resendCode: document.getElementById('btn-auth-resend-code'),
     status: document.getElementById('auth-status')
 };
+
+const STEPS = ['phoneStep', 'emailStep', 'codeStep', 'checkEmailStep', 'confirmEmailStep', 'loadingStep'];
+
+function showStep(name) {
+    STEPS.forEach(step => DOM[step].classList.toggle('hidden', step !== name));
+}
 
 let normalizedPhone = '';
 let requestBusy = false;
@@ -194,58 +204,69 @@ function wait(milliseconds) {
 }
 
 function showEmailStep() {
-    DOM.phoneStep.classList.add('hidden');
-    DOM.codeStep.classList.add('hidden');
-    DOM.emailStep.classList.remove('hidden');
+    showStep('emailStep');
     DOM.heading.textContent = 'Log in with email';
     DOM.emailInput.focus();
 }
 
 function showPhoneStep() {
-    DOM.emailStep.classList.add('hidden');
-    DOM.codeStep.classList.add('hidden');
-    DOM.phoneStep.classList.remove('hidden');
+    showStep('phoneStep');
     DOM.heading.textContent = 'Get started or log in';
     DOM.phoneInput.focus();
 }
 
-async function signInWithEmail() {
+async function sendLink() {
     const email = DOM.emailInput.value.trim();
-    const password = DOM.passwordInput.value;
-    if (!email || !password) {
-        setStatus('Enter your email and password.');
+    if (!email || !email.includes('@')) {
+        setStatus('Enter a valid email address.');
         return;
     }
-
     clearStatus();
-    setBusy(DOM.emailLogin, true, 'Opening…', 'Log in with email');
+    DOM.sendLink.disabled = true;
+    DOM.sendLink.textContent = 'Sending…';
     try {
-        await Auth.signInWithPassword(email, password);
-        await Auth.syncSharedSession(auth.currentUser);
+        await Auth.sendMagicLink(email, '/login');
+        DOM.sentTo.textContent = email;
+        DOM.heading.textContent = 'Check your email';
+        showStep('checkEmailStep');
     } catch (error) {
         setStatus(Auth.getErrorMessage(error.code));
     } finally {
-        setBusy(DOM.emailLogin, false, 'Opening…', 'Log in with email');
+        DOM.sendLink.disabled = false;
+        DOM.sendLink.innerHTML = 'Email me a sign-in link <i data-lucide="arrow-right" aria-hidden="true"></i>';
+        if (window.lucide) lucide.createIcons();
     }
 }
 
-async function sendPasswordReset() {
-    const email = DOM.emailInput.value.trim();
-    if (!email) {
-        setStatus('Enter your email address first.');
-        DOM.emailInput.focus();
+async function confirmEmailAndSignIn() {
+    const email = DOM.confirmEmailInput.value.trim();
+    if (!email || !email.includes('@')) {
+        setStatus('Enter a valid email address.');
         return;
     }
-
     clearStatus();
-    DOM.resetPassword.disabled = true;
+    DOM.confirmEmail.disabled = true;
+    DOM.confirmEmail.textContent = 'Signing you in…';
     try {
-        await Auth.sendPasswordReset(email);
-        setStatus('Password reset email sent.', 'success');
+        await completeSignInWithLink(email);
     } catch (error) {
         setStatus(Auth.getErrorMessage(error.code));
-    } finally {
-        DOM.resetPassword.disabled = false;
+        DOM.confirmEmail.disabled = false;
+        DOM.confirmEmail.innerHTML = 'Continue <i data-lucide="arrow-right" aria-hidden="true"></i>';
+        if (window.lucide) lucide.createIcons();
+    }
+}
+
+async function completeSignInWithLink(explicitEmail = null) {
+    const result = await Auth.completeMagicLinkSignIn(explicitEmail);
+    if (result.needsEmail) {
+        DOM.heading.textContent = 'Confirm your email';
+        showStep('confirmEmailStep');
+        DOM.confirmEmailInput.focus();
+        return;
+    }
+    if (result.signedIn) {
+        await Auth.syncSharedSession(auth.currentUser);
     }
 }
 
@@ -350,17 +371,30 @@ function setupListeners() {
     DOM.requestCode.addEventListener('click', requestCode);
     DOM.emailMode.addEventListener('click', showEmailStep);
     DOM.phoneMode.addEventListener('click', showPhoneStep);
-    DOM.emailLogin.addEventListener('click', signInWithEmail);
-    DOM.resetPassword.addEventListener('click', sendPasswordReset);
-    DOM.passwordInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') signInWithEmail();
+    DOM.sendLink.addEventListener('click', sendLink);
+    DOM.emailInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') sendLink();
+    });
+    DOM.confirmEmail.addEventListener('click', confirmEmailAndSignIn);
+    DOM.confirmEmailInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') confirmEmailAndSignIn();
     });
     DOM.verifyCode.addEventListener('click', verifyCode);
     DOM.resendCode.addEventListener('click', requestCode);
 }
 
-function init() {
+async function init() {
     window.TransitTheme?.apply(window.TransitTheme.getPreference());
+
+    if (auth.isSignInWithEmailLink(window.location.href)) {
+        showStep('loadingStep');
+        try {
+            await completeSignInWithLink();
+        } catch (error) {
+            setStatus(Auth.getErrorMessage(error.code));
+            showStep('phoneStep');
+        }
+    }
 
     let restoring = false;
     auth.onAuthStateChanged(async (user) => {

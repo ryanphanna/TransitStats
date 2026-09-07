@@ -75,6 +75,16 @@
                         <p class="auth-help">Check <strong id="import-sent-to"></strong> for a sign-in link. It'll bring you right back here.</p>
                     </div>
 
+                    <div id="import-confirm-email-step" class="hidden">
+                        <p class="auth-help">Confirm the email you used to request this link.</p>
+                        <label class="sr-only" for="import-confirm-email">Email address</label>
+                        <div class="auth-input-wrap">
+                            <i data-lucide="mail" aria-hidden="true"></i>
+                            <input type="email" id="import-confirm-email" autocomplete="email" placeholder="Email address">
+                        </div>
+                        <button id="btn-import-confirm-email" class="btn btn-primary full-width" type="button">Continue <i data-lucide="arrow-right" aria-hidden="true"></i></button>
+                    </div>
+
                     <div id="import-denied-step" class="hidden">
                         <p class="auth-help" id="import-denied-message">This account isn't set up for importing yet.</p>
                     </div>

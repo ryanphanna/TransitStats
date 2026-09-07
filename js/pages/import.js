@@ -9,6 +9,7 @@ const DOM = {
     phoneStep: document.getElementById('import-phone-step'),
     codeStep: document.getElementById('import-code-step'),
     checkEmailStep: document.getElementById('import-check-email-step'),
+    confirmEmailStep: document.getElementById('import-confirm-email-step'),
     deniedStep: document.getElementById('import-denied-step'),
     loadingStep: document.getElementById('import-loading-step'),
     active: document.getElementById('import-active'),
@@ -25,9 +26,11 @@ const DOM = {
     requestCode: document.getElementById('btn-import-request-code'),
     codeInput: document.getElementById('import-code'),
     verifyCode: document.getElementById('btn-import-verify-code'),
+    confirmEmailInput: document.getElementById('import-confirm-email'),
+    confirmEmail: document.getElementById('btn-import-confirm-email'),
 };
 
-const STEPS = ['emailStep', 'phoneStep', 'codeStep', 'checkEmailStep', 'deniedStep', 'loadingStep', 'active'];
+const STEPS = ['emailStep', 'phoneStep', 'codeStep', 'checkEmailStep', 'confirmEmailStep', 'deniedStep', 'loadingStep', 'active'];
 
 let normalizedPhone = '';
 let requestBusy = false;
@@ -141,11 +144,39 @@ async function handleSignedInUser(user) {
     initPrestoImporter({ user });
 }
 
+async function completeSignInWithLink(explicitEmail = null) {
+    const result = await Auth.completeMagicLinkSignIn(explicitEmail);
+    if (result.needsEmail) {
+        DOM.heading.textContent = 'Confirm your email';
+        showStep('confirmEmailStep');
+        DOM.confirmEmailInput.focus();
+    }
+}
+
+async function confirmEmailAndSignIn() {
+    const email = DOM.confirmEmailInput.value.trim();
+    if (!email || !email.includes('@')) {
+        setStatus('Enter a valid email address.');
+        return;
+    }
+    setStatus('');
+    DOM.confirmEmail.disabled = true;
+    DOM.confirmEmail.textContent = 'Signing you in…';
+    try {
+        await completeSignInWithLink(email);
+    } catch (error) {
+        setStatus(Auth.getErrorMessage(error.code));
+        DOM.confirmEmail.disabled = false;
+        DOM.confirmEmail.innerHTML = 'Continue <i data-lucide="arrow-right" aria-hidden="true"></i>';
+        if (window.lucide) lucide.createIcons();
+    }
+}
+
 async function init() {
     if (auth.isSignInWithEmailLink(window.location.href)) {
         showStep('loadingStep');
         try {
-            await Auth.completeMagicLinkSignIn();
+            await completeSignInWithLink();
         } catch (error) {
             setStatus(Auth.getErrorMessage(error.code));
             showStep('emailStep');
@@ -154,6 +185,10 @@ async function init() {
     }
 
     DOM.sendLink.addEventListener('click', sendLink);
+    DOM.confirmEmail.addEventListener('click', confirmEmailAndSignIn);
+    DOM.confirmEmailInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') confirmEmailAndSignIn();
+    });
     DOM.emailInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') sendLink();
     });
