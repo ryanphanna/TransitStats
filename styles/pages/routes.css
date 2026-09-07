@@ -1,0 +1,140 @@
+.routes-view {
+    min-height: 100vh;
+    padding: 0 24px 64px;
+    background: var(--bg-primary);
+}
+
+.routes-page-container {
+    width: min(880px, 100%);
+    margin: 0 auto;
+    padding-top: 112px;
+}
+
+.routes-page-heading {
+    margin-bottom: 28px;
+}
+
+.routes-kicker {
+    margin: 0 0 8px;
+    color: var(--accent);
+    font-size: 0.68rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.routes-page-heading h1 {
+    margin: 0;
+    font-size: clamp(2rem, 5vw, 3.4rem);
+    letter-spacing: -0.06em;
+}
+
+.routes-page-heading > p:last-child {
+    margin: 10px 0 0;
+    color: var(--text-secondary);
+}
+
+.routes-page-card {
+    display: grid;
+    gap: 18px;
+}
+
+.route-agency-section {
+    padding: 24px;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    background: var(--bg-card);
+    box-shadow: 0 12px 30px rgb(16 42 42 / 5%);
+}
+
+.route-agency-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.route-agency-heading h2 {
+    margin: 0;
+    font-size: 1.15rem;
+}
+
+.route-agency-heading p,
+.routes-status {
+    margin: 6px 0 0;
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+}
+
+.route-agency-heading > strong {
+    color: var(--accent);
+    font-size: 1.55rem;
+}
+
+.route-progress {
+    height: 8px;
+    margin: 18px 0 20px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+}
+
+.route-progress span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+}
+
+.route-ridden-details {
+    border-top: 1px solid var(--border-color);
+    padding-top: 15px;
+}
+
+.route-ridden-details summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.route-ridden-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.route-ridden-row {
+    display: grid;
+    grid-template-columns: minmax(52px, 90px) 1fr;
+    gap: 12px;
+    align-items: baseline;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.route-ridden-row:last-child {
+    border-bottom: 0;
+}
+
+.route-ridden-row span {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
+@media (max-width: 640px) {
+    .routes-view {
+        padding-inline: 16px;
+    }
+
+    .routes-page-container {
+        padding-top: 92px;
+    }
+
+    .route-agency-section {
+        padding: 18px;
+    }
+}
