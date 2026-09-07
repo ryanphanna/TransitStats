@@ -85,7 +85,7 @@ async function init() {
         MapEngine.init([], null, { deferInitialView: true });
     }
 
-    const { user, isAdmin } = await requireAuth();
+    const { user } = await requireAuth();
     ModalManager.init();
 
     await Profile.load(user);
@@ -93,7 +93,7 @@ async function init() {
     const profileHref = Profile.data?.isPublic && Profile.data?.username
         ? `/user/${encodeURIComponent(Profile.data.username)}`
         : '';
-    initHeader({ isAdmin, currentPage: 'dashboard', profileHref });
+    initHeader({ currentPage: 'dashboard', profileHref });
     setupShareMap();
 
     const tripsInitPromise = Trips.init();

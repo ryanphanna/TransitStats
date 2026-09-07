@@ -272,8 +272,8 @@ function setupEventListeners() {
 }
 
 async function init() {
-    const { user, isAdmin } = await requireAuth({ adminOnly: true });
-    initHeader({ isAdmin, currentPage: 'rocket' });
+    const { user } = await requireAuth({ adminOnly: true });
+    initHeader({ currentPage: 'rocket' });
 
     // Request GPS permission upfront so it's granted before recording starts
     requestGPSPermission();
