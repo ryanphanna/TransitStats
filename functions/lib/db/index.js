@@ -6,11 +6,8 @@ const { isRateLimited, isGeminiRateLimited, shouldRespondToUnknown, checkIdempot
 const {
   getUserByPhone,
   getUserProfile,
-  isEmailAllowed,
   isEmailAdmin,
   isExperimentalIntelligenceEnabled,
-  storeVerificationCode,
-  getVerificationData,
   consumeQuickLinkCode,
 } = require('./users');
 const { getActiveTrip, createTrip, getRecentCompletedTrips, hasBlockingCorrection, getPendingState, setPendingState, clearPendingState, getLastTripAgency, getTripCount } = require('./trips');
@@ -29,11 +26,8 @@ module.exports = {
   checkContentDuplicate,
   getUserByPhone,
   getUserProfile,
-  isEmailAllowed,
   isEmailAdmin,
   isExperimentalIntelligenceEnabled,
-  storeVerificationCode,
-  getVerificationData,
   consumeQuickLinkCode,
   getActiveTrip,
   createTrip,

@@ -7,23 +7,17 @@ const {
 const {
   getActiveTrip,
   getRecentCompletedTrips,
-  setPendingState,
   clearPendingState,
-  storeVerificationCode,
-  getVerificationData,
   consumeQuickLinkCode,
-  isEmailAllowed,
   getUserByPhone,
   getUserProfile,
   isEmailAdmin,
   db,
   FieldValue,
-  Timestamp,
 } = require('./db');
 const {
   getStopDisplay,
   getRouteDisplay,
-  generateVerificationCode,
   normalizeAgency,
   hasPremiumAccess,
 } = require('./utils');
@@ -230,129 +224,6 @@ async function handleIncomplete(phoneNumber, user, traceId = null) {
 }
 
 /**
- * Handle REGISTER command
- */
-async function handleRegister(phoneNumber, email, traceId = null) {
-  const emailRegex = /^[^\s@]{1,64}@[^\s@.]{1,63}(?:\.[^\s@.]{1,63}){1,10}$/;
-  let candidate = email.trim();
-  if (!emailRegex.test(candidate)) {
-    // Pull an embedded address out of natural replies ("it's foo@bar.com") and out of a
-    // redundant "REGISTER foo@bar.com" retry sent while already awaiting an email — both
-    // otherwise fail this regex and loop on the same "Invalid email format" reply forever.
-    const embedded = candidate.match(/[^\s@]{1,64}@[^\s@.]{1,63}(?:\.[^\s@.]{1,63}){1,10}/);
-    if (embedded) candidate = embedded[0];
-  }
-  if (!emailRegex.test(candidate)) {
-    await sendSmsReply(phoneNumber, 'Invalid email format. Text REGISTER [email].');
-    return;
-  }
-  email = candidate;
-
-  const allowed = await isEmailAllowed(email);
-  if (!allowed) {
-    await sendSmsReply(phoneNumber, 'Invite-only. Sign up at transitstats.fyi for access info.');
-    return;
-  }
-
-  const existingUser = await getUserByPhone(phoneNumber);
-  if (existingUser) {
-    await sendSmsReply(phoneNumber, `Phone already linked to ${existingUser.email}.`);
-    return;
-  }
-
-  // Check if this phone is locked out from too many failed verification attempts
-  const existingVerification = await getVerificationData(phoneNumber);
-  if (existingVerification?.lockedUntil && existingVerification.lockedUntil.toDate() > new Date()) {
-    const minutesLeft = Math.ceil((existingVerification.lockedUntil.toDate() - new Date()) / 60000);
-    await sendSmsReply(phoneNumber, `Too many failed attempts. Try again in ${minutesLeft} minute${minutesLeft === 1 ? '' : 's'}.`);
-    return;
-  }
-
-  const profilesSnapshot = await db.collection('profiles')
-    .where('email', '==', email.toLowerCase())
-    .limit(1).get();
-
-  if (profilesSnapshot.empty) {
-    await sendSmsReply(phoneNumber, `No account found for ${email}. Sign up at transitstats.fyi, then text REGISTER again.`);
-    return;
-  }
-
-  const code = generateVerificationCode();
-  await storeVerificationCode(phoneNumber, email.toLowerCase(), code, 20 * 60 * 1000);
-
-  try {
-    await db.collection('mail').add({
-      to: email.toLowerCase(),
-      message: {
-        subject: 'TransitStats SMS Verification Code',
-        text: `Your code is: ${code}\n\nReply to SMS with this code.`,
-        html: `<p>Your code is: <strong>${code}</strong></p>`,
-      },
-    });
-  } catch (error) {
-    console.error('Error queuing verification email:', error);
-  }
-
-  await sendSmsReply(phoneNumber, `Code sent to ${email}. Reply with the 6-digit code within 20 minutes.`);
-
-  await setPendingState(phoneNumber, {
-    type: 'awaiting_verification',
-    email: email.toLowerCase(),
-  }, 20 * 60 * 1000);
-}
-
-/**
- * Handle verification code input
- */
-async function handleVerificationCode(phoneNumber, code, traceId = null) {
-  const verificationData = await getVerificationData(phoneNumber);
-
-  if (!verificationData) {
-    await sendSmsReply(phoneNumber, 'No pending registration.');
-    return;
-  }
-
-  if (verificationData.attempts >= 3) {
-    await db.collection('smsVerification').doc(phoneNumber).update({
-      lockedUntil: Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000)),
-    });
-    await clearPendingState(phoneNumber);
-    await sendSmsReply(phoneNumber, 'Too many failed attempts. Try again in 10 minutes.');
-    return;
-  }
-
-  if (code !== verificationData.code) {
-    await db.collection('smsVerification').doc(phoneNumber).update({
-      attempts: FieldValue.increment(1),
-    });
-    await sendSmsReply(phoneNumber, 'Invalid code.');
-    return;
-  }
-
-  const profilesSnapshot = await db.collection('profiles')
-    .where('email', '==', verificationData.email)
-    .limit(1).get();
-
-  if (profilesSnapshot.empty) {
-    await sendSmsReply(phoneNumber, 'Account not found.');
-    return;
-  }
-
-  const userId = profilesSnapshot.docs[0].id;
-
-  await db.collection('phoneNumbers').doc(phoneNumber).set({
-    userId,
-    email: verificationData.email,
-    registeredAt: FieldValue.serverTimestamp(),
-  });
-
-  await db.collection('smsVerification').doc(phoneNumber).delete();
-  await clearPendingState(phoneNumber);
-
-  await sendSmsReply(phoneNumber, `Phone linked! Text "[route] [stop]" to log trips.`);
-}
-
-/**
  * Handle a one-time SMS quick-link code sent from an unregistered phone number
  * (e.g. "Hey TransitStats! 206214" via the tap-to-text button in Settings).
  * The code was generated by the authenticated web app, so a single incoming
@@ -433,8 +304,6 @@ module.exports = {
   handleAddNotes,
   handleUnlink,
   handleIncomplete,
-  handleRegister,
-  handleVerificationCode,
   handleQuickLinkCode,
   handleSettings,
 };

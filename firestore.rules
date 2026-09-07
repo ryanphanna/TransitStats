@@ -68,11 +68,6 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // SMS verification - only cloud functions can read/write (admin SDK)
-    match /smsVerification/{phoneNumber} {
-      allow read, write: if false;
-    }
-
     // Phone login verification - only cloud functions can read/write (admin SDK)
     match /phoneLoginVerification/{phoneNumber} {
       allow read, write: if false;

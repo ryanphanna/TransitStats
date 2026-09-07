@@ -117,8 +117,7 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
     const user = await getUserByPhone(phoneNumber);
     if (!user) {
       if (await shouldRespondToUnknown(phoneNumber)) {
-        await setPendingState(phoneNumber, { type: 'awaiting_email' });
-        await sendSmsReply(phoneNumber, 'TransitStats tracks your transit rides and shows you stats over time. What\'s your email to get started? (No account yet? Sign up at transitstats.fyi first.)');
+        await sendSmsReply(phoneNumber, 'Sign up at transitstats.fyi, then connect your phone for texting from Settings.');
       }
       return '';
     }
@@ -127,7 +126,7 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
   }
 
   // 4. Public Commands (No Auth Required)
-  const publicHandled = await handlePublicCommands(phoneNumber, upperBody, body, trace);
+  const publicHandled = await handlePublicCommands(phoneNumber, upperBody, trace);
   if (publicHandled) return '';
 
   // 5. User Authentication
@@ -142,8 +141,7 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
     }
 
     if (await shouldRespondToUnknown(phoneNumber)) {
-      await setPendingState(phoneNumber, { type: 'awaiting_email' });
-      await sendSmsReply(phoneNumber, 'Welcome to TransitStats! What\'s your email address? (No account yet? Sign up at transitstats.fyi first.)');
+      await sendSmsReply(phoneNumber, 'Sign up at transitstats.fyi, then connect your phone for texting from Settings.');
     }
     return '';
   }
@@ -427,20 +425,6 @@ async function handleConfirmStartState(phoneNumber, upperBody, state, traceId = 
 async function handlePendingState(phoneNumber, body, upperBody, state, traceId = null) {
   const trace = traceId || generateTraceIdLocal();
 
-  if (state.type === 'awaiting_verification' && /^\d{4,6}$/.test(body)) {
-    await handlers.handleVerificationCode(phoneNumber, body, trace);
-    return true;
-  }
-
-  if (state.type === 'awaiting_email') {
-    // Let HELP/STATUS/etc. and an explicit "REGISTER [email]" retry fall through to their
-    // normal handlers instead of being swallowed as a (malformed) email attempt — this is
-    // the only pending state that used to lack this bypass.
-    if (PENDING_PASSTHROUGH.has(upperBody) || upperBody.startsWith('ASK ') || upperBody.startsWith('REGISTER ')) return false;
-    await handlers.handleRegister(phoneNumber, body.trim(), trace);
-    return true;
-  }
-
   const stateHandlers = {
     confirm_agency: () => handleConfirmAgencyState(phoneNumber, body, upperBody, state, trace),
     confirm_stop: () => handleConfirmStopState(phoneNumber, body, upperBody, state, trace),
@@ -458,18 +442,13 @@ async function handlePendingState(phoneNumber, body, upperBody, state, traceId =
 }
 
 /**
- * Commands accessible to everyone (HELP, REGISTER)
+ * Commands accessible to everyone (HELP)
  */
-async function handlePublicCommands(phoneNumber, upperBody, rawBody, traceId = null) {
+async function handlePublicCommands(phoneNumber, upperBody, traceId = null) {
   const trace = traceId || generateTraceIdLocal();
 
   if (['INFO', 'COMMANDS', '?', 'HELP', 'COMMAND'].includes(upperBody)) {
     await handlers.handleHelp(phoneNumber, trace);
-    return true;
-  }
-
-  if (upperBody.startsWith('REGISTER ')) {
-    await handlers.handleRegister(phoneNumber, rawBody.substring(9).trim(), trace);
     return true;
   }
 
