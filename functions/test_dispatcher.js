@@ -33,7 +33,6 @@ function buildHarness({
 
   const handlers = {
     handleHelp: async () => {},
-    handleRegister: async () => {},
     handleStatus: async () => {},
     handleStatsCommand: async () => {},
     handleIncomplete: async () => {},
@@ -53,7 +52,6 @@ function buildHarness({
     handleQuery: async () => { calls.handleQuery++; },
     fillPredictions: async () => {},
     handleConfirmStart: async () => {},
-    handleVerificationCode: async () => {},
     handleQuickLinkCode: async (phoneNumber, code) => {
       calls.handleQuickLinkCode.push({ phoneNumber, code });
       return quickLinkResult;
@@ -262,7 +260,7 @@ test('dispatcher: MMS from known user triggers Snap-to-Start handler', async () 
   assert.equal(calls.sendSmsReply.length, 0);
 });
 
-test('dispatcher: MMS from unknown user gets conversational onboarding when allowed', async () => {
+test('dispatcher: MMS from unknown user is pointed to the website instead of onboarded over text', async () => {
   const { dispatch, calls } = buildHarness({
     user: null,
     shouldRespondToUnknown: true,
@@ -272,11 +270,8 @@ test('dispatcher: MMS from unknown user gets conversational onboarding when allo
   assert.equal(calls.handleMmsTrip.length, 0);
   assert.equal(calls.sendSmsReply.length, 1);
   assert.equal(calls.sendSmsReply[0].phoneNumber, '+14165550000');
-  // v1.45.0 conversational registration: ask for the email directly and park
-  // an awaiting_email state, instead of the old "Text REGISTER [email]" reply.
-  assert.match(calls.sendSmsReply[0].message, /What's your email/);
-  assert.equal(calls.setPendingState.length, 1);
-  assert.equal(calls.setPendingState[0].type, 'awaiting_email');
+  assert.match(calls.sendSmsReply[0].message, /transitstats\.fyi/);
+  assert.equal(calls.setPendingState.length, 0);
 });
 
 test('dispatcher: unregistered number texting a live quick-link code skips the "who is this" prompt', async () => {
@@ -303,7 +298,7 @@ test('dispatcher: unregistered number with no matching code still gets the norma
 
   assert.equal(calls.handleQuickLinkCode.length, 1);
   assert.equal(calls.sendSmsReply.length, 1);
-  assert.match(calls.sendSmsReply[0].message, /What's your email/);
+  assert.match(calls.sendSmsReply[0].message, /transitstats\.fyi/);
 });
 
 test('dispatcher: mms_stop_needed single route uses stop reply and preserves receivedAt', async () => {

@@ -8,8 +8,6 @@ const {
   handleAddNotes,
   handleUnlink,
   handleIncomplete,
-  handleRegister,
-  handleVerificationCode,
   handleQuickLinkCode,
   handleSettings,
 } = require('./handlers-commands');
@@ -41,8 +39,6 @@ module.exports = {
   handleAddNotes,
   handleUnlink,
   handleIncomplete,
-  handleRegister,
-  handleVerificationCode,
   handleQuickLinkCode,
   handleSettings,
   handleTripLog,
