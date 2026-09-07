@@ -136,13 +136,6 @@ async function handleSignedInUser(user) {
         showStep('deniedStep');
         return;
     }
-    if (!verification.isAdmin && verification.pilot !== 'presto') {
-        await Auth.signOut();
-        DOM.deniedMessage.textContent = "This account isn't set up for importing yet.";
-        DOM.heading.textContent = 'Not available';
-        showStep('deniedStep');
-        return;
-    }
     DOM.heading.textContent = 'Import your rides';
     showStep('active');
     initPrestoImporter({ user });

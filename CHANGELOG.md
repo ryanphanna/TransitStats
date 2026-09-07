@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **PRESTO import is now available to all signed-in users**, not just admins/pilot accounts. It writes to a per-user collection isolated from the trip-review pipeline, so opening it up carries no shared-data risk.
 - **Fixed false "trip not ended" prompts on spotty signal.** A duplicate-text safeguard only looked back 60 seconds, so when your phone silently retried a trip-start text a couple minutes later (common in tunnels, subways, inclines), TransitStats treated it as a second trip and flagged the real one as abandoned. The safeguard now covers a 5-minute window.
 - **"Up"/"Down" no longer get relabeled as "Up Valley"/"Down Mountain".** Texting a bare direction for an incline or funicular trip now keeps it as-is instead of assuming a ski-valley or escarpment system.
 - **Sign-in security check reliability**: Fixed the production phone-login check failing to initialize before code requests.

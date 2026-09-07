@@ -252,14 +252,7 @@ async function initPanelData() {
         document.querySelector('.settings-panel-tab[data-settings-tab="map"]')?.classList.add('hidden');
     }
 
-    // PRESTO import writes directly into shared collections without the
-    // trip-review pipeline other imports go through, so it stays an admin
-    // tool until there's a real pilot-onboarding flow for it.
-    if (isAdmin) {
-        initPrestoImporter({ user });
-    } else {
-        document.querySelector('.settings-panel-tab[data-settings-tab="import"]')?.classList.add('hidden');
-    }
+    initPrestoImporter({ user });
 
     // Phone-only accounts have no email in Firebase at all, so the password
     // row (which only makes sense once there's an email/password to reset)
