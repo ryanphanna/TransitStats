@@ -298,6 +298,19 @@ html[data-theme="dark"] body.settings-surface .header {
   color: var(--success);
 }
 
+#btn-sms-connect {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+
+#sms-connect-result {
+  margin-top: 8px;
+}
+
+#sms-connect-result .btn {
+  margin-top: 4px;
+}
+
 .settings-coming-soon {
   padding: 24px 20px;
   color: var(--text-secondary);
