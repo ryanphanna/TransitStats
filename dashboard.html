@@ -36,58 +36,6 @@
     </main>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" integrity="sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <!-- Edit Trip Modal -->
-    <div id="modal-edit-trip" class="modal hidden">
-        <div class="modal-header">
-            <h2>Edit Trip</h2>
-            <button class="btn-close" data-close-modal><i data-lucide="x"></i></button>
-        </div>
-        <div class="modal-body">
-            <input type="hidden" id="edit-trip-id">
-            <div class="form-group mb-3">
-                <label>Route Number / Name</label>
-                <input type="text" id="edit-route">
-            </div>
-            <div class="form-group mb-3">
-                <label>Boarding Stop</label>
-                <input type="text" id="edit-start-stop">
-            </div>
-            <div class="form-group mb-3">
-                <label>Exiting Stop</label>
-                <input type="text" id="edit-end-stop">
-            </div>
-            <div class="form-group mb-3">
-                <label>Direction</label>
-                <select id="edit-direction" class="modal-select">
-                    <option value="">Unknown / not recorded</option>
-                    <option value="Northbound">Northbound</option>
-                    <option value="Southbound">Southbound</option>
-                    <option value="Eastbound">Eastbound</option>
-                    <option value="Westbound">Westbound</option>
-                    <option value="Inbound">Inbound</option>
-                    <option value="Outbound">Outbound</option>
-                    <option value="Clockwise">Clockwise</option>
-                    <option value="Counterclockwise">Counterclockwise</option>
-                    <option value="__other__">Other</option>
-                </select>
-                <input type="text" id="edit-direction-other" class="hidden mt-4" placeholder="Enter the direction">
-            </div>
-            <div class="form-group mb-3">
-                <label>Vehicle (Number / Name)</label>
-                <input type="text" id="edit-vehicle" placeholder="e.g. 7109">
-            </div>
-            <div class="form-group mb-4">
-                <label>Agency</label>
-                <div class="agency-autocomplete">
-                    <input type="text" id="edit-agency" autocomplete="off" placeholder="Search agencies">
-                </div>
-            </div>
-            <div class="modal-footer-actions">
-                <button id="btn-save-edit" class="btn btn-primary full-width mb-3">Save Changes</button>
-                <button id="btn-delete-trip" class="btn btn-danger-outline full-width">Delete Trip</button>
-            </div>
-        </div>
-    </div>
 
     <script type="module" src="/js/pages/dashboard.js"></script>
 </body>
