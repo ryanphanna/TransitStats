@@ -494,6 +494,27 @@ body.dark .dashboard-map-wash {
   transform: translateX(3px);
 }
 
+.atlas-empty-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 16px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+}
+
+.atlas-empty-cta span {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.atlas-empty-cta .atlas-card-cta {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .dashboard-atlas-content {
   padding-top: 72px;
   padding-bottom: 100px;

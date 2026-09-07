@@ -1,12 +1,10 @@
 import { db, firestorePersistenceReady } from './firebase.js';
 import { TripController } from './trips/TripController.js';
-import { TripFeed } from './trips/TripFeed.js';
 import { TripStatsView } from './trips/TripStatsView.js';
 import { MapEngine } from './map-engine.js';
 import { PredictionEngine } from './predict.js';
-import { ModalManager } from './shared/modal-engine.js';
-import { UI } from './ui-utils.js';
 import { buildPrestoTrips } from './presto-stop-matcher.js';
+import { setAtlasCardEmptyState } from './shared/atlas-card.js';
 
 /**
  * TransitStats Trips Orchestrator
@@ -15,6 +13,7 @@ export const Trips = {
     _readyPromise: null,
     _resolveReady: null,
     _prestoTrips: [],
+    loadError: false,
 
     async init() {
         this._readyPromise = new Promise(resolve => { this._resolveReady = resolve; });
@@ -25,13 +24,28 @@ export const Trips = {
         
         // Connect to Firestore
         if (window.currentUser) {
-            TripController.listen(window.currentUser.uid, (trips, active) => {
-                this.sync(trips, active);
-                if (this._resolveReady) {
-                    this._resolveReady();
-                    this._resolveReady = null;
-                }
-            });
+            TripController.listen(
+                window.currentUser.uid,
+                (trips, active) => {
+                    this.loadError = false;
+                    this.sync(trips, active);
+                    if (this._resolveReady) {
+                        this._resolveReady();
+                        this._resolveReady = null;
+                    }
+                },
+                () => {
+                    // A broken listener must not hang dashboard init forever —
+                    // downstream setup (Stats, Profile agencies, icons) still
+                    // needs to run, just against whatever data is already local.
+                    this.loadError = true;
+                    this.sync(TripController.allTrips, TripController.activeTrip);
+                    if (this._resolveReady) {
+                        this._resolveReady();
+                        this._resolveReady = null;
+                    }
+                },
+            );
             this._listenPrestoTrips(window.currentUser.uid);
         }
 
@@ -100,57 +114,15 @@ export const Trips = {
      * Primary Sync Loop - Re-renders all dependent views when data changes
      */
     sync(trips, active) {
-        // Render Feed
-        const feedContainer = document.getElementById('recent-trips-list');
-        TripFeed.render(feedContainer, trips, (trip) => this.openEditModal(trip));
-
         // Render Analytics
         TripStatsView.render(trips, this._prestoTrips);
 
         // Update Global Map
         MapEngine.updateTrips(trips);
+
+        // A load error must never be mistaken for "no rides yet" — the CTA
+        // stays hidden whenever the trip listener is broken.
+        const isEmpty = trips.length === 0 && this._prestoTrips.length === 0;
+        setAtlasCardEmptyState(isEmpty && !this.loadError);
     },
-
-    openEditModal(trip) {
-        if (!trip) return;
-        
-        const form = {
-            id: document.getElementById('edit-trip-id'),
-            route: document.getElementById('edit-route'),
-            start: document.getElementById('edit-start-stop'),
-            end: document.getElementById('edit-end-stop'),
-            dir: document.getElementById('edit-direction'),
-            dirOther: document.getElementById('edit-direction-other'),
-            vehicle: document.getElementById('edit-vehicle'),
-            agency: document.getElementById('edit-agency')
-        };
-
-        if (form.id) form.id.value = trip.id;
-        if (form.route) form.route.value = trip.route || '';
-        if (form.start) form.start.value = trip.startStopName || trip.startStop || '';
-        if (form.end) form.end.value = trip.endStopName || trip.endStop || '';
-        if (form.dir) {
-            const direction = trip.direction || '';
-            const hasOption = [...form.dir.options].some(option => option.value === direction);
-            form.dir.value = hasOption ? direction : (direction ? '__other__' : '');
-            if (form.dirOther) {
-                form.dirOther.value = hasOption ? '' : direction;
-                form.dirOther.classList.toggle('hidden', form.dir.value !== '__other__');
-            }
-        }
-        if (form.vehicle) form.vehicle.value = trip.vehicle || '';
-        if (form.agency) {
-            if (window.TripAgencyAutocomplete) {
-                window.TripAgencyAutocomplete.setValue(trip.agency || 'TTC');
-            } else {
-                form.agency.value = trip.agency || 'TTC';
-            }
-        }
-
-        ModalManager.open('modal-edit-trip');
-    },
-
-    // Bridge methods for dashboard.js (legacy-ish support)
-    async update(id, data) { return TripController.update(id, data); },
-    async delete(id) { return TripController.delete(id); }
 };

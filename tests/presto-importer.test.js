@@ -132,4 +132,13 @@ describe('summarize', () => {
         ];
         expect(summarize(records).invalidRows).toBe(2);
     });
+
+    it('does not count an invalid Period Pass Load or Epurse Load row as invalid, since neither is ever imported', () => {
+        const records = [
+            toRecord({ Date: '1/1/2026 8:00:00 AM', TransitAgency: 'TTC', Location: 'BAY', Type: 'Fare Payment', Amount: '$-3.30' }, 2, 'f.csv'),
+            toRecord({ Date: 'garbage', TransitAgency: 'TTC', Location: '14579', Type: 'Period Pass Load', Amount: '$128.15' }, 3, 'f.csv'),
+            toRecord({ Date: 'garbage', TransitAgency: 'TTC', Location: '14579', Type: 'Epurse Load', Amount: 'garbage' }, 4, 'f.csv'),
+        ];
+        expect(summarize(records).invalidRows).toBe(0);
+    });
 });
