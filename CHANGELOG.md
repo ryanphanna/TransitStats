@@ -76,6 +76,8 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ### Fixed
 
+- **Signed-out visits to protected pages now return to the login page promptly**, instead of showing the signed-in shell for up to a minute while checking for a session that does not exist.
+
 - **The corridor map no longer zooms twice while loading**, so it settles directly on the busiest corridor area.
 - **The corridor heatmap now opens on the area with the most recorded corridor use**, instead of starting at a broad multi-city overview.
 - **The corridor heatmap now shows route usage without stop dots**, keeping the map focused on repeated travel patterns.

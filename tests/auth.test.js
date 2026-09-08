@@ -55,4 +55,24 @@ describe('Auth.checkWhitelist', () => {
             error: 'Access denied. This app is invite-only.',
         });
     });
+
+    it('does not wait indefinitely for a shared-session response', async () => {
+        vi.useFakeTimers();
+        const fetchMock = vi.fn((url, options) => new Promise((resolve, reject) => {
+            options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+        }));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const restoring = Auth.restoreSharedSession(100);
+        await vi.advanceTimersByTimeAsync(100);
+
+        await expect(restoring).resolves.toBeNull();
+        expect(fetchMock).toHaveBeenCalledWith('/auth/session', {
+            credentials: 'include',
+            signal: expect.any(AbortSignal),
+        });
+
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+    });
 });

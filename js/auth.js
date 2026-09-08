@@ -161,12 +161,17 @@ export const Auth = {
         return false;
     },
 
-    async restoreSharedSession() {
+    async restoreSharedSession(timeoutMs = 1500) {
         if (auth.currentUser) return auth.currentUser;
         if (!this._restorePromise) {
             this._restorePromise = (async () => {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), timeoutMs);
                 try {
-                    const response = await fetch(this.sharedSessionUrl, { credentials: 'include' });
+                    const response = await fetch(this.sharedSessionUrl, {
+                        credentials: 'include',
+                        signal: controller.signal,
+                    });
                     if (!response.ok) return null;
                     const data = await response.json();
                     if (!data.token) return null;
@@ -174,6 +179,8 @@ export const Auth = {
                     return auth.currentUser;
                 } catch (error) {
                     return null;
+                } finally {
+                    clearTimeout(timeout);
                 }
             })().finally(() => {
                 this._restorePromise = null;

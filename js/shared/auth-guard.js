@@ -6,9 +6,11 @@ import { Auth } from '../auth.js';
 // Keep the page in its restoring state long enough to recover before treating
 // the missing initial user as a real sign-out.
 const AUTH_RESTORE_GRACE_MS = 60000;
+const AUTH_SIGNED_OUT_GRACE_MS = 3000;
 const AUTH_SHARED_SESSION_DELAY_MS = 750;
 const AUTH_SHARED_SESSION_RETRY_DELAYS_MS = [1500, 3000, 7500, 15000, 30000];
 const AUTH_RESTORE_POLL_MS = 250;
+const AUTH_BREADCRUMB_TIMEOUT_MS = 500;
 
 function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -24,8 +26,13 @@ const AUTH_BREADCRUMB_KEY = 'transitstats_auth_breadcrumb';
 async function recordAuthBreadcrumb(reason, extra = {}) {
     let sharedSessionStatus = 'unknown';
     let sharedSessionError = null;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AUTH_BREADCRUMB_TIMEOUT_MS);
     try {
-        const response = await fetch(Auth.sharedSessionUrl, { credentials: 'include' });
+        const response = await fetch(Auth.sharedSessionUrl, {
+            credentials: 'include',
+            signal: controller.signal,
+        });
         sharedSessionStatus = response.status;
         // The endpoint returns 401 for two different reasons (cookie never
         // sent vs. cookie present but invalid) — without the body, both look
@@ -38,6 +45,8 @@ async function recordAuthBreadcrumb(reason, extra = {}) {
         }
     } catch (error) {
         sharedSessionStatus = `fetch-failed: ${error.message}`;
+    } finally {
+        clearTimeout(timeout);
     }
     try {
         localStorage.setItem(AUTH_BREADCRUMB_KEY, JSON.stringify({
@@ -66,11 +75,15 @@ async function verifyWithRetry(user) {
     return verification;
 }
 
-async function waitForRestoredUser(initialUser) {
+export async function waitForRestoredUser(
+    initialUser,
+    graceMs = AUTH_RESTORE_GRACE_MS,
+    retryDelays = AUTH_SHARED_SESSION_RETRY_DELAYS_MS,
+) {
     if (initialUser) return initialUser;
 
     const startedAt = Date.now();
-    const deadline = startedAt + AUTH_RESTORE_GRACE_MS;
+    const deadline = startedAt + graceMs;
     let sharedSessionAttempts = 0;
     let nextSharedSessionAttemptAt = startedAt + AUTH_SHARED_SESSION_DELAY_MS;
 
@@ -81,12 +94,12 @@ async function waitForRestoredUser(initialUser) {
         // TransitStats surface. Retry it if token refresh or the first request
         // is temporarily slow, rather than treating that transient failure as
         // a real sign-out.
-        if (sharedSessionAttempts < 1 + AUTH_SHARED_SESSION_RETRY_DELAYS_MS.length
+        if (sharedSessionAttempts < 1 + retryDelays.length
             && Date.now() >= nextSharedSessionAttemptAt) {
             sharedSessionAttempts += 1;
             const sharedUser = await Auth.restoreSharedSession();
             if (sharedUser) return sharedUser;
-            const retryDelay = AUTH_SHARED_SESSION_RETRY_DELAYS_MS[sharedSessionAttempts - 1];
+            const retryDelay = retryDelays[sharedSessionAttempts - 1];
             nextSharedSessionAttemptAt = Date.now() + (retryDelay || AUTH_RESTORE_POLL_MS);
         }
 
@@ -94,6 +107,12 @@ async function waitForRestoredUser(initialUser) {
     }
 
     return auth.currentUser || null;
+}
+
+export function getRestorePolicy(initialUser) {
+    return initialUser
+        ? { graceMs: AUTH_RESTORE_GRACE_MS, retryDelays: AUTH_SHARED_SESSION_RETRY_DELAYS_MS }
+        : { graceMs: AUTH_SIGNED_OUT_GRACE_MS, retryDelays: [] };
 }
 
 function setAuthRestoring(isRestoring) {
@@ -123,7 +142,12 @@ export function requireAuth(options = {}) {
             // short grace period instead of treating the transient null as a
             // real sign-out.
             if (!user) setAuthRestoring(true);
-            let sessionUser = await waitForRestoredUser(user);
+            const restorePolicy = getRestorePolicy(user);
+            let sessionUser = await waitForRestoredUser(
+                user,
+                restorePolicy.graceMs,
+                restorePolicy.retryDelays,
+            );
             if (!sessionUser) {
                 console.warn('[auth-guard] Redirecting without a restored session.', {
                     path: window.location.pathname,
