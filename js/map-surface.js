@@ -9,6 +9,7 @@ export function createMapSurface({ containerId, center = DEFAULT_MAP_CENTER, zoo
         zoomControl: false,
         attributionControl: false,
         preferCanvas: true,
+        inertia: false,
     }).setView(center, zoom);
 
     addMapZoomControl(map);

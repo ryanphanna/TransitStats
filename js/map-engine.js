@@ -53,6 +53,8 @@ export const MapEngine = {
     _canvasRenderer: null,
     _renderGeneration: 0,
     _deferInitialView: false,
+    _isDragging: false,
+    _renderQueued: false,
 
     init(initialTrips = [], initialCenter = null, { deferInitialView = false } = {}) {
         console.log("MapEngine.init: Started", { tripsCount: initialTrips.length });
@@ -96,6 +98,17 @@ export const MapEngine = {
             this.layers.markers = surface.markers;
             this._canvasRenderer = surface.renderer;
             this.layers.transit = null;
+            this._isDragging = false;
+            this._renderQueued = false;
+            this.map.on('dragstart', () => {
+                this._isDragging = true;
+            });
+            this.map.on('dragend', () => {
+                this._isDragging = false;
+                if (!this._renderQueued) return;
+                this._renderQueued = false;
+                this.renderMarkers();
+            });
             console.log("MapEngine: Leaflet map instance created");
             this.renderMarkers();
             this._loadCachedPoints();
@@ -357,6 +370,10 @@ export const MapEngine = {
 
     renderMarkers() {
         if (!this.map || !this.layers.markers) return Promise.resolve();
+        if (this._isDragging) {
+            this._renderQueued = true;
+            return Promise.resolve();
+        }
         const renderId = ++this._renderGeneration;
         const renderPromise = this._renderMarkersAsync(renderId);
         renderPromise.catch(error => {
@@ -435,7 +452,10 @@ export const MapEngine = {
 
         const baseRadius = document.body.classList.contains('v2-clean') ? 4 : 4.5;
 
-        if (renderId !== this._renderGeneration) return;
+        if (renderId !== this._renderGeneration || this._isDragging) {
+            if (this._isDragging) this._renderQueued = true;
+            return;
+        }
         addMapPointMarkers({
             map: this.map,
             markers: this.layers.markers,

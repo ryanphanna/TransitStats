@@ -62,6 +62,8 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ### Fixed
 
+- **Map dragging now stops where you leave it**, instead of carrying on or jumping while map markers refresh.
+
 - **The corridor map no longer zooms twice while loading**, so it settles directly on the busiest corridor area.
 - **The corridor heatmap now opens on the area with the most recorded corridor use**, instead of starting at a broad multi-city overview.
 - **The corridor heatmap now shows route usage without stop dots**, keeping the map focused on repeated travel patterns.
