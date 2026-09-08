@@ -157,7 +157,7 @@ export const MapEngine = {
                 markers: this.layers.markers,
                 renderer: this._canvasRenderer,
                 points: cached.points,
-                getLabel: () => null,
+                getLabel: point => point.label,
                 baseRadius: document.body.classList.contains('v2-clean') ? 4 : 4.5,
             });
             console.log(`MapEngine: Loaded ${cached.points.length} cached markers`);
@@ -227,7 +227,10 @@ export const MapEngine = {
                 lat,
                 lng,
                 type: showExiting ? 'exiting' : 'boarding',
-                label: location?.name || '',
+                label: location?.name || getMapMarkerLabel(
+                    trip,
+                    showExiting ? 'exiting' : 'boarding',
+                ),
             });
         });
 
@@ -236,7 +239,7 @@ export const MapEngine = {
             markers: this.layers.markers,
             renderer: this._canvasRenderer,
             points,
-            getLabel: () => null,
+            getLabel: point => point.label,
             baseRadius: 4.5,
         });
     },
@@ -461,7 +464,7 @@ export const MapEngine = {
             markers: this.layers.markers,
             renderer: this._canvasRenderer,
             points,
-            getLabel: () => null,
+            getLabel: point => point.label,
             baseRadius,
         });
         this._cachePoints(points);

@@ -1,3 +1,5 @@
+import { Utils } from './utils.js';
+
 // At 14, one stop is readable without opening labels over the city overview.
 export const STOP_POPUP_MIN_ZOOM = 14;
 
@@ -172,6 +174,11 @@ export function getUsageMarkerStyle(point, maxUsage, { baseRadius = 4 } = {}) {
     };
 }
 
+export function formatStopPopup(value, point = {}) {
+    const context = point.type === 'exiting' ? 'Exit' : 'Boarding';
+    return `${context}: ${Utils.hide(String(value ?? ''))}`;
+}
+
 export function addMapPointMarkers({
     map,
     markers,
@@ -179,7 +186,7 @@ export function addMapPointMarkers({
     points = [],
     getLabel = point => point.label,
     baseRadius = 4.5,
-    formatPopup = value => value,
+    formatPopup = formatStopPopup,
 } = {}) {
     if (!markers) return [];
     const grouped = groupMapPoints(points, getLabel);
@@ -210,7 +217,7 @@ export function addMapPointMarkers({
             if (map?._transitStatsSelectedMarkerKey === marker._transitStatsPointKey) {
                 marker.setStyle({ color: '#045337', weight: 3, fillOpacity: 0.95 });
             }
-            const popup = [...point.labels].map(formatPopup).filter(Boolean).join('<br>');
+            const popup = [...point.labels].map(value => formatPopup(value, point)).filter(Boolean).join('<br>');
             if (map) addZoomGatedPopup(marker, map, popup);
             markers.addLayer(marker);
         };

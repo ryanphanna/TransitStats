@@ -1,6 +1,9 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it } from 'vitest';
 import {
     aggregateTripCorridors,
+    buildCorridorPopup,
     clipRouteGeometry,
     getCorridorStyle,
     getDensestCorridorViewport,
@@ -40,6 +43,21 @@ it('makes busier corridors stronger', () => {
     const busy = getCorridorStyle(4, 4);
     expect(busy.weight).toBe(quiet.weight);
     expect(busy.color).not.toBe(quiet.color);
+});
+
+it('builds a useful and escaped corridor popup', () => {
+    const popup = buildCorridorPopup({
+        agency: '<TTC>',
+        route: '510 & 511',
+        count: 2,
+        startLabel: 'Union <Station>',
+        endLabel: 'Spadina & Bloor',
+    });
+
+    expect(popup).toContain('&lt;TTC&gt; · Route 510 &amp; 511');
+    expect(popup).toContain('2 trips');
+    expect(popup).toContain('From Union &lt;Station&gt;');
+    expect(popup).not.toContain('<TTC>');
 });
 
 it('matches route branches without drawing a straight line between stops', () => {

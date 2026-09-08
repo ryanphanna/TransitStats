@@ -1,4 +1,5 @@
 import { validLocation } from './atlas-stop-resolver.js';
+import { Utils } from './utils.js';
 
 export function aggregateTripCorridors(endpointTrips = []) {
     const corridors = new Map();
@@ -41,6 +42,24 @@ export function getCorridorStyle(count, maxCount = count) {
         weight: 4,
         opacity: 0.72,
     };
+}
+
+export function buildCorridorPopup({
+    agency = 'Unknown agency',
+    route = 'Unknown route',
+    count = 0,
+    startLabel = 'Boarding stop',
+    endLabel = 'Exit stop',
+} = {}) {
+    const safe = value => Utils.hide(String(value ?? '').trim());
+    const tripCount = Number(count) === 1 ? '1 trip' : `${Number(count) || 0} trips`;
+
+    return [
+        `<strong>${safe(agency)} · Route ${safe(route)}</strong>`,
+        tripCount,
+        `From ${safe(startLabel)}`,
+        `To ${safe(endLabel)}`,
+    ].join('<br>');
 }
 
 export function getDensestCorridorViewport(points = [], cellSize = 0.5) {

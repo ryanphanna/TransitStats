@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { addZoomGatedPopup, clusterMapPoints, getUsageMarkerStyle, groupMapPoints } from '../js/map-presentation.js';
+import {
+    addZoomGatedPopup,
+    clusterMapPoints,
+    formatStopPopup,
+    getUsageMarkerStyle,
+    groupMapPoints,
+} from '../js/map-presentation.js';
 
 describe('groupMapPoints', () => {
     it('groups nearby saved coordinates into one weighted stop marker', () => {
@@ -108,4 +114,32 @@ describe('addZoomGatedPopup', () => {
         expect(map.flyTo).toHaveBeenCalledWith([43.65, -79.38], 12, { animate: true, duration: 0.35 });
         expect(marker.closePopup).toHaveBeenCalled();
     });
+
+    it('opens a stop popup at the readable zoom threshold', () => {
+        const events = {};
+        const marker = {
+            _transitStatsPointKey: 'boarding:43.65:-79.38',
+            _transitStatsBaseStyle: { color: '#eaf8f2', weight: 1.25 },
+            on: (event, callback) => { events[event] = callback; },
+            setStyle: vi.fn(),
+            closePopup: vi.fn(),
+            bindPopup: vi.fn(),
+            openPopup: vi.fn(),
+            getLatLng: () => [43.65, -79.38],
+        };
+        const map = { getZoom: () => 14 };
+
+        addZoomGatedPopup(marker, map, 'Boarding: Union Station');
+        events.click();
+
+        expect(marker.bindPopup).toHaveBeenCalledWith('Boarding: Union Station');
+        expect(marker.openPopup).toHaveBeenCalled();
+    });
+});
+
+it('formats stop names with boarding or exit context and escapes HTML', () => {
+    expect(formatStopPopup('Union <Station>', { type: 'boarding' }))
+        .toBe('Boarding: Union &lt;Station&gt;');
+    expect(formatStopPopup('Spadina & Bloor', { type: 'exiting' }))
+        .toBe('Exit: Spadina &amp; Bloor');
 });

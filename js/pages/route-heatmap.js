@@ -7,7 +7,14 @@ import { MapEngine } from '../map-engine.js';
 import { loadAtlasStops } from '../atlas-stops.js';
 import { loadAtlasRoutes } from '../atlas-routes.js';
 import { fitMapToDensePoints } from '../map-presentation.js';
-import { clipTripToRoute, getCorridorStyle, getDensestCorridorViewport, routeMatches } from '../route-heatmap.js';
+import { getTripRouteLabel, getTripStopLabel } from '../trip-display.js';
+import {
+    buildCorridorPopup,
+    clipTripToRoute,
+    getCorridorStyle,
+    getDensestCorridorViewport,
+    routeMatches,
+} from '../route-heatmap.js';
 
 const status = document.getElementById('route-heatmap-status');
 const corridorLayer = L.layerGroup();
@@ -37,16 +44,29 @@ function renderCorridors(trips) {
                 const key = [routeFeatures.indexOf(feature), trip.startStopCode || '', trip.endStopCode || ''].join(':');
                 const existing = clipped.get(key);
                 if (existing) existing.count += 1;
-                else clipped.set(key, { line, count: 1, start, end });
+                else clipped.set(key, {
+                    line,
+                    count: 1,
+                    start,
+                    end,
+                    agency: feature.__agency || trip.agency,
+                    route: feature.properties?.routeShortName || getTripRouteLabel(trip),
+                    startLabel: getTripStopLabel(trip, 'boarding', boarding),
+                    endLabel: getTripStopLabel(trip, 'exiting', exiting),
+                });
             });
     });
     const maxCount = Math.max(1, ...[...clipped.values()].map(item => item.count));
-    clipped.forEach(({ line, count }) => L.polyline(line, {
-        ...getCorridorStyle(count, maxCount),
-        interactive: false,
-        lineCap: 'round',
-        lineJoin: 'round',
-    }).addTo(corridorLayer));
+    clipped.forEach(corridor => {
+        const layer = L.polyline(corridor.line, {
+            ...getCorridorStyle(corridor.count, maxCount),
+            interactive: true,
+            lineCap: 'round',
+            lineJoin: 'round',
+        });
+        layer.bindPopup(buildCorridorPopup(corridor));
+        layer.addTo(corridorLayer);
+    });
     const completeTrips = [...clipped.values()].reduce((total, corridor) => total + corridor.count, 0);
     setStatus(`${clipped.size} corridors · ${completeTrips} trips with verified route paths`);
 
