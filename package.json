@@ -27,7 +27,7 @@
     "firebase": "^12.18.0",
     "jsdom": "^30.0.1",
     "vite": "^8.0.16",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   },
   "dependencies": {
     "firebase-admin": "^14.3.0",
