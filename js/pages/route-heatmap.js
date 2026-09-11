@@ -68,7 +68,7 @@ function renderCorridors(trips) {
         layer.addTo(corridorLayer);
     });
     const completeTrips = [...clipped.values()].reduce((total, corridor) => total + corridor.count, 0);
-    setStatus(`${clipped.size} corridors · ${completeTrips} trips with verified route paths`);
+    setStatus(`${completeTrips} trips shown`);
 
     if (!hasFitToCorridors && clipped.size > 0) {
         const viewportPoints = [...clipped.values()].flatMap(({ start, end, count }) => [
@@ -100,7 +100,7 @@ async function init() {
             renderCorridors(trips);
         }).catch(error => {
             console.warn('Route geometry unavailable:', error);
-            setStatus('Route geometry unavailable; no corridors drawn.');
+            setStatus('Trip lines unavailable; nothing to draw.');
         });
     });
 
@@ -112,7 +112,7 @@ async function init() {
     } catch (error) {
         console.warn('Route heatmap stop enrichment failed:', error);
         await MapEngine.setStopSources({ firestoreStops: PredictionEngine.stopsLibrary || [] });
-        setStatus('Using saved stop locations; some corridors may be incomplete.');
+        setStatus('Using saved stop locations; some trip lines may be missing.');
     }
     // The stop layer is hidden on this surface, so do not release its
     // dashboard-style auto-fit. The corridor layer performs the single
@@ -122,5 +122,5 @@ async function init() {
 
 init().catch(error => {
     console.error('Route heatmap failed to load:', error);
-    setStatus('The corridor map could not load. Return to your dashboard and try again.');
+    setStatus('Your trip map could not load. Return to your dashboard and try again.');
 });
