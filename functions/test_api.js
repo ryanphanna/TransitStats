@@ -123,6 +123,7 @@ test('admin OTP requests bypass cooldowns', async () => {
   assert.equal(first.statusCode, 200);
   assert.equal(second.statusCode, 200);
   assert.equal(sentMessages.length, 2);
+  assert.match(sentMessages[0].message, /This code expires in 10 minutes\./);
 });
 
 test('regular OTP requests enforce the resend cooldown', async () => {
