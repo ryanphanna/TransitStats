@@ -281,13 +281,13 @@ body.dark .dashboard-map-wash {
 
 .atlas-title-tail {
   color: var(--text-primary);
-  font-weight: 900;
+  font-weight: 500;
 }
 
 .atlas-title-product {
   display: block;
   color: var(--text-secondary);
-  font-weight: 600;
+  font-weight: 800;
 }
 
 .atlas-identity-card.is-loading h1 {
