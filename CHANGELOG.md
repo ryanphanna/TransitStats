@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Updated the Functions archive dependency to its symlink-safe release**, clearing the remaining open security alert.
 - **The dashboard now gives the TransitStats name more visual weight than “Your,”** making the brand clearer at a glance.
 - **Login texts now say that verification codes expire after 10 minutes**, so users know when to request a new one.
 - **Map lines and stop dots now reveal useful trip details when clicked**, so route lines identify the route and high-zoom stops identify the stop without exposing internal mapping terms.
