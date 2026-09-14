@@ -129,6 +129,7 @@
     "stop_queen_dovercourt",
     "stop_queen_dunn",
     "stop_queen_s_park_station",
+    "stop_queen_s_park_station___northbound_platform",
     "stop_queen_st_east_bellefair_ave",
     "stop_queen_st_east_parliament_st",
     "stop_queen_st_east_wineva_ave",
@@ -381,9 +382,9 @@
     "prev_route_ttc::94",
     "prev_route_ttc::lsw"
   ],
-  "top1_accuracy": 0.5942,
-  "top3_accuracy": 0.8406,
-  "n_trips": 690,
+  "top1_accuracy": 0.6115,
+  "top3_accuracy": 0.8561,
+  "n_trips": 695,
   "feature_schema_version": 2,
   "agencies": [
     "ac_transit",

@@ -141,9 +141,9 @@
     "dir_southbound",
     "dir_westbound"
   ],
-  "top1_accuracy": 0.7581,
+  "top1_accuracy": 0.8065,
   "top3_accuracy": 0.9516,
-  "n_trips": 311,
+  "n_trips": 314,
   "feature_schema_version": 2,
   "agencies": [
     "ttc"

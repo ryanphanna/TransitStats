@@ -5,6 +5,24 @@ One entry per trained version. See `docs/INTELLIGENCE.md` for full engineering n
 
 ---
 
+## Auto-retrain — 2026-09-14
+
+### End-Stop Models
+
+| Model | Top-1 | Top-3 | Classes | Trips |
+|---|---|---|---|---|
+| V5 XGBoost | 80.7% | 95.2% | 9 | 314 |
+| V4 LogReg  | 75.8% | 95.2% | 9 | 314 |
+
+### Route Models
+
+| Model | Top-1 | Top-3 | Classes | Trips |
+|---|---|---|---|---|
+| V5 XGBoost | 62.6% | 84.2% | 21 | 695 |
+| V4 LogReg  | 61.2% | 85.6% | 21 | 695 |
+
+---
+
 ## Auto-retrain — 2026-09-08
 
 ### End-Stop Models
