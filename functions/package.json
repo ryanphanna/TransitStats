@@ -22,7 +22,7 @@
     "@google/generative-ai": "^0.24.1",
     "express": "^5.2.1",
     "fast-xml-parser": "^5.10.1",
-    "firebase-admin": "^14.3.0",
+    "firebase-admin": "^14.4.0",
     "firebase-functions": "^7.3.2",
     "onnxruntime-node": "^1.29.0",
     "qs": "^6.16.0",
