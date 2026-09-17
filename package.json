@@ -30,7 +30,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
-    "firebase-admin": "^14.3.0",
+    "firebase-admin": "^14.4.0",
     "playwright": "^1.63.0"
   },
   "overrides": {
