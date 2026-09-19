@@ -35,9 +35,29 @@ jobs:
         # The 403 error on firestore.googleapis.com during "firebase deploy --only functions"
         # is almost always caused by missing datastore.user (or broader firebase.admin) on the SA.
         run: |
+          set -uo pipefail
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}' > /tmp/sa.json
           npm install -g firebase-tools
-          GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json firebase deploy --only functions --project transitstats-21ba4
+          for attempt in 1 2 3; do
+            echo "Deploying Functions (attempt $attempt/3)"
+            if GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json firebase deploy --only functions --project transitstats-21ba4 2>&1 | tee /tmp/functions_out.txt; then
+              exit 0
+            fi
+
+            if ! grep -Eq 'HTTP Error: (409|429)|Quota exceeded|unable to queue the operation' /tmp/functions_out.txt; then
+              echo "Functions deploy failed for a non-transient reason."
+              exit 1
+            fi
+
+            if [ "$attempt" -eq 3 ]; then
+              echo "Functions deploy still hit a transient Firebase quota/queue error after 3 attempts."
+              exit 1
+            fi
+
+            delay=$((attempt * 60))
+            echo "Firebase is temporarily throttling function updates; retrying in ${delay}s."
+            sleep "$delay"
+          done
       - name: Deploy Hosting
         # Firebase returns 400 FAILED_PRECONDITION when the build output is
         # identical to the already-live version (e.g. only function code changed).
