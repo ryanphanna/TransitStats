@@ -50,6 +50,7 @@
     "prev_route_ttc::509",
     "prev_route_ttc::510",
     "prev_route_ttc::510 queen short turn",
+    "prev_route_ttc::510 short turn",
     "prev_route_ttc::510 short turn (to queen)",
     "prev_route_ttc::510a",
     "prev_route_ttc::510b",
@@ -73,6 +74,7 @@
     "stop_finch_west_station",
     "stop_lawrence_west_station",
     "stop_queen_s_park_station",
+    "stop_queen_s_park_station___northbound_platform",
     "stop_spadina_ave_nassau_st",
     "stop_spadina_ave_queen_st_west_north_side",
     "stop_spadina_king",
@@ -100,6 +102,7 @@
     "last_stop_davisville",
     "last_stop_dufferin_college",
     "last_stop_dundas_jarvis",
+    "last_stop_dundas_st_west_bathurst_st___toronto_western_hospital",
     "last_stop_dundas_st_west_university_ave___st_patrick_station",
     "last_stop_dundas_station",
     "last_stop_dundas_west_station",
@@ -141,9 +144,9 @@
     "dir_southbound",
     "dir_westbound"
   ],
-  "top1_accuracy": 0.7581,
-  "top3_accuracy": 0.9516,
-  "n_trips": 311,
+  "top1_accuracy": 0.7231,
+  "top3_accuracy": 0.9385,
+  "n_trips": 325,
   "feature_schema_version": 2,
   "agencies": [
     "ttc"
