@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Kept the Vitest test packages on the same major version**, so dependency updates install and CI can run again.
 - **Updated the Functions archive dependency to its symlink-safe release**, clearing the remaining open security alert.
 - **The dashboard now gives the TransitStats name more visual weight than “Your,”** making the brand clearer at a glance.
 - **Login texts now say that verification codes expire after 10 minutes**, so users know when to request a new one.
