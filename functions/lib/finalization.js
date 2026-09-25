@@ -243,6 +243,31 @@ async function triggerPostEndLearning(activeTrip, user, endStopData, prevTrip, d
     .catch(err => logger.error('HabitEngine.rebuild failed', { error: err.message }));
 }
 
+async function autoConfirmStopMatch(tripData, endStopData) {
+  if (!tripData || tripData.stop_matched === true || !endStopData) return false;
+
+  const [startStop, endStop] = await Promise.all([
+    lookupStop(
+      tripData.startStopCode,
+      tripData.startStopName || tripData.startStop,
+      tripData.agency,
+      tripData.route,
+      tripData.direction
+    ),
+    lookupStop(
+      endStopData.stopCode,
+      endStopData.stopName,
+      tripData.agency,
+      tripData.route,
+      tripData.direction
+    ),
+  ]);
+
+  if (!startStop || !endStop) return false;
+  tripData.stop_matched = true;
+  return true;
+}
+
 async function runPostEndFinalization(tripData, options = {}) {
   const { force = false } = options;
   const tripId = tripData.id;
@@ -266,6 +291,14 @@ async function runPostEndFinalization(tripData, options = {}) {
     stopCode: tripData.endStopCode,
     stopName: tripData.endStopName,
   } : null;
+
+  try {
+    if (await autoConfirmStopMatch(tripData, endStopData)) {
+      logger.info('Stop match confirmed from unique stop lookups', { tripId });
+    }
+  } catch (err) {
+    logger.error('Automatic stop matching failed', { tripId, error: err.message });
+  }
 
   const stepsRun = [];
 
@@ -326,13 +359,15 @@ async function runPostEndFinalization(tripData, options = {}) {
 
   // Mark as processed + store execution metadata
   const now = FieldValue.serverTimestamp();
-  await db.collection('trips').doc(tripId || '').update({
+  const finalUpdate = {
     backgroundFinalizedAt: now,
     finalization: {
       ranAt: now,
       steps: stepsRun,
     },
-  }).catch(() => {});
+  };
+  if (tripData.stop_matched === true) finalUpdate.stop_matched = true;
+  await db.collection('trips').doc(tripId || '').update(finalUpdate).catch(() => {});
 
   logger.info('Background finalization finished', { tripId, steps: stepsRun });
 }

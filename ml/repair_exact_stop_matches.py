@@ -1,7 +1,8 @@
 """Repair completed trips whose two stops now have unique library matches.
 
-This is intentionally conservative. It never invents a stop, changes the raw
-legacy stop fields, or touches incomplete/flagged trips.
+This is intentionally conservative. It never invents a stop, changes trip stop
+text or codes, or touches incomplete/flagged trips. It only confirms the
+derived stop_matched flag when both endpoints have unique library matches.
 
 Usage:
     python ml/repair_exact_stop_matches.py          # dry run
@@ -11,7 +12,6 @@ Usage:
 import argparse
 import os
 import re
-from datetime import datetime, timezone
 
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -110,18 +110,9 @@ def main():
         print("Dry run only. Re-run with --apply to write these repairs.")
         return
 
-    repaired_at = datetime.now(timezone.utc)
     batch = db.batch()
     for doc, _trip, start, end in candidates:
-        batch.update(doc.reference, {
-            "startStopName": start.get("name"),
-            "startStopCode": start.get("code") or None,
-            "endStopName": end.get("name"),
-            "endStopCode": end.get("code") or None,
-            "stop_matched": True,
-            "stop_match_repaired_at": repaired_at,
-            "stop_match_repair_method": "unique_stop_library_match",
-        })
+        batch.update(doc.reference, {"stop_matched": True})
     if candidates:
         batch.commit()
     print(f"Applied {len(candidates)} repairs.")

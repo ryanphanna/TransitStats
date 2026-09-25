@@ -139,6 +139,25 @@ test('runPostEndFinalization re-runs when force=true even if already finalized',
   assert.deepEqual(finalWrite.data.finalization.steps, ['learning', 'grading']);
 });
 
+test('runPostEndFinalization confirms a code-matched trip without changing stop text', async () => {
+  const { finalization, calls } = loadFinalization();
+  await finalization.runPostEndFinalization({
+    id: 't-code-only',
+    userId: 'u1',
+    agency: 'TTC',
+    route: '52g',
+    direction: 'Eastbound',
+    startStopCode: '5394',
+    startStopName: null,
+    endStopCode: '12203',
+    endStopName: 'Lawrence West Station',
+    stop_matched: false,
+    duration: 20,
+  });
+  const finalWrite = calls.docUpdates.find((u) => u.data.backgroundFinalizedAt);
+  assert.equal(finalWrite.data.stop_matched, true);
+});
+
 // --- computeJourneyLink: pure output ---
 
 test('computeJourneyLink returns empty note/id when there is no previous trip', async () => {

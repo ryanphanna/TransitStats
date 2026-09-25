@@ -12,7 +12,9 @@ function cleanTripsForAgency(history, agency) {
   if (!key) return [];
   return (history || []).filter(trip => {
     if (agencyKey(trip.agency) !== key) return false;
-    if (!trip.route || !trip.startStopName || !trip.endStopName) return false;
+    if (!trip.route) return false;
+    if (!(trip.startStopName || trip.startStopCode || trip.startStop)) return false;
+    if (!(trip.endStopName || trip.endStopCode || trip.endStop)) return false;
     if (trip.incomplete || trip.discarded || trip.needs_review) return false;
     if (trip.needs_reprocess || trip.exclude_from_training || trip.exclude_from_accuracy) return false;
     if (Array.isArray(trip.correctedFields) && trip.correctedFields.length > 0) return false;

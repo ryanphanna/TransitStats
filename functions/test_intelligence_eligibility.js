@@ -40,3 +40,8 @@ test('legacy or incomplete artifacts are never treated as agency-safe', () => {
   assert.equal(artifactSupportsAgency({ feature_schema_version: 2, agencies: ['TTC'] }, 'ttc'), true);
   assert.equal(artifactSupportsAgency({ feature_schema_version: 2, agencies: ['TTC'] }, 'PRT'), false);
 });
+
+test('eligibility accepts a valid stop code without a display name', () => {
+  const history = [trip({ startStopName: null, startStopCode: '5394' })];
+  assert.equal(cleanTripsForAgency(history, 'TTC').length, 1);
+});

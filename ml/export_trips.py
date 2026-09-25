@@ -105,7 +105,7 @@ def main():
         d = doc.to_dict()
 
         # Only use completed, trusted trips for training.
-        has_end_stop = d.get("endStopName") or d.get("endStop")
+        has_end_stop = d.get("endStopName") or d.get("endStop") or d.get("endStopCode")
         if (
             not d.get("endTime")
             or not has_end_stop
@@ -119,7 +119,7 @@ def main():
             continue
 
         # Need at minimum route + start stop to be useful for training
-        if not d.get("route") or not (d.get("startStop") or d.get("startStopName")):
+        if not d.get("route") or not (d.get("startStop") or d.get("startStopName") or d.get("startStopCode")):
             skipped += 1
             continue
 
@@ -140,8 +140,8 @@ def main():
             "route":         str(d.get("route", "")).strip(),
             "prev_route":    "",
             "prev_agency":   "",
-            "start_stop":    (d.get("startStopName") or d.get("startStop") or "").strip(),
-            "end_stop":      (d.get("endStopName")   or d.get("endStop")   or "").strip(),
+            "start_stop":    (d.get("startStopName") or d.get("startStop") or d.get("startStopCode") or "").strip(),
+            "end_stop":      (d.get("endStopName")   or d.get("endStop")   or d.get("endStopCode") or "").strip(),
             "direction":     (d.get("direction") or "").strip(),
             "agency":        (d.get("agency") or "").strip(),
             "manually_verified": bool(d.get("manually_verified")),
