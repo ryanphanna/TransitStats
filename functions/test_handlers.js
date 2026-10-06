@@ -520,6 +520,45 @@ test('handleTripLog: direction in a platform name resolves without prompting', a
   assert.equal(calls.createTrip[0].startStopCode, '9001-N');
 });
 
+test('handleTripLog: opposite-direction platform is removed when a neutral station remains', async () => {
+  const { handlers, calls, restore } = loadHandlers({
+    dbModule: {
+      findMatchingStops: async () => [
+        {
+          id: 'north_platform',
+          stopCode: '13837',
+          stopName: 'Yorkdale Station - Northbound Platform',
+          routes: ['1'],
+        },
+        {
+          id: 'station',
+          stopCode: 'station-yorkdale',
+          stopName: 'Yorkdale Station',
+          routes: ['1'],
+          direction: null,
+        },
+      ],
+      lookupStop: async (_code, stopName, _agency, route, direction) => {
+        if (stopName === 'Yorkdale' && route === '1' && direction === 'Southbound') {
+          return { id: 'station', stopCode: 'station-yorkdale', stopName: 'Yorkdale Station', source: 'manual' };
+        }
+        return null;
+      },
+    },
+  });
+
+  try {
+    await handlers.handleTripLog('+14165550016', { userId: 'u16' }, 'Yorkdale', '1', 'Southbound', 'TTC');
+  } finally {
+    restore();
+  }
+
+  assert.equal(calls.setPendingState.length, 0);
+  assert.equal(calls.createTrip.length, 1);
+  assert.equal(calls.createTrip[0].startStopCode, 'station-yorkdale');
+  assert.equal(calls.createTrip[0].startStopName, 'Yorkdale Station');
+});
+
 test('handleTripLog: punctuation-only stop duplicates do not prompt', async () => {
   const { handlers, calls, restore } = loadHandlers({
     dbModule: {

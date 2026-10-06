@@ -141,8 +141,18 @@ async function narrowStopCandidates(candidates, route, direction, agency = null)
   // Further narrow by direction if provided and candidates still ambiguous
   if (narrowed.length > 1 && direction) {
     const normalize = value => value?.toString().trim().toLowerCase().replace(/bound$/, '');
-    const dirFiltered = narrowed.filter(c => normalize(getStopCandidateDirection(c)) === normalize(direction));
+    const requestedDirection = normalize(direction);
+    const compatible = narrowed.filter(candidate => {
+      const candidateDirection = normalize(getStopCandidateDirection(candidate));
+      return !candidateDirection || candidateDirection === requestedDirection;
+    });
+    const dirFiltered = compatible.filter(candidate => (
+      normalize(getStopCandidateDirection(candidate)) === requestedDirection
+    ));
+    // Prefer an exact direction match when one exists; otherwise keep neutral
+    // station records and discard explicitly opposite-direction platforms.
     if (dirFiltered.length >= 1) narrowed = dirFiltered;
+    else if (compatible.length >= 1) narrowed = compatible;
   }
   if (narrowed.length > 1 && route) {
     const modePreferred = preferCandidatesByRouteMode(narrowed, route);
