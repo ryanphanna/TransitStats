@@ -46,3 +46,38 @@ describe('Stats.computeTripPeriodCounts', () => {
         expect(Stats.computeTripPeriodCounts(trips, new Date(2026, 7, 14, 12)).daysRidden).toBe(2);
     });
 });
+
+describe('Stats calendar-month Wrapped helpers', () => {
+    const trips = [
+        { startTime: new Date(2026, 8, 2, 8), route: '501', startStopName: 'Spadina', endStopName: 'Bathurst', duration: 20 },
+        { startTime: new Date(2026, 8, 2, 18), route: '501', startStopName: 'Bathurst', endStopName: 'Spadina', duration: 22 },
+        { startTime: new Date(2026, 8, 3, 9), route: '2', startStopName: 'Spadina', endStopName: 'St George', duration: 8 },
+        { startTime: new Date(2026, 7, 20, 9), route: '504', startStopName: 'King', endStopName: 'Queen', duration: 15 },
+    ];
+
+    it('filters trips to a calendar month', () => {
+        expect(Stats.filterByCalendarMonth(trips, 2026, 8)).toHaveLength(3);
+        expect(Stats.filterByCalendarMonth(trips, 2026, 7)).toHaveLength(1);
+    });
+
+    it('lists available months newest first', () => {
+        expect(Stats.listAvailableMonths(trips)).toEqual([
+            { year: 2026, monthIndex: 8 },
+            { year: 2026, monthIndex: 7 },
+        ]);
+    });
+
+    it('computes Wrapped highlights for a month', () => {
+        const wrapped = Stats.computeWrapped(trips, 2026, 8);
+        expect(wrapped.label).toBe('September 2026');
+        expect(wrapped.trips).toBe(3);
+        expect(wrapped.topRoute).toEqual({ name: '501', count: 2 });
+        expect(wrapped.favoriteStop.name).toBe('Spadina');
+        expect(wrapped.busiestDay).toEqual({
+            date: '2026-09-02',
+            count: 2,
+            label: expect.stringContaining('Sep'),
+        });
+        expect(wrapped.bestStreak).toBeGreaterThanOrEqual(2);
+    });
+});

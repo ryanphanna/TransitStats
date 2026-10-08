@@ -33,6 +33,7 @@ export default defineConfig(({ mode, command }) => {
                     privacy: './privacy.html',
                     import: './import.html',
                     'route-heatmap': './route-heatmap.html',
+                    wrapped: './wrapped.html',
                 },
                 output: {
                     entryFileNames: (chunkInfo) => chunkInfo.name === 'public'
@@ -96,7 +97,7 @@ export default defineConfig(({ mode, command }) => {
 
                 server.middlewares.use((req, res, next) => {
                     const url = req.url.split('?')[0];
-                    const targets = ['/dashboard', '/public', '/terms', '/privacy', '/import', '/route-heatmap'];
+                    const targets = ['/dashboard', '/public', '/terms', '/privacy', '/import', '/route-heatmap', '/wrapped'];
                     const isUserProfilePath = url === '/user' || url.startsWith('/user/');
                     if (targets.includes(url)) {
                         req.url = url + '.html' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '');

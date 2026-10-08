@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Transit Wrapped** — pick a month of your rides and download a shareable stats card (trips, streak, top route, favorite stop) from the dashboard or `/wrapped`.
 - **Idle tabs should stay signed in.** The shared session cookie is refreshed on focus and every 45 minutes, whitelist network flakes no longer force a logout, and a bad Admin SDK blip no longer wipes the cookie.
 - **Added abuse limits to phone-login text codes.** A single source can now request at most 10 codes an hour, and there is a daily cap across everyone, so a script can no longer rack up SMS costs by cycling through registered numbers. Hitting the daily cap is logged as an error.
 - **Closed a privacy leak in public profiles.** Anyone could read the raw profile record of a public user, including private fields like admin and premium status. Public profile pages still work; they get their data from the server instead.

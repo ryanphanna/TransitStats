@@ -40,6 +40,11 @@ describe('shared Atlas card', () => {
         expect(publicCard.querySelector('#atlas-share-map')).toBeNull();
         expect(publicCard.querySelector('.atlas-card-cta')?.textContent).toContain('Make your own map');
         expect(dashboardMarkup).toContain('Share your map');
+
+        renderAtlasCard({ signedIn: true });
+        const signedInCard = document.querySelector('[data-atlas-card]');
+        expect(signedInCard.querySelector('.atlas-card-secondary')?.getAttribute('href')).toBe('/wrapped');
+        expect(signedInCard.textContent).toContain('Your Wrapped');
     });
 
     it('keeps the public error card hidden until a profile error occurs', () => {
