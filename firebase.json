@@ -177,6 +177,14 @@
           "destination": "/import.html"
         },
         {
+          "source": "/wrapped",
+          "destination": "/wrapped.html"
+        },
+        {
+          "source": "/route-heatmap",
+          "destination": "/route-heatmap.html"
+        },
+        {
           "source": "**",
           "destination": "/index.html"
         }

@@ -28,9 +28,10 @@ quality and coverage improvements.
 
 ## Dashboard & UI
 
-- [ ] **Transit Wrapped** — visual year-in-review with personal records, most-used
-  routes and stops, and shareable summary cards. Requires a full calendar year of data
-  for the first cohort.
+- [x] **Transit Wrapped (monthly)** — shareable month card from trip history (trips,
+  hours, streak, top route, favorite stop, busiest day) with PNG download at `/wrapped`.
+  Year-in-review / multi-month recap still open.
+- [ ] **Transit Wrapped (year)** — full calendar-year recap once yearly cohort data is ready.
 - [ ] **Custom Goal Tracker** — users set a monthly trip target with a progress bar
   and streak visualization on the dashboard.
 - [ ] **Route usage bubble scatterplot** — plot routes by recency and riding frequency,

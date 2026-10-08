@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Transit Wrapped** — pick a month of your rides and download a shareable stats card (trips, streak, top route, favorite stop) from the dashboard or `/wrapped`.
 - Updated web and Functions dependencies to clear the active Dependabot security alerts.
 - SMS stop selection now drops explicitly opposite-direction platforms when a neutral station match remains, avoiding unnecessary prompts.
 - **Trips with valid stop codes now count as matched**, so a missing display name no longer blocks prediction history.

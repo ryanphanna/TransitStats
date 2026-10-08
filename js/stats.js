@@ -114,6 +114,103 @@ export const Stats = {
         });
     },
 
+    /**
+     * Keep trips whose local start date falls in a calendar month.
+     * monthIndex is 0–11 (JavaScript Date month).
+     */
+    filterByCalendarMonth(trips, year, monthIndex) {
+        const y = Number(year);
+        const m = Number(monthIndex);
+        if (!Number.isInteger(y) || !Number.isInteger(m) || m < 0 || m > 11) return [];
+        return (trips || []).filter(trip => {
+            const date = this.getTripDate(trip);
+            return date && date.getFullYear() === y && date.getMonth() === m;
+        });
+    },
+
+    listAvailableMonths(trips) {
+        const keys = new Set();
+        (trips || []).forEach(trip => {
+            const date = this.getTripDate(trip);
+            if (!date) return;
+            keys.add(`${date.getFullYear()}-${date.getMonth()}`);
+        });
+        return Array.from(keys)
+            .map(key => {
+                const [year, monthIndex] = key.split('-').map(Number);
+                return { year, monthIndex };
+            })
+            .sort((a, b) => (b.year - a.year) || (b.monthIndex - a.monthIndex));
+    },
+
+    formatMonthLabel(year, monthIndex, { style = 'long' } = {}) {
+        const date = new Date(year, monthIndex, 1);
+        if (isNaN(date.getTime())) return '';
+        const month = date.toLocaleString('en-US', { month: style });
+        return `${month} ${year}`;
+    },
+
+    computeBusiestDay(trips) {
+        const dayCounts = {};
+        (trips || []).forEach(trip => {
+            const date = this.getTripDate(trip);
+            if (!date) return;
+            const key = [
+                date.getFullYear(),
+                String(date.getMonth() + 1).padStart(2, '0'),
+                String(date.getDate()).padStart(2, '0'),
+            ].join('-');
+            dayCounts[key] = (dayCounts[key] || 0) + 1;
+        });
+        const top = Object.entries(dayCounts).sort(([, a], [, b]) => b - a)[0];
+        if (!top) return null;
+        const [iso, count] = top;
+        const [y, m, d] = iso.split('-').map(Number);
+        const label = new Date(y, m - 1, d).toLocaleDateString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+        });
+        return { date: iso, count, label };
+    },
+
+    computePeakBucket(trips) {
+        const buckets = this.computePeakTimes(trips || []);
+        const top = Object.entries(buckets).sort(([, a], [, b]) => b - a)[0];
+        if (!top || top[1] === 0) return null;
+        return { name: top[0], count: top[1] };
+    },
+
+    /**
+     * Calendar-month Wrapped summary for shareable cards.
+     */
+    computeWrapped(trips, year, monthIndex) {
+        const monthTrips = this.filterByCalendarMonth(trips, year, monthIndex);
+        const metrics = this.computeMetrics(monthTrips);
+        const streaks = this.calculateStreaks(monthTrips);
+        const busiestDay = this.computeBusiestDay(monthTrips);
+        const peak = this.computePeakBucket(monthTrips);
+        const period = this.computeTripPeriodCounts(monthTrips);
+
+        return {
+            year,
+            monthIndex,
+            label: this.formatMonthLabel(year, monthIndex),
+            shortLabel: this.formatMonthLabel(year, monthIndex, { style: 'short' }),
+            trips: metrics.trips,
+            hours: metrics.hours,
+            routes: metrics.routes,
+            stops: metrics.stops,
+            daysRidden: period.daysRidden,
+            topRoute: metrics.topRoutes[0] || null,
+            topRoutes: metrics.topRoutes,
+            favoriteStop: metrics.topStops[0] || null,
+            bestStreak: streaks.best,
+            busiestDay,
+            peak,
+        };
+    },
+
     getTopItems(countsObj, limit) {
         return Object.entries(countsObj)
             .sort(([, a], [, b]) => b - a)
