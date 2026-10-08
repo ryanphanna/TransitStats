@@ -31,7 +31,11 @@
   },
   "overrides": {
     "follow-redirects": "^1.16.0",
-    "axios": "^1.13.5",
+    "axios": "^1.20.0",
+    "@fastify/busboy": "^3.2.2",
+    "@grpc/grpc-js": "^1.14.5",
+    "brace-expansion": "^1.1.21",
+    "proxy-addr": "^2.0.8",
     "minimatch": "^3.1.5",
     "qs": "^6.16.0",
     "@tootallnate/once": "^3.0.1",
