@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Idle tabs should stay signed in.** The shared session cookie is refreshed on focus and every 45 minutes, whitelist network flakes no longer force a logout, and a bad Admin SDK blip no longer wipes the cookie.
 - Updated web and Functions dependencies to clear the active Dependabot security alerts.
 - SMS stop selection now drops explicitly opposite-direction platforms when a neutral station match remains, avoiding unnecessary prompts.
 - **Trips with valid stop codes now count as matched**, so a missing display name no longer blocks prediction history.
