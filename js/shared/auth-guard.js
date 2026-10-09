@@ -47,6 +47,7 @@ async function recordAuthBreadcrumb(reason, extra = {}) {
             hasCurrentUser: Boolean(auth.currentUser),
             sharedSessionStatus,
             sharedSessionError,
+            lastSharedSessionSync: Auth.getLastSharedSessionSync?.() || null,
             authPersistence: authPersistenceStatus,
             firestorePersistence: firestorePersistenceStatus,
             ...extra,
@@ -136,14 +137,21 @@ export function requireAuth(options = {}) {
             }
             let verification = await verifyWithRetry(sessionUser);
             // A temporary Firestore outage must not become a fake logout. Keep
-            // the Firebase session and retry the verification in the
-            // background until the whitelist can be read again.
-            const verificationDeadline = Date.now() + AUTH_RESTORE_GRACE_MS;
-            while (verification.retryable && Date.now() < verificationDeadline) {
+            // the Firebase session (and the shared cookie) and retry until the
+            // whitelist can be read again — never signOut on retryable flakes.
+            while (verification.retryable) {
                 console.warn('Auth verification is temporarily unavailable; keeping the Firebase session.');
+                setAuthRestoring(true);
                 await wait(3000);
-                sessionUser = await waitForRestoredUser(auth.currentUser);
-                if (!sessionUser) continue;
+                sessionUser = auth.currentUser || await waitForRestoredUser(auth.currentUser);
+                if (!sessionUser) {
+                    await recordAuthBreadcrumb('no-restored-session', {
+                        duringWhitelistRetry: true,
+                        initialUser: Boolean(user),
+                    });
+                    window.location.href = loginUrl;
+                    return;
+                }
                 verification = await verifyWithRetry(sessionUser);
             }
             if (!verification.allowed) {
@@ -162,6 +170,7 @@ export function requireAuth(options = {}) {
                 return;
             }
             await Auth.syncSharedSession(sessionUser);
+            Auth.startSharedSessionKeepAlive(sessionUser);
             window.currentUser = sessionUser;
             window.isAdmin = verification.isAdmin;
             window.userPilot = verification.pilot || null;
