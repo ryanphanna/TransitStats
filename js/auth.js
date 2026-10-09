@@ -3,10 +3,17 @@ import { auth, authPersistenceReady, db } from './firebase.js';
 /**
  * TransitStats V2 Authentication Module
  */
+const SHARED_SESSION_SYNC_KEY = 'transitstats_shared_session_sync';
+// Re-mint before the Firebase ID token's typical 1h expiry so a suspended
+// tab still has a valid shared cookie when IndexedDB comes back empty.
+const SHARED_SESSION_REFRESH_MS = 45 * 60 * 1000;
+
 export const Auth = {
     phoneApiUrl: 'https://us-central1-transitstats-21ba4.cloudfunctions.net/api',
     sharedSessionUrl: '/auth/session',
     _restorePromise: null,
+    _keepAliveBound: false,
+    _keepAliveTimer: null,
 
     // --- Rate Limiting ---
     getRateLimit() {
@@ -174,18 +181,43 @@ export const Auth = {
         return data;
     },
 
+    _recordSharedSessionSync(ok, extra = {}) {
+        try {
+            localStorage.setItem(SHARED_SESSION_SYNC_KEY, JSON.stringify({
+                ok: Boolean(ok),
+                at: new Date().toISOString(),
+                ...extra,
+            }));
+        } catch {
+            // Diagnostics only — never block auth on storage failures.
+        }
+    },
+
+    getLastSharedSessionSync() {
+        try {
+            return JSON.parse(localStorage.getItem(SHARED_SESSION_SYNC_KEY) || 'null');
+        } catch {
+            return null;
+        }
+    },
+
     async syncSharedSession(user = auth.currentUser) {
         if (!user) return false;
         let lastError;
+        let lastStatus = null;
         for (let attempt = 0; attempt < 3; attempt += 1) {
             try {
-                const idToken = await user.getIdToken(attempt > 0);
+                // Always force-refresh: a cached token near expiry can mint a
+                // cookie that dies while the tab is idle overnight.
+                const idToken = await user.getIdToken(true);
                 const response = await fetch(this.sharedSessionUrl, {
                     method: 'POST',
                     credentials: 'include',
                     headers: { Authorization: `Bearer ${idToken}` }
                 });
+                lastStatus = response.status;
                 if (!response.ok) throw new Error(`Shared session request failed (${response.status})`);
+                this._recordSharedSessionSync(true, { status: response.status, attempt: attempt + 1 });
                 return true;
             } catch (error) {
                 lastError = error;
@@ -195,8 +227,34 @@ export const Auth = {
 
         // SSO is additive: a surface can still use its local Firebase session
         // while a not-yet-deployed or unavailable handoff endpoint recovers.
+        this._recordSharedSessionSync(false, {
+            status: lastStatus,
+            error: lastError?.message || 'unknown error',
+        });
         console.warn('Shared session unavailable:', lastError?.message || 'unknown error');
         return false;
+    },
+
+    /**
+     * Keep the shared-session cookie alive while a signed-in tab sits open.
+     * Idle Firebase IndexedDB often comes back empty after overnight suspend;
+     * a fresh cookie is the only backstop on the next refresh.
+     */
+    startSharedSessionKeepAlive(user = auth.currentUser) {
+        if (this._keepAliveBound || typeof window === 'undefined') return;
+        this._keepAliveBound = true;
+
+        const sync = () => {
+            const current = auth.currentUser || user;
+            if (!current) return;
+            void this.syncSharedSession(current);
+        };
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') sync();
+        });
+        window.addEventListener('focus', sync);
+        this._keepAliveTimer = window.setInterval(sync, SHARED_SESSION_REFRESH_MS);
     },
 
     async restoreSharedSession() {
