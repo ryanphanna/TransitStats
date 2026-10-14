@@ -51,9 +51,23 @@ export function renderAtlasCard({ publicProfile = false, signedIn = false, loadi
             </div>
         </div>
         ${action}
+        <div id="atlas-empty-cta" class="atlas-empty-cta hidden">
+            <span>No rides yet — import your PRESTO history to get started.</span>
+            <a class="atlas-card-cta" href="/import">Import PRESTO history <span aria-hidden="true">→</span></a>
+        </div>
     `;
 
     return container;
+}
+
+// Shown only for a genuinely empty, error-free account — never during a
+// trip-load failure, where the same blank state must not tell someone with a
+// broken connection to go import data instead of just retrying.
+export function setAtlasCardEmptyState(isEmpty) {
+    const empty = document.getElementById('atlas-empty-cta');
+    const shareButton = document.getElementById('atlas-share-map');
+    if (empty) empty.classList.toggle('hidden', !isEmpty);
+    if (shareButton) shareButton.classList.toggle('hidden', isEmpty);
 }
 
 function getPossessiveSuffix(name) {
