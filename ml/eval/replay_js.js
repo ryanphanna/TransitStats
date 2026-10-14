@@ -6,6 +6,8 @@
  *
  * Usage (TZ controls getHours()/getDay(), exactly as in Cloud Functions):
  *   TZ=UTC node ml/eval/replay_js.js --trips <trips.jsonl> --stops <stops.json> --out <out.jsonl> [--from 2026-01-01]
+ *     [--limit 100]          history window (newest N completed trips; 0 = all). Default = serving.
+ *     [--config '{"K":v}']   override PredictionEngineV3.CONFIG keys (tuning experiments only)
  *
  * Inputs and outputs contain private trip data: keep them under ml/artifacts/.
  */
@@ -39,6 +41,10 @@ function main() {
   const fromMs = ms(arg('from', '2026-01-01'));
   const out = fs.createWriteStream(arg('out'));
 
+  const limitArg = Number(arg('limit', '100'));
+  const limit = limitArg > 0 ? limitArg : Infinity;
+  if (arg('config')) Object.assign(PredictionEngineV3.CONFIG, JSON.parse(arg('config')));
+
   PredictionEngineV3.stopsLibrary = stops;
   PredictionEngineV3.networkGraph = null; // learned Firestore graph can't be time-travelled offline
   // Canonicalization is a pure function of (name, library) and scans the whole library per
@@ -63,7 +69,7 @@ function main() {
       const now = new Date(trip.startTime);
       const nowMs = now.getTime();
       const before = completed.filter(t => ms(t.endTime) < nowMs && t._id !== trip._id);
-      const history = before.slice(0, 100).filter(servesAsHistory);
+      const history = before.slice(0, limit).filter(servesAsHistory);
       const habitHistory = before.slice(0, 200).filter(servesAsHistory);
 
       const lastTrip = history[0] || null;
@@ -85,6 +91,7 @@ function main() {
       out.write(JSON.stringify({
         id: trip._id,
         tz: process.env.TZ || null,
+        v3Version: PredictionEngineV3.VERSION,
         historyLen: history.length,
         lastEndStop: lastEndStopName,
         lastRoute: lastTrip ? lastTrip.route : null,

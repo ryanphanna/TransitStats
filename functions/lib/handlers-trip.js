@@ -45,6 +45,11 @@ const {
 } = require('./gemini');
 const { parseStopInput } = require('./parsing');
 const { getEligibility, artifactSupportsAgency } = require('./intelligence-eligibility');
+
+// V3 votes over a longer window (3.5.0): the eval showed the 100-trip window was V3's main
+// coverage gap. V4/V5 eligibility keeps its original 100-trip window.
+const PREDICTION_HISTORY_LIMIT = 500;
+const ELIGIBILITY_HISTORY_LIMIT = 100;
 const routeV4Meta = require('./model_v4_meta.json');
 const routeV5Meta = require('./model_v5_meta.json');
 const endStopV4Meta = require('./model_v4_endstop_meta.json');
@@ -236,7 +241,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
   let defaultAgency = null;
   try {
     const [history, stopsLibrary, routesAtStop, profile, networkGraph, habits, adminStatus, experimentalIntelligence] = await Promise.all([
-      getRecentCompletedTrips(user.userId, 100),
+      getRecentCompletedTrips(user.userId, PREDICTION_HISTORY_LIMIT),
       getStopsLibrary(),
       getRoutesAtStop(startStopCode, resolvedAgency),
       getUserProfile(user.userId),
@@ -253,7 +258,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       || resolvedAgency
       || null;
     const now = new Date();
-    const eligibility = getEligibility(history, resolvedAgency);
+    const eligibility = getEligibility(history.slice(0, ELIGIBILITY_HISTORY_LIMIT), resolvedAgency);
     const mlRouteReady = eligibility.routeEligible &&
       artifactSupportsAgency(routeV4Meta, resolvedAgency, 'agency::route') &&
       artifactSupportsAgency(routeV5Meta, resolvedAgency, 'agency::route');
@@ -454,7 +459,7 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
   let newStopData = null;
   try {
     const [history, stopsLibrary, routesAtStop, confirmProfile, confirmNetworkGraph, confirmAdminStatus, experimentalIntelligence] = await Promise.all([
-      getRecentCompletedTrips(user.userId, 100),
+      getRecentCompletedTrips(user.userId, PREDICTION_HISTORY_LIMIT),
       getStopsLibrary(),
       getRoutesAtStop(newTrip.stopCode, newTrip.agency),
       getUserProfile(user.userId),
@@ -469,7 +474,7 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
       || newTrip.agency
       || null;
     const now = new Date();
-    const confirmEligibility = getEligibility(history, newTrip.agency);
+    const confirmEligibility = getEligibility(history.slice(0, ELIGIBILITY_HISTORY_LIMIT), newTrip.agency);
     const confirmMlRouteReady = confirmEligibility.routeEligible &&
       artifactSupportsAgency(routeV4Meta, newTrip.agency, 'agency::route') &&
       artifactSupportsAgency(routeV5Meta, newTrip.agency, 'agency::route');

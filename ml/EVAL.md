@@ -103,3 +103,55 @@ Replace `check_model_regression.py`'s comparison of each run's own random-window
 2. The candidate is the new pipeline, the baseline the currently published one, both refit per fold on the same rows.
 3. Reject if the candidate's paired top-1 on the last 90 days is lower with the CI upper bound below 0, or if coverage drops more than 5 points.
 4. Bump `EVAL_VERSION` only by a reviewed commit, so the gate always compares like with like.
+
+## V3: 3.5.0 coverage (history window, valid library stops, backoff tiers)
+
+Same eval definition v1 (snapshot `78a4265b1519`, 409 rows, last 90 days n=160). Replays: `TZ=UTC node ml/eval/replay_js.js ... --limit 500`, scored with `V3_VARIANTS` (`ml/eval/predictors/v3_variants.py`) while `--replay` stays the 3.4.1 snapshot, so "vs V3" is against V3 as served. Choices were made on the 249 rows before the last 90 days (`ml/eval/pre90.py`), then frozen and read on the last 90 days once.
+
+What changed in V3:
+1. **Library stops with a direction word count as valid trips.** `_isValidTrip` rejected any stop name containing "northbound" etc. as a bad sentence parse, which also dropped every trip from a real library stop with that word in its name (21 trips in the export). It's a correctness fix: it also helps the route guess.
+2. **500-trip window** (was 100). On the selection slice, 500 (34.1%) ≥ all history (33.7%) > 300 > 200 for V3 alone. The window also caps reads as history grows.
+3. **End-stop backoff** when no topology-legal past trip matches route + boarding stop, in this order:
+   - same route family from any boarding stop (direction-preferred)
+   - same boarding stop on any route
+   - the whole agency
+
+   Every tier excludes the boarding stop itself and goes through the same topology filter. Confidence is scaled ×0.6, ×0.5 and ×0.3 respectively, and predictions carry a `tier` field. Route→stop→agency beat stop→route→agency on selection (41.0% vs 39.8%). Exact-tier output is unchanged: on all 602 replay rows where the exact tier answered, the output is identical with and without backoff.
+4. **CONFIG unchanged.** On selection, a grid of TIME_SIGMA_HOURS {1, 1.5, 2.5, 4} × DECAY_HALFLIFE_RIDES {50, 100, 200, 400} spans 39.0–41.8%. That's ≤4 rows of difference, i.e. noise. SEQUENCE_BOOST multiplies every candidate equally (it's per context, not per trip), so it can't change rankings or shares and wasn't tuned.
+
+### End stop
+
+| Predictor | Top-1 [95% CI] | Top-3 | Coverage | Last 90d | vs V3 (90d) | vs B3 full (90d) | Conf ≥50 cov / prec | Conf ≥75 cov / prec |
+|---|---|---|---|---|---|---|---|---|
+| V3 3.4.1 as served (100) | 27.9% [23.7–32.4] | 29.6% | 42.5% | 31.2% | 0 | -18.8 [-26.2, -11.2] | 43% / 66% | 41% / 66% |
+| V3 3.4.1, 500 window | 35.9% | 41.6% | 62.1% | 38.8% | +7.5 [+2.5, +12.5] | -11.2 | | |
+| V3 validity fix only, 100 | 31.3% | 33.0% | 46.2% | 40.0% | +8.8 [+4.4, +13.1] | -10.0 | | |
+| V3 validity fix only, 500 | 39.4% | 45.0% | 66.0% | 47.5% | +16.2 [+10.0, +23.1] | -2.5 [-8.1, +3.1] | | |
+| **V3 3.5.0** (500 + fix + backoff) | **46.0% [41.2–50.8]** | 53.5% | 98.0% | **53.8%** | **+22.5 [+15.6, +29.4]** | +3.8 [-3.1, +10.6] | 79% / 55% | 61% / 62% |
+| B3 on full history | 45.2% [40.5–50.1] | 51.6% | 99.3% | 50.0% | +18.8 [+11.2, +26.2] | 0 | 70% / 60% | 51% / 64% |
+| V3 3.4.1, else B3 full | 44.3% | 49.1% | 99.3% | 52.5% | +21.2 [+15.0, +27.5] | +2.5 [-1.9, +6.9] | 73% / 58% | 62% / 60% |
+
+Segments (end-stop top-1), V3 3.5.0 vs 3.4.1:
+- Weekday: 48% vs 29%
+- Weekend: 31% vs 20%
+- May–Jul: 42% vs 26%
+- Aug–Oct: 56% vs 32%
+- TTC: 49% vs 29%
+- Other agency: 18% vs 12%
+
+### Route (V3 `guess()`, changed only by the validity fix and the window)
+
+| Predictor | Top-1 [95% CI] | Coverage | Last 90d | vs V3 (90d) | vs B3 full (90d) |
+|---|---|---|---|---|---|
+| V3 3.4.1 as served | 45.5% [40.7–50.3] | 57.0% | 44.4% | 0 | -28.7 [-36.9, -20.6] |
+| V3 3.5.0 | 60.6% [55.8–65.3] | 78.0% | 63.7% | +19.4 [+13.1, +26.2] | -9.4 [-15.0, -4.4] |
+| B3 on full history | 66.5% | 99.3% | 73.1% | +28.7 | 0 |
+
+### Findings
+
+- **Topology vetoes the actual stop in 8 rows.** Of the rows where the topology filter empties V3's exact candidates (20 at all-history), the actual end stop is outside the legal set in 8. That points to direction or topology data errors, not prediction errors. Backoff doesn't paper over them: every tier stays topology-filtered.
+- **Cost of the window:** each trip start reads up to 500 trip docs instead of 100, about 1.1 KB each, so about 550 KB and 400 extra Firestore reads per start. V4/V5 eligibility still counts only the newest 100. `detectProvisionalTransfer` and finalization keep 100.
+- **CPU cost:** at 500 trips, unindexed stop canonicalization took up to 1.3 s per start (it scanned the whole stops library on each call). 3.5.0 builds a name index once per library, so V3 now takes ≤3 ms per start, compared with ≤138 ms for 3.4.1 at 100 trips. The replay is unchanged: 0 diffs.
+- **Precision when shown falls from 66% to 47%** (46.0/98.0), because backoff guesses are weaker. Gating the SMS display at confidence ≥75 (in practice, exact tier only) keeps 62% precision at 61% coverage. That's left as a decision, not implemented.
+
+**Decision:** V3 3.5.0 beats V3 as served by +22.5 points (CI above 0), so it ships on this branch. It does **not** meet the promotion rule against B3 on full history: +3.8, CI [-3.1, +10.6]. It's at parity with B3 or slightly ahead, but not significantly. Merging is for the manager to decide. The validity fix (item 1) stands alone as a correctness fix that doesn't regress (+8.8 at the 100 window).
