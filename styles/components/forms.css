@@ -1,5 +1,4 @@
 /* --- Tables / Lists --- */
-.list-compact { display: flex; flex-direction: column; gap: 8px; }
 
 
 /* --- Form Elements --- */
@@ -28,7 +27,6 @@
 }
 .btn-primary:active { background: #066b4b; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-inactive { opacity: 0.5; cursor: default; }
 
 .btn-ghost {
   background: transparent;
@@ -39,17 +37,5 @@
   background: var(--bg-muted);
   color: var(--text-primary);
   border-color: var(--border-outer);
-}
-
-.btn-icon {
-  background: transparent;
-  border: none;
-  padding: 8px;
-  min-width: auto;
-  box-shadow: none !important;
-  font-size: 1.2rem;
-}
-.btn-icon:hover {
-  background: var(--bg-muted);
 }
 
