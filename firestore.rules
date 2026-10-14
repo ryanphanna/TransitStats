@@ -170,10 +170,13 @@ service cloud.firestore {
 
     // Allowed users whitelist - only cloud functions can write
     // Data model: { email: string, isAdmin: boolean }
-    // Users can only read their own entry (doc ID == their email)
+    // Users can only read their own entry (doc ID == their email), and only with a
+    // verified email: an unverified address proves nothing about who owns it
     // Write operations must be done via Admin SDK only
     match /allowedUsers/{email} {
-      allow read: if request.auth != null && request.auth.token.email.lower() == email;
+      allow read: if request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() == email;
       allow write: if false;
     }
 

@@ -17,7 +17,9 @@ vi.mock('../js/firebase.js', () => ({
                 doc(id) {
                     return {
                         async get() {
-                            return snapshots.get(`${name}/${id}`) || {
+                            const hit = snapshots.get(`${name}/${id}`);
+                            if (hit instanceof Error) throw hit;
+                            return hit || {
                                 exists: () => false,
                                 data: () => undefined,
                             };
@@ -60,6 +62,22 @@ describe('Auth.checkWhitelist', () => {
             allowed: false,
             error: 'Access denied. This app is invite-only.',
         });
+    });
+});
+
+describe('Auth.checkWhitelist permission-denied', () => {
+    it('treats a denied read as not allowed, without retrying', async () => {
+        const denied = Object.assign(new Error('denied'), { code: 'permission-denied' });
+        snapshots.set('allowedUsers/unverified@example.com', denied);
+        const result = await Auth.checkWhitelist('unverified@example.com');
+        expect(result).toEqual({ allowed: false, error: 'Access denied. This app is invite-only.' });
+        expect(result.retryable).toBeUndefined();
+    });
+
+    it('still marks other failures as retryable', async () => {
+        snapshots.set('allowedUsers/flaky@example.com', new Error('network'));
+        const result = await Auth.checkWhitelist('flaky@example.com');
+        expect(result.retryable).toBe(true);
     });
 });
 

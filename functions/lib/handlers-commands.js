@@ -28,6 +28,7 @@ const {
   hasPremiumAccess,
 } = require('./utils');
 const { getConfiguredPrimaryAgency } = require('./primary-agency');
+const { isPhoneConfirmed, UNLOCKED_TEXT, LINKED_NEUTRAL_TEXT } = require('./phone-confirmation');
 const { KNOWN_AGENCIES } = require('./constants');
 const {
   lookupAgencyTimezone,
@@ -256,7 +257,11 @@ async function handleRegister(phoneNumber, email, traceId = null) {
 
   const existingUser = await getUserByPhone(phoneNumber);
   if (existingUser) {
-    await sendSmsReply(phoneNumber, `Phone already linked to ${existingUser.email}.`);
+    // Only a confirmed number may see which account it belongs to.
+    await sendSmsReply(
+      phoneNumber,
+      isPhoneConfirmed(existingUser) ? `Phone already linked to ${existingUser.email}.` : LINKED_NEUTRAL_TEXT
+    );
     return;
   }
 
@@ -350,6 +355,22 @@ async function handleVerificationCode(phoneNumber, code, traceId = null) {
 
   const verificationData = { email: result.email };
 
+  // An existing link (e.g. from an invite text) is confirmed in place: the code
+  // went to that link's own email, so it proves the number. Update just that one
+  // field; never rewrite the document, and never resolve the account by email
+  // (an invite account's email isn't verified yet).
+  const existingLink = await getUserByPhone(phoneNumber);
+  if (existingLink) {
+    if (String(existingLink.email || '').toLowerCase() !== String(verificationData.email || '').toLowerCase()) {
+      await sendSmsReply(phoneNumber, 'Invalid code.');
+      return;
+    }
+    await db.collection('phoneNumbers').doc(phoneNumber).update({ loginConfirmed: true });
+    await clearPendingState(phoneNumber);
+    await sendSmsReply(phoneNumber, UNLOCKED_TEXT);
+    return;
+  }
+
   const userId = await getAuthUidByEmail(verificationData.email);
 
   if (!userId) {
@@ -361,6 +382,8 @@ async function handleVerificationCode(phoneNumber, code, traceId = null) {
     userId,
     email: verificationData.email,
     registeredAt: FieldValue.serverTimestamp(),
+    // The code went to the account's own email, so this number is proven.
+    loginConfirmed: true,
   });
 
   await clearPendingState(phoneNumber);

@@ -658,3 +658,32 @@ describe('firestore.rules: text-provisioned accounts (smsInviteProvisioned)', ()
         await assertFails(getDoc(doc(db, 'trips/vt')));
     });
 });
+
+describe('firestore.rules: allowedUsers read', () => {
+    beforeAll(async () => {
+        testEnv = await initializeTestEnvironment({
+            projectId: PROJECT_ID,
+            firestore: { rules: readFileSync(RULES_PATH, 'utf8') },
+        });
+    });
+    beforeEach(async () => { await testEnv.clearFirestore(); });
+    afterAll(async () => { await testEnv.cleanup(); });
+
+    test('a verified owner can read their own entry', async () => {
+        await invite('me@example.com');
+        await assertSucceeds(getDoc(doc(authedDb('u1', 'me@example.com'), 'allowedUsers/me@example.com')));
+    });
+
+    test('an unverified email cannot read, even its own entry', async () => {
+        await invite('me@example.com');
+        const db = testEnv.authenticatedContext('u1', { email: 'me@example.com', email_verified: false }).firestore();
+        await assertFails(getDoc(doc(db, 'allowedUsers/me@example.com')));
+    });
+
+    test('nobody can read someone else\'s entry or write', async () => {
+        await invite('me@example.com');
+        const other = authedDb('u2', 'other@example.com');
+        await assertFails(getDoc(doc(other, 'allowedUsers/me@example.com')));
+        await assertFails(setDoc(doc(other, 'allowedUsers/other@example.com'), { email: 'other@example.com' }));
+    });
+});

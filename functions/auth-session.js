@@ -91,19 +91,6 @@ async function isAllowedUser(uid, email, emailVerified = false) {
   return !phone.empty;
 }
 
-// A phone linked from a text (see lib/sms-invite.js) can't be used for phone-code
-// login until the email owner signs in on the website. Reaching this endpoint
-// with a verified email token is that proof.
-async function confirmPhoneLogin(uid) {
-  try {
-    const snapshot = await getFirestore().collection('phoneNumbers')
-      .where('userId', '==', uid).where('loginConfirmed', '==', false).get();
-    await Promise.all(snapshot.docs.map(doc => doc.ref.update({ loginConfirmed: true })));
-  } catch (error) {
-    console.warn('Phone login confirmation failed:', error.message);
-  }
-}
-
 async function handleAuthSession(req, res) {
   if (!ALLOWED_HOSTS.has(getHost(req))) {
     res.status(404).json({ error: 'Not found' });
@@ -136,7 +123,6 @@ async function handleAuthSession(req, res) {
       }
 
       await recordLoginActivity(decoded.uid, host);
-      if (decoded.email_verified === true) await confirmPhoneLogin(decoded.uid);
 
       const sessionCookie = await adminAuth.createSessionCookie(authHeader.slice(7), {
         expiresIn: SESSION_MAX_AGE_SECONDS * 1000,
