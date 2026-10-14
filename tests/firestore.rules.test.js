@@ -119,6 +119,21 @@ describe('firestore.rules: profile privilege boundaries', () => {
         expect(snap.data().isAdmin).toBe(true);
     });
 
+    test('public profile docs are not readable by anonymous or other signed-in users', async () => {
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), 'profiles/user_1'), {
+                displayName: 'User',
+                isPublic: true,
+                isPremium: true,
+                isAdmin: false,
+            });
+        });
+
+        await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), 'profiles/user_1')));
+        await assertFails(getDoc(doc(authedDb('user_2', 'other@example.com'), 'profiles/user_1')));
+        await assertSucceeds(getDoc(doc(authedDb('user_1', 'user@example.com'), 'profiles/user_1')));
+    });
+
     // isAdmin() in these rules is keyed entirely on request.auth.token.email, which is
     // populated for this app's real admin account but is not guaranteed for every sign-in
     // path (e.g. a phone-only Auth user with no email ever attached). Pin the deny-by-default

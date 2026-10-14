@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Closed a privacy leak in public profiles.** Anyone could read the raw profile record of a public user, including private fields like admin and premium status. Public profile pages still work; they get their data from the server instead.
 - Updated web and Functions dependencies to clear the active Dependabot security alerts.
 - SMS stop selection now drops explicitly opposite-direction platforms when a neutral station match remains, avoiding unnecessary prompts.
 - **Trips with valid stop codes now count as matched**, so a missing display name no longer blocks prediction history.
