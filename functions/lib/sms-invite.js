@@ -217,7 +217,7 @@ function createInviteHandlers({
     return sendWelcomeOnce(next, String(email).toLowerCase());
   }
 
-  return { findInviteByPhone, handleUnknownSender, sendWelcomeOnce, onInvitePhoneWritten, isOptedOut, markOptedOut };
+  return { findInviteByPhone, startPhoneConfirmation, handleUnknownSender, sendWelcomeOnce, onInvitePhoneWritten, isOptedOut, markOptedOut };
 }
 
 module.exports = {

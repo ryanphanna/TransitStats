@@ -90,6 +90,7 @@ async function handleApiRequest(req, res) {
     await handleAuthenticatedCommand(req, res, {
       uid: decodedToken.uid,
       email: decodedToken.email || '',
+      emailVerified: decodedToken.email_verified === true,
       traceId,
     });
   } catch (error) {

@@ -1344,3 +1344,133 @@ test('handleAddNotes: updates most recent completed trip notes', async () => {
   assert.deepEqual(calls.docUpdates[0], { notes: 'crowded but fast' });
   assert.equal(calls.sendSmsReply[0]?.message, 'Added notes to 510 Southbound.');
 });
+
+// --- Unconfirmed numbers (invite links not yet confirmed by the owner) ---
+process.env.TWILIO_AUTH_TOKEN = 'test-auth-token';
+const { phoneTag, tripStartedByPhone } = require('./lib/phone-confirmation');
+const LOCKED_USER = { userId: 'u1', email: 'owner@example.com', loginConfirmed: false };
+const OWNER_TRIP = {
+  id: 'owner-trip', route: '504', direction: 'Eastbound', agency: 'TTC',
+  startStopName: 'Broadview', startTime: { toDate: () => new Date(Date.now() - 10 * 60000) },
+};
+
+test('unconfirmed number: starting a trip while the owner has one running gets a neutral reply and reveals nothing', async () => {
+  const { handlers, calls, restore } = loadHandlers({ dbModule: { getActiveTrip: async () => OWNER_TRIP } });
+  try {
+    await handlers.handleTripLog('+14165550001', LOCKED_USER, 'Spadina', '510', null, 'TTC', { agencyExplicit: true });
+  } finally { restore(); }
+  assert.equal(calls.createTrip.length, 0);
+  assert.equal(calls.setPendingState.length, 0);
+  assert.equal(calls.sendSmsReply.length, 1);
+  assert.doesNotMatch(calls.sendSmsReply[0].message, /504|Broadview|Eastbound|started/i);
+});
+
+test('unconfirmed number: a new trip uses no history, habits, achievements or last agency, and is tagged with its number', async () => {
+  const touched = [];
+  const { handlers, calls, restore } = loadHandlers({
+    dbModule: {
+      getRecentCompletedTrips: async () => { touched.push('history'); return []; },
+      getLastTripAgency: async () => { touched.push('lastAgency'); return 'GO Transit'; },
+      getUserProfile: async () => { touched.push('profile'); return { defaultAgency: 'GO Transit' }; },
+    },
+  });
+  try {
+    await handlers.handleTripLog('+14165550001', LOCKED_USER, 'Spadina', '510', null, 'TTC', {});
+  } finally { restore(); }
+  assert.deepEqual(touched.filter(t => t !== 'profile'), []);
+  assert.equal(calls.createTrip.length, 1);
+  assert.equal(calls.createTrip[0].sourcePhone, phoneTag('+14165550001'));
+  assert.equal(calls.createTrip[0].habitPrediction, null);
+  assert.doesNotMatch(calls.sendSmsReply[0].message, /Usual trip|streak|trips/i);
+});
+
+test('confirmed number: new trips are tagged with the number that started them', async () => {
+  const { handlers, calls, restore } = loadHandlers();
+  try {
+    await handlers.handleTripLog('+14165550001', { userId: 'u1', email: 'o@example.com' }, 'Spadina', '510', null, 'TTC', {});
+  } finally { restore(); }
+  assert.equal(calls.createTrip[0].sourcePhone, phoneTag('+14165550001'));
+});
+
+test('unconfirmed number: END cannot touch a trip it did not start, and cannot tell whether one exists', async () => {
+  const replies = [];
+  for (const active of [OWNER_TRIP, { ...OWNER_TRIP, sourcePhone: phoneTag('+14165559999') }, null]) {
+    const { handlers, calls, restore } = loadHandlers({ dbModule: { getActiveTrip: async () => active } });
+    try {
+      await handlers.handleEndTrip('+14165550001', LOCKED_USER, 'Union', null, null);
+    } finally { restore(); }
+    assert.equal(calls.docUpdates.length, 0);
+    replies.push(calls.sendSmsReply[0].message);
+  }
+  assert.equal(new Set(replies).size, 1);
+  assert.doesNotMatch(replies[0], /504|Broadview|No active trip/i);
+});
+
+test('unconfirmed number: END ends its own trip with a plain reply and no history notes', async () => {
+  const own = { ...OWNER_TRIP, sourcePhone: phoneTag('+14165550001') };
+  const { handlers, calls, restore } = loadHandlers({ dbModule: { getActiveTrip: async () => own } });
+  try {
+    await handlers.handleEndTrip('+14165550001', LOCKED_USER, 'Union', null, null);
+  } finally { restore(); }
+  assert.equal(calls.docUpdates.length, 1);
+  assert.match(calls.sendSmsReply[0].message, /^Ended 504 Eastbound at \S+ \(\d+ min trip\)\.$/);
+});
+
+test('unconfirmed number: confirming a start can never mark the owner\'s trip incomplete', async () => {
+  const { handlers, calls, restore } = loadHandlers();
+  try {
+    await handlers.handleConfirmStart('+14165550001', LOCKED_USER, {
+      activeTrip: { ...OWNER_TRIP },
+      newTrip: { stopCode: '1', stopName: 'Spadina', route: '510', direction: null, agency: 'TTC' },
+    });
+  } finally { restore(); }
+  assert.equal(calls.createTrip.length, 0);
+  assert.equal(calls.docUpdates.length, 0);
+  assert.equal(calls.batchUpdates.length, 0);
+});
+
+test('source tags: keyed hash, never for the app identity, and none at all without the secret', () => {
+  const tag = phoneTag('+14165550001');
+  assert.match(tag, /^[0-9a-f]{32}$/);
+  assert.equal(phoneTag('+14165550001'), tag);
+  assert.notEqual(phoneTag('+14165550002'), tag);
+  assert.equal(phoneTag('web:u1'), null);
+
+  const saved = process.env.TWILIO_AUTH_TOKEN;
+  process.env.TWILIO_AUTH_TOKEN = 'a-different-secret';
+  const other = phoneTag('+14165550001');
+  delete process.env.TWILIO_AUTH_TOKEN;
+  const none = phoneTag('+14165550001');
+  const owns = tripStartedByPhone({ sourcePhone: tag }, '+14165550001');
+  process.env.TWILIO_AUTH_TOKEN = saved;
+  assert.notEqual(other, tag);
+  assert.equal(none, null);
+  assert.equal(owns, false); // fails closed: no secret, no ownership
+  assert.equal(tripStartedByPhone({ sourcePhone: null }, '+14165550001'), false);
+  assert.equal(tripStartedByPhone({}, '+14165550001'), false);
+});
+
+test('a trip the owner starts from the app carries no number tag, so no phone can end it', async () => {
+  // Owner starts a trip as the app identity.
+  const started = loadHandlers();
+  try {
+    await started.handlers.handleTripLog('web:u1', { userId: 'u1', email: 'o@example.com', loginConfirmed: true }, 'Spadina', '510', null, 'TTC', {});
+  } finally { started.restore(); }
+  assert.equal(started.calls.createTrip[0].sourcePhone, null);
+
+  // Unconfirmed number X tries to end it.
+  const webTrip = { ...OWNER_TRIP, sourcePhone: started.calls.createTrip[0].sourcePhone };
+  const attack = loadHandlers({ dbModule: { getActiveTrip: async () => webTrip } });
+  try {
+    await attack.handlers.handleEndTrip('+14165550001', LOCKED_USER, 'Union', null, null);
+  } finally { attack.restore(); }
+  assert.equal(attack.calls.docUpdates.length, 0);
+});
+
+test('the owner in the app can end any of their trips, including ones a phone started', async () => {
+  const { handlers, calls, restore } = loadHandlers({ dbModule: { getActiveTrip: async () => ({ ...OWNER_TRIP, sourcePhone: phoneTag('+14165550001') }) } });
+  try {
+    await handlers.handleEndTrip('web:u1', { userId: 'u1', email: 'o@example.com', loginConfirmed: true }, 'Union', null, null);
+  } finally { restore(); }
+  assert.equal(calls.docUpdates.length, 1);
+});

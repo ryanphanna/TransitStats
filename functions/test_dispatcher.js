@@ -14,6 +14,9 @@ function buildHarness({
   user = { userId: 'user_1' },
   shouldRespondToUnknown = false,
   pendingState = null,
+  pendingByPhone = null,
+  singleLineTrip = null,
+  handlers: handlerOverrides = {},
 } = {}) {
   const calls = {
     checkIdempotency: 0,
@@ -30,15 +33,18 @@ function buildHarness({
     unknownSender: [],
     optOuts: [],
     optOutDeletes: [],
+    confirmations: [],
+    handleDiscard: 0,
+    handleStatus: 0,
   };
 
   const handlers = {
     handleHelp: async () => {},
     handleRegister: async () => {},
-    handleStatus: async () => {},
+    handleStatus: async () => { calls.handleStatus++; },
     handleStatsCommand: async () => {},
     handleIncomplete: async () => {},
-    handleDiscard: async () => {},
+    handleDiscard: async () => { calls.handleDiscard++; },
     handleUnlink: async () => {},
     handleAddNotes: async (phoneNumber, userData, notes) => {
       calls.handleAddNotes.push({ phoneNumber, userData, notes });
@@ -55,6 +61,7 @@ function buildHarness({
     fillPredictions: async () => {},
     handleConfirmStart: async () => {},
     handleVerificationCode: async () => {},
+    ...handlerOverrides,
   };
 
   const dbModule = {
@@ -74,7 +81,7 @@ function buildHarness({
         }),
       }),
     }),
-    getPendingState: async () => pendingState,
+    getPendingState: async (phone) => (pendingByPhone ? (pendingByPhone[phone] || null) : pendingState),
     getUserByPhone: async () => user,
     getUserProfile: async () => ({ defaultAgency: 'TTC' }),
     isEmailAdmin: async () => false,
@@ -116,7 +123,7 @@ function buildHarness({
 
   const parsing = {
     parseMultiLineTripFormat: () => null,
-    parseSingleLineTripFormat: () => null,
+    parseSingleLineTripFormat: () => singleLineTrip,
     parseCasualTripFormat: () => null,
     parseEndTripFormat: () => parseEndTripResult,
   };
@@ -151,6 +158,7 @@ function buildHarness({
         return {
           createInviteHandlers: () => ({
             handleUnknownSender: async (phone) => { calls.unknownSender.push(phone); },
+            startPhoneConfirmation: async (phone, email) => { calls.confirmations.push([phone, email]); },
             markOptedOut: async (phone, reason) => { calls.optOuts.push([phone, reason]); },
           }),
         };
@@ -592,4 +600,159 @@ test('dispatcher: confirm_stop STATUS falls through to normal dispatch', async (
 
   assert.equal(calls.clearPendingState, 1, 'should clear the optional prompt');
   assert.equal(calls.handleTripLog, 0, 'should not log a trip');
+});
+
+const UNCONFIRMED = { userId: 'user_1', email: 'owner@example.com', loginConfirmed: false };
+
+test('dispatcher: an unconfirmed number can still log a trip', async () => {
+  const { dispatch, calls } = buildHarness({
+    user: UNCONFIRMED,
+    singleLineTrip: { stop: 'Spadina', route: '504', direction: null, agency: 'TTC' },
+  });
+  await dispatch('+14165551234', '504 Spadina', 'SM_U1');
+  assert.equal(calls.handleTripLog, 1);
+  assert.equal(calls.confirmations.length, 0);
+});
+
+test('dispatcher: an unconfirmed number can end a trip', async () => {
+  const { dispatch, calls } = buildHarness({ user: UNCONFIRMED });
+  await dispatch('+14165551234', 'END Union', 'SM_U2');
+  assert.equal(calls.handleEndTrip, 1);
+});
+
+test('dispatcher: an unconfirmed number is refused every command that reads or changes data', async () => {
+  for (const text of ['STATUS', 'STATS', 'DISCARD', 'FORGOT', 'UNLINK', 'ASK how many trips', 'NOTES late', 'SETTINGS AGENCY TTC']) {
+    const { dispatch, calls } = buildHarness({ user: UNCONFIRMED, shouldRespondToUnknown: true });
+    await dispatch('+14165551234', text, `SM_${text}`);
+    assert.equal(calls.handleStatus + calls.handleDiscard + calls.handleQuery + calls.handleAddNotes.length, 0, text);
+    assert.equal(calls.handleTripLog, 0, text);
+    assert.deepEqual(calls.confirmations, [['+14165551234', 'owner@example.com']], text);
+    assert.deepEqual(calls.sendSmsReply.map(r => r.message), ['We emailed you a code. Reply with it to unlock that.'], text);
+  }
+});
+
+test('dispatcher: an unconfirmed number gets no AI answer and no photo trip', async () => {
+  const ai = buildHarness({ user: UNCONFIRMED, shouldRespondToUnknown: true });
+  await ai.dispatch('+14165551234', 'how long was my longest trip', 'SM_AI');
+  assert.equal(ai.calls.handleQuery, 0);
+  assert.equal(ai.calls.confirmations.length, 1);
+
+  const mms = buildHarness({ user: UNCONFIRMED, shouldRespondToUnknown: true });
+  await mms.dispatch('+14165551234', '', 'SM_MMS_U', { numMedia: 1, mediaUrl: 'https://example.com/stop.jpg' });
+  assert.equal(mms.calls.handleMmsTrip.length, 0);
+  assert.equal(mms.calls.confirmations.length, 1);
+});
+
+test('dispatcher: unlock emails are rate limited, and a link with no email cannot be unlocked', async () => {
+  const limited = buildHarness({ user: UNCONFIRMED, shouldRespondToUnknown: false });
+  await limited.dispatch('+14165551234', 'STATS', 'SM_RL');
+  assert.equal(limited.calls.confirmations.length, 0);
+  assert.equal(limited.calls.sendSmsReply.length, 0);
+
+  const noEmail = buildHarness({ user: { userId: 'user_1', loginConfirmed: false }, shouldRespondToUnknown: true });
+  await noEmail.dispatch('+14165551234', 'STATS', 'SM_NE');
+  assert.equal(noEmail.calls.confirmations.length, 0);
+  assert.equal(noEmail.calls.handleStatus, 0);
+  assert.equal(noEmail.calls.sendSmsReply.length, 1);
+
+  // The no-email reply obeys the same once-per-window limit.
+  const noEmailLimited = buildHarness({ user: { userId: 'user_1', loginConfirmed: false }, shouldRespondToUnknown: false });
+  await noEmailLimited.dispatch('+14165551234', 'STATS', 'SM_NE2');
+  assert.equal(noEmailLimited.calls.sendSmsReply.length, 0);
+});
+
+test('dispatcher: confirmed links (true or field missing) keep full access', async () => {
+  for (const user of [{ userId: 'user_1', loginConfirmed: true }, { userId: 'user_1' }]) {
+    const { dispatch, calls } = buildHarness({ user });
+    await dispatch('+14165551234', 'STATUS', 'SM_C');
+    assert.equal(calls.handleStatus, 1);
+    assert.equal(calls.confirmations.length, 0);
+  }
+});
+
+test('dispatcher: an unconfirmed number cannot DISCARD through a pending trip prompt', async () => {
+  const { dispatch, calls } = buildHarness({
+    user: UNCONFIRMED,
+    shouldRespondToUnknown: true,
+    pendingState: { type: 'confirm_stop', tripId: 't1', stopCandidates: [{}] },
+  });
+  await dispatch('+14165551234', 'DISCARD', 'SM_PD');
+  assert.equal(calls.clearPendingState, 0);
+  assert.equal(calls.handleDiscard, 0);
+  assert.equal(calls.confirmations.length, 1);
+});
+
+test('dispatcher: a code reply from an unconfirmed number reaches verification', async () => {
+  const { dispatch, calls } = buildHarness({
+    user: UNCONFIRMED,
+    pendingState: { type: 'awaiting_verification', email: 'owner@example.com' },
+  });
+  await dispatch('+14165551234', '123456', 'SM_CODE');
+  assert.equal(calls.confirmations.length, 0);
+});
+
+const WEB_OWNER = { userId: 'user_1', email: 'owner@example.com' };
+const WEB = 'web:user_1';
+const apiMedia = { numMedia: 0, apiOwner: WEB_OWNER };
+
+test('dispatcher: web/app commands run as the owner under their own web: key, whatever the phone link state', async () => {
+  // No phone link is consulted at all: the app identity carries the owner.
+  const run = buildHarness({ user: null, shouldRespondToUnknown: true });
+  await run.dispatch(WEB, 'STATUS', 'api_1', apiMedia);
+  assert.equal(run.calls.handleStatus, 1);
+  assert.equal(run.calls.confirmations.length, 0);
+  assert.equal(run.calls.unknownSender.length, 0);
+  assert.equal(run.calls.sendSmsReply.length, 0);
+});
+
+test('dispatcher: the app can never link a phone or answer a code exchange', async () => {
+  let verified = 0;
+  let registered = 0;
+  const pending = buildHarness({
+    user: null,
+    pendingByPhone: { [WEB]: { type: 'awaiting_verification', email: 'owner@example.com' } },
+    handlers: {
+      handleVerificationCode: async () => { verified++; },
+      handleRegister: async () => { registered++; },
+    },
+  });
+  await pending.dispatch(WEB, '123456', 'api_2', apiMedia);
+  await pending.dispatch(WEB, 'REGISTER me@example.com', 'api_3', apiMedia);
+  assert.equal(verified, 0);
+  assert.equal(registered, 0);
+});
+
+test('dispatcher: a phone cannot answer a prompt the app created under the owner\'s web: key', async () => {
+  // The owner's app prompt exists only under web:user_1. Phone X (unconfirmed, same account) replies "1".
+  const attack = buildHarness({
+    user: UNCONFIRMED,
+    shouldRespondToUnknown: true,
+    pendingByPhone: { [WEB]: { type: 'confirm_agency', agencyOptions: ['TTC', 'GO Transit'], stopInput: 'Union', route: '1', direction: null, options: {} } },
+  });
+  await attack.dispatch('+14165551234', '1', 'SM_X1');
+  assert.equal(attack.calls.handleTripLog, 0);
+  assert.equal(attack.calls.clearPendingState, 0);
+
+  // The owner, from the app, answering their own prompt gets full owner behaviour.
+  const owner = buildHarness({
+    user: null,
+    pendingByPhone: { [WEB]: { type: 'confirm_agency', agencyOptions: ['TTC', 'GO Transit'], stopInput: 'Union', route: '1', direction: null, options: {} } },
+  });
+  await owner.dispatch(WEB, '1', 'api_4', apiMedia);
+  assert.equal(owner.calls.handleTripLog, 1);
+  assert.equal(owner.calls.handleTripLogArgs[0][1].loginConfirmed, true);
+});
+
+test('dispatcher: START and confirm_start prompts are never honoured for an unconfirmed number', async () => {
+  for (const [type, text] of [['confirm_start', 'START'], ['confirm_start', '1'], ['confirm_stop', 'START']]) {
+    let confirmed = 0;
+    const h = buildHarness({
+      user: UNCONFIRMED,
+      shouldRespondToUnknown: true,
+      pendingState: { type, activeTrip: { id: 't1' }, newTrip: {}, stopCandidates: [{}] },
+      handlers: { handleConfirmStart: async () => { confirmed++; } },
+    });
+    await h.dispatch('+14165551234', text, `SM_${type}_${text}`);
+    assert.equal(confirmed, 0, `${type} ${text}`);
+  }
 });

@@ -18,11 +18,13 @@
 const { db } = require('./db');
 const { sendSmsReply } = require('./twilio');
 const logger = require('./logger');
+const { isPhoneConfirmed } = require('./phone-confirmation');
 
 async function getPhoneForUser(userId) {
-  const snap = await db.collection('phoneNumbers').where('userId', '==', userId).limit(1).get();
-  if (snap.empty) return null;
-  return snap.docs[0].id; // doc ID is the phone number
+  // Only a confirmed number gets texts about the account's activity.
+  const snap = await db.collection('phoneNumbers').where('userId', '==', userId).get();
+  const confirmed = snap.docs.find(doc => isPhoneConfirmed(doc.data()));
+  return confirmed ? confirmed.id : null; // doc ID is the phone number
 }
 
 /**

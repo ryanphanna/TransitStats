@@ -125,12 +125,12 @@ function createOtpHarness(seed, { isAdmin = false } = {}) {
 }
 
 test('normalizePhoneNumber formats North American and international numbers as E.164', () => {
-  assert.equal(normalizePhoneNumber('(519) 276-9853'), '+15192769853');
+  assert.equal(normalizePhoneNumber('(519) 555-0143'), '+15195550143');
   assert.equal(normalizePhoneNumber('+442071234567'), '+442071234567');
 });
 
 test('admin phone gets no special treatment: cooldown applies and the response hides admin status', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'admin-1' },
     'profiles/admin-1': { isAdmin: true },
@@ -149,7 +149,7 @@ test('admin phone gets no special treatment: cooldown applies and the response h
 });
 
 test('regular OTP requests enforce the resend cooldown', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'user-1' },
     'profiles/user-1': { isAdmin: false },
@@ -166,7 +166,7 @@ test('regular OTP requests enforce the resend cooldown', async () => {
 });
 
 test('regular OTP requests enforce the rolling daily limit', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const now = Date.now();
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'user-1' },
@@ -242,7 +242,7 @@ test('a different IP is not affected by another IP hitting its limit', async () 
 });
 
 test('global daily send cap blocks further sends and logs an error', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const day = new Date().toISOString().slice(0, 10);
   const db = createFakeDb({
     [`phoneNumbers/${phone}`]: { userId: 'user-1' },
@@ -269,7 +269,7 @@ test('global daily send cap blocks further sends and logs an error', async () =>
 
 test('admin phone is subject to the per-IP and global caps', async () => {
   const day = new Date().toISOString().slice(0, 10);
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'admin-1' },
     'profiles/admin-1': { isAdmin: true },
@@ -283,7 +283,7 @@ test('admin phone is subject to the per-IP and global caps', async () => {
 });
 
 test('OTP verification returns a custom token for a valid code', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const { db, handlers } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'user-1' },
     [`phoneLoginVerification/${phone}`]: {
@@ -302,7 +302,7 @@ test('OTP verification returns a custom token for a valid code', async () => {
 });
 
 test('parallel wrong guesses cannot exceed the 3-attempt limit, and a correct code is single-use', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const seed = () => ({
     [`phoneNumbers/${phone}`]: { userId: 'user-1' },
     [`phoneLoginVerification/${phone}`]: {
@@ -337,16 +337,17 @@ test('parallel wrong guesses cannot exceed the 3-attempt limit, and a correct co
   assert.equal(both.filter(r => r.statusCode === 200).length, 1);
 });
 
-test('phone login is refused for a text-provisioned link until the email owner has signed in', async () => {
-  const phone = '+15192769853';
+test('phone login sends no code for a text-provisioned link that is not yet confirmed', async () => {
+  const phone = '+15195550143';
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'user-1', loginConfirmed: false },
     'profiles/user-1': { isAdmin: false },
   });
   const request = new FakeResponse();
   await handlers.handleRequestOtp({ body: { phoneNumber: phone }, headers: {} }, request, 't1');
-  assert.equal(request.statusCode, 400);
-  assert.match(request.body.error, /Sign in once with the link/);
+  // Same answer as a registered number, but nothing is sent.
+  assert.equal(request.statusCode, 200);
+  assert.deepEqual(request.body, { success: true });
   assert.equal(sentMessages.length, 0);
 
   const { handlers: confirmed, sentMessages: sent } = createOtpHarness({
@@ -359,8 +360,30 @@ test('phone login is refused for a text-provisioned link until the email owner h
   assert.equal(sent.length, 1);
 });
 
+test('request_otp answers an unregistered number exactly like a registered one', async () => {
+  const known = '+15195550143';
+  const unknown = '+15195550142';
+  const { handlers, sentMessages } = createOtpHarness({
+    [`phoneNumbers/${known}`]: { userId: 'user-1' },
+  });
+  const a = new FakeResponse();
+  const b = new FakeResponse();
+  await handlers.handleRequestOtp({ body: { phoneNumber: known }, headers: {} }, a, 't1');
+  await handlers.handleRequestOtp({ body: { phoneNumber: unknown }, headers: {} }, b, 't2');
+  assert.equal(b.statusCode, a.statusCode);
+  assert.deepEqual(b.body, a.body);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].phone, known);
+
+  // The decoy can never be redeemed, whatever code is guessed.
+  const guess = new FakeResponse();
+  await handlers.handleVerifyOtp({ body: { phoneNumber: unknown, code: '123456' } }, guess, 't3');
+  assert.equal(guess.statusCode, 400);
+  assert.equal(guess.body.token, undefined);
+});
+
 test('verifying a code is also refused for an unconfirmed link', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const { handlers } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'user-1', loginConfirmed: false },
     [`phoneLoginVerification/${phone}`]: {
@@ -391,9 +414,53 @@ test('authenticated command dispatch returns captured replies', async () => {
   await handler({ body: { command: '506 College' } }, response, {
     uid: 'user-1',
     email: 'test@example.com',
+    emailVerified: true,
     traceId: 'trace-1',
   });
 
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body.replies, ['Trip logged.']);
+});
+
+test('the API acts as the verified owner under its own web: identity, never as a phone', async () => {
+  const seed = {
+    'allowedUsers/test@example.com': { isAdmin: false },
+    'phoneNumbers/+15195550143': { userId: 'user-1', loginConfirmed: false },
+  };
+  const calls = [];
+  const build = () => createCommandHandler({
+    db: createFakeDb(seed),
+    apiContextStorage: { async run(context, callback) { await callback(); } },
+    generateTraceId: () => 'mock',
+    logger: createLogger(),
+    async dispatch(phone, command, sid, media) { calls.push({ phone, command, media }); },
+  });
+
+  const ok = new FakeResponse();
+  await build()({ body: { command: 'STATS' } }, ok, { uid: 'user-1', email: 'test@example.com', emailVerified: true, traceId: 't' });
+  assert.equal(ok.statusCode, 200);
+  assert.equal(calls[0].phone, 'web:user-1');
+  assert.deepEqual(calls[0].media.apiOwner, { userId: 'user-1', email: 'test@example.com' });
+
+  for (const emailVerified of [false, undefined]) {
+    const refused = new FakeResponse();
+    await build()({ body: { command: 'STATS' } }, refused, { uid: 'user-1', email: 'test@example.com', emailVerified, traceId: 't' });
+    assert.equal(refused.statusCode, 403);
+  }
+  assert.equal(calls.length, 1);
+});
+
+test('decoy OTP requests do not use the global send cap but do use the per-IP limit', async () => {
+  const ip = '203.0.113.9';
+  const { db, handlers, sentMessages } = createOtpHarness({});
+  for (const phone of ['+15195550101', '+15195550102']) {
+    const res = new FakeResponse();
+    await handlers.handleRequestOtp({ body: { phoneNumber: phone }, headers: { 'x-forwarded-for': ip } }, res, 't');
+    assert.equal(res.statusCode, 200);
+  }
+  assert.equal(sentMessages.length, 0);
+  const day = new Date().toISOString().slice(0, 10);
+  assert.equal(db.read('phoneLoginGlobalLimits', day), null);
+  const ipKey = require('node:crypto').createHash('sha256').update(ip).digest('hex').slice(0, 32);
+  assert.equal(db.read('phoneLoginIpLimits', ipKey).sentAt.length, 2);
 });
