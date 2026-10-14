@@ -73,7 +73,7 @@
           ]
         },
         {
-          "source": "/{dashboard,public,rocket}",
+          "source": "/{dashboard,public}",
           "headers": [
             {
               "key": "Cache-Control",

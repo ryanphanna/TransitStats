@@ -164,14 +164,6 @@ input:-webkit-autofill { animation-name: onAutofillStart; }
 .trip-date { font-weight: 700; font-size: 0.85rem; }
 .trip-duration { font-size: 0.8rem; color: var(--text-secondary); }
 .trip-direction { font-size: 0.75rem; color: var(--text-secondary); font-weight: 600; letter-spacing: 0.03em; }
-.trip-rocket-badge {
-  font-size: 0.85rem;
-  line-height: 1;
-  margin-top: 4px;
-  opacity: 0.9;
-  cursor: default;
-  display: inline-block;
-}
 
 
 /* --- Stats --- */

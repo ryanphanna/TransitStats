@@ -124,7 +124,6 @@ export const TripFeed = {
                     ${direction ? `<div class="trip-direction font-bold text-xxs">${Utils.hide(direction)}</div>` : ''}
                     ${trip.vehicle ? `<div class="trip-vehicle text-xxs opacity-70">${Utils.hide(trip.vehicle)}</div>` : ''}
                     ${hasDuration ? `<div class="trip-duration text-secondary text-xs">${duration} min</div>` : ''}
-                    ${trip.rocketTripId ? `<div class="trip-rocket-badge text-accent" title="Rocket Instrument Sampling"><i data-lucide="microscope" class="icon-inline"></i></div>` : ''}
                 </div>
             </div>
         `;

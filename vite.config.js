@@ -29,7 +29,6 @@ export default defineConfig(({ mode, command }) => {
                     index: './index.html',
                     public: './public.html',
                     dashboard: './dashboard.html',
-                    rocket: './Tools/Rocket/index.html',
                     terms: './terms.html',
                     privacy: './privacy.html',
                     import: './import.html',

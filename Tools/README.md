@@ -53,7 +53,6 @@ Keep reusable scripts here. Do not create a second top-level scripts folder unle
 
 ## Standalone Utility
 
-- `Rocket/` — Rocket research instrument static files
 
 ## Placement Rule
 
