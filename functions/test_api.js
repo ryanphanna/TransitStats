@@ -337,7 +337,7 @@ test('parallel wrong guesses cannot exceed the 3-attempt limit, and a correct co
   assert.equal(both.filter(r => r.statusCode === 200).length, 1);
 });
 
-test('phone login is refused for a text-provisioned link until the email owner has signed in', async () => {
+test('phone login sends no code for a text-provisioned link that is not yet confirmed', async () => {
   const phone = '+15192769853';
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'user-1', loginConfirmed: false },
@@ -345,8 +345,9 @@ test('phone login is refused for a text-provisioned link until the email owner h
   });
   const request = new FakeResponse();
   await handlers.handleRequestOtp({ body: { phoneNumber: phone }, headers: {} }, request, 't1');
-  assert.equal(request.statusCode, 400);
-  assert.match(request.body.error, /Sign in once with the link/);
+  // Same answer as a registered number, but nothing is sent.
+  assert.equal(request.statusCode, 200);
+  assert.deepEqual(request.body, { success: true });
   assert.equal(sentMessages.length, 0);
 
   const { handlers: confirmed, sentMessages: sent } = createOtpHarness({
@@ -357,6 +358,28 @@ test('phone login is refused for a text-provisioned link until the email owner h
   await confirmed.handleRequestOtp({ body: { phoneNumber: phone }, headers: {} }, ok, 't2');
   assert.equal(ok.statusCode, 200);
   assert.equal(sent.length, 1);
+});
+
+test('request_otp answers an unregistered number exactly like a registered one', async () => {
+  const known = '+15192769853';
+  const unknown = '+15195550142';
+  const { handlers, sentMessages } = createOtpHarness({
+    [`phoneNumbers/${known}`]: { userId: 'user-1' },
+  });
+  const a = new FakeResponse();
+  const b = new FakeResponse();
+  await handlers.handleRequestOtp({ body: { phoneNumber: known }, headers: {} }, a, 't1');
+  await handlers.handleRequestOtp({ body: { phoneNumber: unknown }, headers: {} }, b, 't2');
+  assert.equal(b.statusCode, a.statusCode);
+  assert.deepEqual(b.body, a.body);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].phone, known);
+
+  // The decoy can never be redeemed, whatever code is guessed.
+  const guess = new FakeResponse();
+  await handlers.handleVerifyOtp({ body: { phoneNumber: unknown, code: '123456' } }, guess, 't3');
+  assert.equal(guess.statusCode, 400);
+  assert.equal(guess.body.token, undefined);
 });
 
 test('verifying a code is also refused for an unconfirmed link', async () => {

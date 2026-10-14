@@ -43,18 +43,13 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
     }
 
     try {
+      // The response must not reveal whether a number is registered or confirmed.
+      // Ineligible numbers go through the same limits, store a decoy record whose
+      // empty code can never match, send nothing, and get the same answer.
       const phoneDoc = await db.collection('phoneNumbers').doc(phoneNumber).get();
-      if (!phoneDoc.exists) {
-        logger.warn('OTP Request denied: Phone number not registered', { phoneNumber, traceId }, traceId);
-        res.status(400).json({
-          error: 'This phone number is not registered. Please register your number via SMS first.',
-        });
-        return;
-      }
-
-      if (phoneDoc.data()?.loginConfirmed === false) {
-        res.status(400).json({ error: PHONE_LOGIN_UNCONFIRMED });
-        return;
+      const eligible = phoneDoc.exists && phoneDoc.data()?.loginConfirmed !== false;
+      if (!eligible) {
+        logger.warn('OTP Request skipped: number not registered or not confirmed', { phoneNumber, traceId }, traceId);
       }
 
       const verificationRef = db.collection('phoneLoginVerification').doc(phoneNumber);
@@ -117,7 +112,7 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
         });
 
         transaction.set(verificationRef, {
-          code,
+          code: eligible ? code : '',
           expiresAt,
           attempts: 0,
           sentAt: Timestamp.now(),
@@ -143,6 +138,11 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
       if (globalLimitReached) {
         logger.error('OTP Request blocked: global daily send cap reached', { cap: OTP_GLOBAL_DAILY_LIMIT, traceId }, traceId);
         res.status(429).json({ error: 'Text sign-in is temporarily unavailable. Try again tomorrow.' });
+        return;
+      }
+
+      if (!eligible) {
+        res.status(200).json({ success: true });
         return;
       }
 
