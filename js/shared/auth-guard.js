@@ -244,7 +244,10 @@ export function requireAuth(options = {}) {
                 window.location.href = '/dashboard';
                 return;
             }
-            await Auth.syncSharedSession(sessionUser);
+            // Refreshing the token and minting the shared cookie is two network round trips
+            // on every page load. The page already has its Firebase session, and the cookie
+            // only matters for the next surface, so it must not hold up rendering.
+            void Auth.syncSharedSession(sessionUser);
             Auth.startSharedSessionKeepAlive(sessionUser);
             window.currentUser = sessionUser;
             window.isAdmin = verification.isAdmin;

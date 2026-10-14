@@ -1,5 +1,6 @@
 import { Auth } from '../auth.js';
 import { openSettingsPanel } from './settings-panel.js';
+import { refreshIcons } from './icons.js';
 
 /**
  * Shared Header Component
@@ -44,7 +45,7 @@ function _render(isAdmin, currentPage, profileHref, shareAction) {
     `;
 
     root.insertAdjacentHTML('afterbegin', headerHtml);
-    if (window.lucide) lucide.createIcons();
+    refreshIcons();
 
     document.getElementById('btn-header-settings')?.addEventListener('click', () => openSettingsPanel());
 

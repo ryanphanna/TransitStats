@@ -36,6 +36,12 @@ export default defineConfig(({ mode, command }) => {
                     wrapped: './wrapped.html',
                 },
                 output: {
+                    // Name the shared vendor chunk after what it is (Rollup otherwise borrows a module's name).
+                    manualChunks(id) {
+                        if (id.includes('node_modules/firebase') || id.includes('node_modules/@firebase')) return 'firebase';
+                        if (id.includes('node_modules/lucide')) return 'lucide';
+                        return undefined;
+                    },
                     entryFileNames: (chunkInfo) => chunkInfo.name === 'public'
                         ? 'assets/public.js'
                         : 'assets/[name]-[hash].js',
