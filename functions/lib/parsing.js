@@ -1,7 +1,7 @@
 /**
  * Message parsing logic for transit trip tracking
  */
-const { KNOWN_AGENCIES } = require('./constants');
+const { KNOWN_AGENCIES, AGENCY_CANONICAL } = require('./constants');
 const { toTitleCase, normalizeDirection, normalizeRoute, normalizeAgency } = require('./utils');
 
 const CANONICAL_DIRECTIONS = new Set([
@@ -10,6 +10,68 @@ const CANONICAL_DIRECTIONS = new Set([
   'Up Valley', 'Down Valley',
   'Up Mountain', 'Down Mountain',
 ]);
+
+const KNOWN_AGENCY_NAMES = new Map([
+  ...KNOWN_AGENCIES.map((name) => [name.toLowerCase(), normalizeAgency(name)]),
+  ...Object.entries(AGENCY_CANONICAL),
+]);
+
+// Spacing, case and stray punctuation never decide whether something is a known agency
+// ("GO  Transit", "TTC.", "T.T.C." all match).
+function agencyKey(text) {
+  return String(text || '').toLowerCase().replace(/[.,;:!]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/** The canonical agency for a line only when it is a known agency name or alias; otherwise null. */
+function resolveKnownAgency(text) {
+  const key = agencyKey(text);
+  return key ? KNOWN_AGENCY_NAMES.get(key) || null : null;
+}
+
+// Direction-like words that are not compass bounds but are never an agency.
+const EXTRA_DIRECTION_WORDS = new Map([['downtown', 'Downtown'], ['uptown', 'Uptown']]);
+
+// Long direction words that a hurried text ("Northa", "Sout") is probably a slip for.
+const LOOSE_DIRECTION_WORDS = [
+  ['northbound', 'Northbound'], ['southbound', 'Southbound'], ['eastbound', 'Eastbound'], ['westbound', 'Westbound'],
+  ['north', 'Northbound'], ['south', 'Southbound'], ['east', 'Eastbound'], ['west', 'Westbound'],
+  ['inbound', 'Inbound'], ['outbound', 'Outbound'], ['clockwise', 'Clockwise'],
+];
+
+// Optimal-string-alignment distance (one typo, including a swapped pair, costs 1).
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 0; j <= b.length; j += 1) d[0][j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+/**
+ * Direction from an exact word or a near miss of a long direction word. A near miss must start with
+ * the same letter AND be a cut-off of the word ("Sou", "Northa", "Eastb"; at least 3 letters) or,
+ * for words of 5+ letters, one typo away ("Sotuh"). So "Test", "Fast", "Worth" and "Easy" are not
+ * directions. Anything else returns null.
+ */
+function looseDirection(text) {
+  const exact = normalizeDirection(text);
+  // normalizeDirection hands unknown text back as-is, so only recognized directions count.
+  if (CANONICAL_DIRECTIONS.has(exact)) return exact;
+  const word = agencyKey(text).replace(/\s+/g, '');
+  if (EXTRA_DIRECTION_WORDS.has(word)) return EXTRA_DIRECTION_WORDS.get(word);
+  if (!/^[a-z]{3,}$/.test(word)) return null;
+  for (const [candidate, direction] of LOOSE_DIRECTION_WORDS) {
+    if (word[0] !== candidate[0]) continue;
+    if (candidate.startsWith(word)) return direction;
+    if (word.length >= 5 && editDistance(word, candidate) <= 1) return direction;
+  }
+  return null;
+}
 
 /**
  * Parse stop input to determine if it's a stop code (all digits) or stop name (contains letters)
@@ -100,7 +162,7 @@ function parseMultiLineTripFormat(body, defaultAgency) {
     if (lines.length > 3) {
       const potentialAgency = lines[3].trim();
       if (potentialAgency) {
-        agency = normalizeAgency(potentialAgency);
+        agency = resolveKnownAgency(potentialAgency) || normalizeAgency(potentialAgency);
         agencyExplicit = true;
       }
     }
@@ -108,13 +170,25 @@ function parseMultiLineTripFormat(body, defaultAgency) {
     if (CANONICAL_DIRECTIONS.has(line3Direction)) {
       direction = line3Direction;
     } else {
-      agency = normalizeAgency(lines[2]);
-      agencyExplicit = true;
+      // Known agency (or alias) wins, then a direction (exact or near-miss like "Northa");
+      // anything else is stored as typed.
+      const knownAgency = resolveKnownAgency(lines[2]);
+      const looseDir = knownAgency ? null : looseDirection(lines[2]);
+      if (knownAgency) {
+        agency = knownAgency;
+        agencyExplicit = true;
+      } else if (looseDir) {
+        direction = looseDir;
+      } else {
+        // Not a known agency or a direction: keep what was typed (riders use systems outside the list).
+        agency = normalizeAgency(lines[2]);
+        agencyExplicit = true;
+      }
     }
     if (lines.length > 3) {
       const potentialAgency = lines[3].trim();
       if (potentialAgency) {
-        agency = normalizeAgency(potentialAgency);
+        agency = resolveKnownAgency(potentialAgency) || normalizeAgency(potentialAgency);
         agencyExplicit = true;
       }
     }
@@ -238,19 +312,18 @@ function parseAgencyOverride(message) {
   const trimmed = message.trim();
   const lowerMessage = trimmed.toLowerCase();
 
-  // Check each known agency (case-insensitive)
-  for (const agency of KNOWN_AGENCIES) {
-    const lowerAgency = agency.toLowerCase();
-
+  // Check each known agency name or alias (case-insensitive), longest first so "GO Transit" wins over "GO".
+  const names = [...KNOWN_AGENCY_NAMES.keys()].sort((x, y) => y.length - x.length);
+  for (const name of names) {
     // Check if message is exactly the agency name or ends with [whitespace][agency]
     // The regex \s covers spaces, newlines, and tabs.
-    const pattern = new RegExp(`\\s${lowerAgency.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const pattern = new RegExp(`\\s${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
-    if (lowerMessage === lowerAgency || pattern.test(lowerMessage)) {
+    if (lowerMessage === name || pattern.test(lowerMessage)) {
       // Remove agency from end of message
-      const remainingMessage = lowerMessage === lowerAgency ?
+      const remainingMessage = lowerMessage === name ?
         '' :
-        trimmed.slice(0, -(agency.length + 1)).trim();
+        trimmed.slice(0, -(name.length + 1)).trim();
 
       // If there's no actual message left, this wasn't an override (e.g. they just sent "TTC")
       if (remainingMessage.length === 0) {
@@ -258,7 +331,7 @@ function parseAgencyOverride(message) {
       }
 
       // Return the canonical agency name
-      return { agency: normalizeAgency(agency), remainingMessage };
+      return { agency: KNOWN_AGENCY_NAMES.get(name), remainingMessage };
     }
   }
 

@@ -14,7 +14,7 @@ const {
   getVerificationData,
 } = require('./users');
 const { getActiveTrip, createTrip, getRecentCompletedTrips, hasBlockingCorrection, getPendingState, setPendingState, clearPendingState, getLastTripAgency, getTripCount } = require('./trips');
-const { lookupStop, findMatchingStops, getRoutesAtStop, getStopsLibrary } = require('./stops');
+const { lookupStop, lookupStopCheck, findMatchingStops, getRoutesAtStop, getStopsLibrary } = require('./stops');
 const { getConversationHistory, saveConversationTurn } = require('./conversations');
 
 module.exports = {
@@ -43,6 +43,7 @@ module.exports = {
   setPendingState,
   clearPendingState,
   lookupStop,
+  lookupStopCheck,
   findMatchingStops,
   getRoutesAtStop,
   getStopsLibrary,

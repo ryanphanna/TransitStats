@@ -271,3 +271,56 @@ test('triggerManualFinalization throws when trip does not exist', async () => {
   });
   await assert.rejects(() => finalization.triggerManualFinalization('missing-id'), /Trip not found/);
 });
+
+// --- refreshStopMatchAfterCorrection ---
+
+const endedTrip = (overrides = {}) => ({
+  route: '506', agency: 'TTC', direction: 'Westbound',
+  startStopName: 'College', endStopName: 'High Park', endTime: 1, stop_matched: false,
+  ...overrides,
+});
+const found = async () => ({ status: 'found', stop: { id: 's' } });
+const notFound = async () => ({ status: 'notFound', stop: null });
+const errored = async () => ({ status: 'error', stop: null });
+
+test('a corrected stop that now resolves flips the trip to matched', async () => {
+  const { finalization } = loadFinalization();
+  const before = endedTrip({ startStopName: 'Colleg' });
+  assert.deepEqual(await finalization.refreshStopMatchAfterCorrection(before, endedTrip(), found), { changed: true, matched: true });
+});
+
+test('a correction that no longer resolves flips a matched trip back to unmatched', async () => {
+  const { finalization } = loadFinalization();
+  const before = endedTrip({ stop_matched: true });
+  const after = endedTrip({ stop_matched: true, endStopName: 'Nowhere Station' });
+  const check = async (code, name) => (name === 'Nowhere Station' ? { status: 'notFound' } : { status: 'found' });
+  assert.deepEqual(await finalization.refreshStopMatchAfterCorrection(before, after, check), { changed: true, matched: false });
+});
+
+test('a lookup error never writes: the trip is left untouched', async () => {
+  const { finalization } = loadFinalization();
+  const before = endedTrip({ stop_matched: true, startStopName: 'Colleg' });
+  const after = endedTrip({ stop_matched: true });
+  assert.equal((await finalization.refreshStopMatchAfterCorrection(before, after, errored)).changed, false);
+  const mixed = async (code, name) => (name === 'High Park' ? { status: 'error' } : { status: 'notFound' });
+  assert.equal((await finalization.refreshStopMatchAfterCorrection(before, after, mixed)).changed, false);
+});
+
+test('skips when the same write already changed stop_matched, on route-only edits, and on unfinished trips', async () => {
+  const { finalization } = loadFinalization();
+  const check = async () => { throw new Error('should not look anything up'); };
+  const trip = endedTrip();
+  assert.equal((await finalization.refreshStopMatchAfterCorrection(trip, { ...trip, notes: 'hi' }, check)).changed, false);
+  assert.equal((await finalization.refreshStopMatchAfterCorrection(trip, { ...trip, route: '505' }, check)).changed, false);
+  assert.equal((await finalization.refreshStopMatchAfterCorrection(trip, { ...trip, direction: 'Eastbound' }, check)).changed, false);
+  assert.equal((await finalization.refreshStopMatchAfterCorrection(trip, { ...trip, startStopName: 'X', stop_matched: true }, check)).changed, false);
+  const active = endedTrip({ endTime: null });
+  assert.equal((await finalization.refreshStopMatchAfterCorrection(active, { ...active, startStopName: 'X' }, check)).changed, false);
+});
+
+test('writing stop_matched itself does not count as a stop input change', () => {
+  const { finalization } = loadFinalization();
+  const trip = endedTrip();
+  assert.equal(finalization.stopMatchInputsChanged(trip, { ...trip, stop_matched: true }), false);
+  assert.equal(finalization.stopMatchInputsChanged(trip, { ...trip, endStopName: 'Other' }), true);
+});

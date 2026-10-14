@@ -157,30 +157,84 @@ function getStopCandidateKey(candidate) {
   return `${nameKey}|${direction.toLowerCase()}`;
 }
 
+// "X Station - Northbound Platform", "X Station (Platform 2)", "X Station Platform 1": a platform
+// belongs to its parent station. Only an explicit "platform" suffix counts, so ordinary stop names
+// (and genuinely different stops) are never shortened.
+const PLATFORM_SUFFIX = /\s*[-\u2013\u2014,(]?\s*(?:(?:north|south|east|west)bound\s+)?platform(?:\s+[a-z0-9]+)?\)?\s*$/i;
+
+/** The station a platform record belongs to ("College Station - Northbound Platform" -> "College Station"). */
+function stationBaseName(label) {
+  const text = (label || '').toString().trim();
+  const base = text.replace(PLATFORM_SUFFIX, '').trim();
+  return base && base !== text ? base : text;
+}
+
+function isPlatformRecord(label) {
+  const text = (label || '').toString().trim();
+  return PLATFORM_SUFFIX.test(text) && stationBaseName(text) !== text;
+}
+
+/** Punctuation/spacing/case-insensitive identity of a stop's station name. */
+function stopNameKey(label) {
+  return stationBaseName(label).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 /**
- * Collapse duplicate stop records that differ only in punctuation or spacing.
+ * Collapse duplicate stop records of the same station: punctuation-only twins, and platform
+ * records ("X Station - Northbound Platform") folded into their parent station when the parent is
+ * also a candidate. Directional platforms with no parent present stay distinct, and different
+ * stops are never merged. In strict mode (used before the route check) two records that carry
+ * different stop codes are different stops and stay separate; platform records still fold into
+ * their parent (both only within one home agency), except a platform whose direction is the requested one (it is the more specific
+ * answer). The kept record carries the union of the merged records' routes so a
+ * later route check does not lose evidence held only by a dropped duplicate.
  * @param {Array} candidates
  * @returns {Array}
  */
-function collapseEquivalentStopCandidates(candidates) {
+function collapseEquivalentStopCandidates(candidates, { strict = false, direction = null } = {}) {
   if (!Array.isArray(candidates) || candidates.length <= 1) return candidates || [];
 
-  const chosen = new Map();
+  const score = value =>
+    (value?.stopCode ? 1 : 0) +
+    (Array.isArray(value?.routes) && value.routes.length > 0 ? 1 : 0) -
+    ((value?.stopName || '').match(/[^a-z0-9 ]/gi) || []).length * 0.01 -
+    (isPlatformRecord(value?.stopName || value?.name) ? 3 : 0); // the parent station is the keeper
+
+  // Group by identity; a platform record joins its parent's group when the parent is present.
+  const parentKeys = new Set(
+    candidates.filter(c => !isPlatformRecord(c?.stopName || c?.name)).map(c => stopNameKey(c?.stopName || c?.name)),
+  );
+  const groups = new Map();
   for (const candidate of candidates) {
-    const key = getStopCandidateKey(candidate);
-    if (!key || !chosen.has(key)) {
-      chosen.set(key || Symbol('candidate'), candidate);
+    const label = candidate?.stopName || candidate?.name;
+    let key = getStopCandidateKey(candidate);
+    const wantedPlatform = direction && isPlatformRecord(label)
+      && getStopCandidateDirection(candidate) === normalizeDirection(direction);
+    if (key && !wantedPlatform && isPlatformRecord(label) && parentKeys.has(stopNameKey(label))) key = `${stopNameKey(label)}|`;
+    if (!key) {
+      groups.set(Symbol('candidate'), [candidate]);
       continue;
     }
-
-    const current = chosen.get(key);
-    const score = value =>
-      (value?.stopCode ? 1 : 0) +
-      (Array.isArray(value?.routes) && value.routes.length > 0 ? 1 : 0) -
-      ((value?.stopName || '').match(/[^a-z0-9 ]/gi) || []).length * 0.01;
-    if (score(candidate) > score(current)) chosen.set(key, candidate);
+    // Strict: a record joins an existing same-identity group only if no stop code conflicts.
+    const sameIdentity = [...groups.entries()].filter(([groupKey]) => groupKey === key || String(groupKey).startsWith(`${key}#`));
+    const isPlatformChild = !wantedPlatform && isPlatformRecord(label) && key.endsWith('|') && parentKeys.has(stopNameKey(label));
+    // Records only merge within one home agency (a shared station doc must not lend its routes to
+    // another agency's record). Platform records fold into their parent regardless of code; real
+    // stops also need their codes not to conflict.
+    const sameAgency = m => (m.agency ?? null) === (candidate.agency ?? null);
+    const compatible = ([, members]) => members.every(m => sameAgency(m) && (isPlatformChild
+      || isPlatformRecord(m.stopName || m.name) || !m.stopCode || !candidate.stopCode || m.stopCode === candidate.stopCode));
+    const home = strict ? sameIdentity.find(compatible) : sameIdentity[0];
+    if (home) home[1].push(candidate);
+    else groups.set(sameIdentity.length ? `${key}#${sameIdentity.length}` : key, [candidate]);
   }
-  return [...chosen.values()];
+
+  return [...groups.values()].map(group => {
+    if (group.length === 1) return group[0];
+    const winner = group.reduce((best, c) => (score(c) > score(best) ? c : best), group[0]);
+    const routes = [...new Set(group.flatMap(c => (Array.isArray(c?.routes) ? c.routes : [])))];
+    return routes.length ? { ...winner, routes } : winner;
+  });
 }
 
 /**
@@ -351,6 +405,9 @@ module.exports = {
   getStopCandidateDirection,
   getStopCandidateKey,
   collapseEquivalentStopCandidates,
+  stationBaseName,
+  stopNameKey,
+  isPlatformRecord,
   normalizeRoute,
   normalizeRouteForGrading,
   normalizeAgency,

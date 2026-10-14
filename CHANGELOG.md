@@ -8,6 +8,10 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Stations typed as a platform, or with different punctuation, now match.** "X Station" and "X Station - Northbound Platform" (or "St. George" and "St George") are treated as one station, so these trips become clean data instead of staying unmatched. Different stops are never merged.
+- **Corrected trips can become clean data.** When a trip's stops, agency, route or direction are corrected, the stop match is re-checked, so a fixed trip no longer stays "unmatched" forever (and a trip corrected to something unresolvable stops counting as matched).
+- **Texted trips no longer get a made-up agency.** A third line like "Downtown" or a typo such as "Northa" used to be saved as the agency, which kept those trips out of predictions. Typos and words like Downtown are now read as the direction, known agencies (including aliases like GO or MFTA) are recognized however they are spaced or punctuated, and other systems you type are kept as typed.
+- **Agency names are cleaned up in one place.** "MFTA" and "NFTA" now both become NFTA Metro, and "GO" becomes GO Transit, wherever an agency is typed by text message.
 - **Icons are bundled with the app and the map library no longer blocks the first paint.** Icons used to load from a CDN at an unpinned version on every page; now only the icons the app uses ship with it.
 - **Pages show your data sooner after you navigate.** Signed-in pages no longer wait on the shared-session sync before rendering.
 - **Prediction models are no longer published in the public repository.** The trained models contained real stop and route names, so they now live in private storage, are trained only on approved users, and only those users get ML predictions; everyone else gets the rule-based predictions.

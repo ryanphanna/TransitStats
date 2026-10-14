@@ -97,6 +97,21 @@ exports.onTripFinalized = onDocumentWritten('trips/{tripId}', async (event) => {
     } catch (err) {
       console.error(`[Background] Finalization failed for ${tripId}`, err);
     }
+    return;
+  }
+
+  // A correction to the stops/agency/route/direction of an ended trip: re-check the stop match
+  // so a corrected trip is not left permanently unmatched (or matched on stale data).
+  if (after.endTime != null) {
+    try {
+      const result = await finalization.refreshStopMatchAfterCorrection(before, after);
+      if (result.changed) {
+        await event.data.after.ref.update({ stop_matched: result.matched });
+        console.log(`[Background] stop_matched for trip ${tripId} is now ${result.matched} (after a correction)`);
+      }
+    } catch (err) {
+      console.error(`[Background] Stop match refresh failed for ${tripId}`, err);
+    }
   }
 });
 // Tue  5 May 2026 10:55:13 EDT
