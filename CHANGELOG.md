@@ -8,6 +8,8 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Rides you logged AND imported from PRESTO are no longer counted twice** in your dashboard totals, map and public profile. A logged trip and an imported ride of the same agency within 30 minutes count as one.
+- **Imported PRESTO rides now land on the right day.** Their times were read as UTC instead of Toronto time, which could shift late-evening rides to the next day.
 - **Opening the import page without access no longer signs you out of TransitStats.** You now see a short "not set up for importing" note with a link back to your dashboard.
 - **Transit Wrapped** — a shareable transfer-ticket card for last month's rides (punched day grid, trips, hours, top routes, favorite stop, busiest day), from the dashboard or `/wrapped`. It always shows the previous calendar month and expires at the end of the current one; a month with no rides shows a "no transfer issued" ticket. Imported PRESTO rides count too (without hours, routes, or stops), and a ride you both logged and imported is counted once. Trips are counted in the month they started, so a ride that crosses midnight at month-end belongs to the earlier month.
 - **A failed PRESTO import now shows a plain, reassuring message** instead of a raw technical error, and explains it's safe to retry without creating duplicates.

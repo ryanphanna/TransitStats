@@ -14,6 +14,7 @@ const logger = require('./logger');
 const { getMapStopMode } = require('./profile-fields');
 const { resolveAtlasAgency } = require('../atlas-agency');
 const { buildHeatmapBands } = require('./public-profile-heatmap');
+const { unmatchedImportedRides } = require('./ride-merge');
 
 const ACTIVE_TRIP_WINDOW_MS = 6 * 60 * 60 * 1000;
 const ATLAS_R2_BASE = process.env.ATLAS_R2_BASE || 'https://data.transitatlas.fyi';
@@ -335,7 +336,8 @@ async function handlePublicProfile(req, res) {
 
     const heatmapBands = includeHeatmap ? await buildPublicHeatmap(historyTrips) : undefined;
 
-    const prestoTrips = buildPrestoTrips(prestoRecords);
+    // Rides the user also logged as trips are already counted above.
+    const prestoTrips = unmatchedImportedRides(historyTrips, buildPrestoTrips(prestoRecords));
 
     prestoTrips.forEach((trip) => {
       const { startRecord, endRecord } = trip;

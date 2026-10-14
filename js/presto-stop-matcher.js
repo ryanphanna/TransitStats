@@ -1,4 +1,5 @@
 import { normalizeStopLibraryLabel, stopBelongsToAgency } from './stop-library-match.js';
+import { importedRideTime } from './shared/ride-merge.js';
 
 function validLocation(stop) {
     const lat = Number(stop?.lat);
@@ -164,10 +165,10 @@ export function buildPrestoTrips(records = []) {
  */
 export function projectPrestoTripsForStats(prestoTrips = []) {
     return prestoTrips
-        .filter(trip => trip.startRecord?.occurredAtSortKey != null
-            && Number.isFinite(Number(trip.startRecord.occurredAtSortKey)))
-        .map(trip => ({
+        .map(trip => ({ trip, time: importedRideTime(trip) }))
+        .filter(({ time }) => Number.isFinite(time))
+        .map(({ trip, time }) => ({
             agency: trip.agency,
-            startTime: new Date(Number(trip.startRecord.occurredAtSortKey)),
+            startTime: new Date(time),
         }));
 }

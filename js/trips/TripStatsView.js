@@ -1,6 +1,7 @@
 import { Stats } from '../stats.js';
 import { formatAtlasNumber } from '../shared/atlas-card.js';
 import { projectPrestoTripsForStats } from '../presto-stop-matcher.js';
+import { unmatchedImportedRides } from '../shared/ride-merge.js';
 
 /**
  * TripStatsView - Manages the visualization of transit metrics and analytics.
@@ -8,8 +9,8 @@ import { projectPrestoTripsForStats } from '../presto-stop-matcher.js';
 export const TripStatsView = {
     render(trips, prestoTrips = []) {
         // Trip counts, agencies, days ridden, and countries also count
-        // imported PRESTO activity.
-        const summaryTrips = [...trips, ...projectPrestoTripsForStats(prestoTrips)];
+        // imported PRESTO activity, except rides already logged as trips.
+        const summaryTrips = [...trips, ...projectPrestoTripsForStats(unmatchedImportedRides(trips, prestoTrips))];
         const periodCounts = Stats.computeTripPeriodCounts(summaryTrips);
         this._updateBox('stat-trips-lifetime', periodCounts.lifetime);
         this._updateBox('stat-trips-month', periodCounts.thisMonth);
