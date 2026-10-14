@@ -6,8 +6,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 // Intentional gaps go in the allow-lists below, with the reason.
 const PAGES = readdirSync('.').filter(f => f.endsWith('.html'));
 
-// No Google Analytics: legal pages and the internal route heatmap.
-const NO_GA = ['privacy.html', 'terms.html', 'route-heatmap.html'];
+// No Google Analytics: legal pages.
+const NO_GA = ['privacy.html', 'terms.html'];
 // No Lucide: legal pages have no header or icons.
 const NO_LUCIDE = ['privacy.html', 'terms.html'];
 
