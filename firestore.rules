@@ -10,10 +10,11 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
-    // Profiles - users can read/write their own profile
-    // ANYONE can read a profile if isPublic is true
+    // Profiles - users can read/write their own profile. Never publicly readable,
+    // even when isPublic is set: the doc carries isAdmin/isPremium and other private
+    // fields. The `publicProfile` Cloud Function serves the public subset.
     match /profiles/{userId} {
-      allow read: if ownsDoc(userId) || resource.data.isPublic == true || isAdmin();
+      allow read: if ownsDoc(userId) || isAdmin();
       allow create: if isAdmin() || (
         ownsDoc(userId) &&
         request.resource.data.isAdmin == false &&
