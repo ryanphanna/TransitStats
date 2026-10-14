@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **End-stop predictions no longer rule out the stop you actually got off at.** Bathurst (511), Keele (41), King (504) and several LA and Muni lines had their direction backwards, stops like College Station, St Patrick and College / St George weren't matched or were missing from the route maps, and station names are now compared the same way everywhere.
 - **Stops texted by code that the library doesn't have yet are now found in Atlas.** The stop is looked up in your own agency's Atlas stop list and added, so those trips can become clean data instead of staying unmatched.
 - **Pittsburgh trips now look up stops in the right system.** The label "PRT" was being matched to West Virginia University's PRT instead of Pittsburgh Regional Transit.
 - **Stations typed as a platform, or with different punctuation, now match.** "X Station" and "X Station - Northbound Platform" (or "St. George" and "St George") are treated as one station, so these trips become clean data instead of staying unmatched. Different stops are never merged.
