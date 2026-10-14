@@ -312,3 +312,54 @@ Reference, `--task route --only v3,baseline,combo` on the eval_v1 snapshot (n=40
 | V3 (as served until now) | 45.5% | 45.5% | 57.0% | 0.0 | -28.7 [-36.9, -20.6] |
 
 Decision: removal, not a model change; no promotion rule applies.
+
+## V6: backoff and rerank, scored on eval v1
+
+Code: `ml/eval/predictors/v6.py`, plus the tuning and extra checks in `ml/eval/v6_tune.py`. Same 409 rows, snapshot `78a4265b1519`. Hour buckets are local time.
+
+- **V6 backoff** ports `v6_eval_against_shadow.py`. It walks from the richest context (route + start + direction + previous end stop + 3h bucket + day type) down to agency-wide, and answers from the first bucket with enough support. Top-3 is filled from broader levels.
+  - Sequence context always comes from serving's `history[0]`.
+  - Level order, min support (1/2/3/5) and recency half-life (25/50/100/200/none) were picked by top-1 on the 249 rows before the last 90 days.
+  - Parity check: the degenerate B3 config scores 42.2% on those rows, which matches B3-full.
+- **V6 rerank** builds candidates from V3 top-3, V6 backoff top-5, B3-full top-3, the last end stop and the last start stop.
+  - Each candidate is scored by a logistic model on 29 per-candidate features:
+    - decayed shares at route+start+direction, route+start, route+start×3h×day, same hour ±1, start, route and route+start+previous end
+    - last end stop, and return to the last start stop, each crossed with the gap bucket
+    - V3 rank and confidence, and B3/V6 rank
+  - The model is refit at each fold start on clean replayed trips (Jan 2026 onward) that ended before the fold. Each training trip's candidates come from history before its own start.
+  - The feature set and the pre-tuning backoff were fixed before any last-90-day run. C=1 was confirmed on the tune rows.
+
+### End stop
+
+| Predictor | Top-1 [95% CI] | Top-3 | Coverage | vs V3 (90d) | vs B3 full (90d) | vs V3-else-B3 full (90d) |
+|---|---|---|---|---|---|---|
+| V3 (as served) | 27.9% [23.7–32.4] | 29.6% | 42.5% | 0 | -18.8 [-26.2, -11.2] | |
+| B3 on full history | 45.2% [40.5–50.1] | 51.6% | 99.3% | +18.8 | 0 | |
+| V3, else B3 on full history | 44.3% [39.5–49.1] | 49.1% | 99.3% | +21.2 | +2.5 [-1.9, +6.9] | 0 |
+| V6 backoff, tuned (serve history) | 43.5% [38.8–48.4] | 54.8% | 98.0% | +15.6 | -3.1 [-10.0, +3.8] | |
+| V6 backoff, original order (full history) | 47.9% [43.1–52.8] | 63.8% | 99.3% | +21.2 | +2.5 [-4.4, +8.8] | |
+| V6 backoff, tuned (full history) | 49.9% [45.1–54.7] | 64.1% | 99.3% | +21.9 [+14.4, +30.0] | +3.1 [-3.1, +9.4] | +0.6 [-6.9, +6.9] |
+| V3, else V6 backoff full | 47.7% [42.9–52.5] | 58.4% | 99.3% | +23.1 | +4.4 [-2.5, +11.2] | |
+| **V6 rerank (walk-forward logistic)** | **52.6% [47.7–57.4]** | **64.3%** | 100% | **+28.1 [+20.0, +36.2]** | **+9.4 [+4.4, +14.4]** | **+6.9 [+0.6, +13.1]** |
+
+**Rerank detail:**
+- Last 90 days: 59.4%, against 50.0% for B3 full and 52.5% for V3-else-B3.
+- On the earlier tune rows it ties tuned backoff at 48%; the gain is concentrated in the last 90 days, when it has the most training trips.
+- Confidence ≥50: 76% coverage at 63% precision. Confidence ≥75: 49% coverage at 71% precision.
+- Segments: weekday 54%, weekend 43%, TTC 56%, other agency 18%.
+- Candidate recall, which caps what it can reach: 77.5% on the last 90 days, about 7 candidates per trip.
+
+### Route (never shown to users)
+
+| Predictor | Top-1 | Top-3 | vs V3 (90d) | vs B3 full (90d) |
+|---|---|---|---|---|
+| B3 on full history | 66.5% | 73.8% | +28.7 | 0 |
+| V6 backoff, tuned (full history) | 69.7% | 80.4% | +31.9 | +3.1 [-1.2, +8.1] |
+
+### Caveats
+
+- The 409-row figures include the 249 tuning rows, so the tuned backoff's whole-window number is slightly optimistic. The last-90-day diffs are clean.
+- The full-history views read every clean trip before the trip, not the 100 that serving loads today.
+- With n=160, the rerank's lower bound against V3-else-B3 (+0.6) is thin. Re-check it on the next snapshot before trusting the size of the gain.
+
+**Decision:** the V6 rerank passes the promotion rule for end stop: it beats V3 and B3 full on the last 90 days, with both CIs above 0. The serving design is proposed for the manager's decision and is not implemented. V6 backoff alone, and the route backoff, do not pass.
