@@ -280,6 +280,12 @@ export const Auth = {
                         this.lastRestoreFoundNoSession = [401, 403, 404].includes(response.status);
                         return null;
                     }
+                    // A 200 that isn't JSON (the Vite dev server answers unknown paths with
+                    // index.html) is not the session API: definitely no session here.
+                    if (!(response.headers?.get?.('content-type') || '').includes('json')) {
+                        this.lastRestoreFoundNoSession = true;
+                        return null;
+                    }
                     const data = await response.json();
                     if (!data.token) {
                         this.lastRestoreFoundNoSession = true;

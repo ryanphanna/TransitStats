@@ -25,6 +25,23 @@ const printerEl = document.querySelector('.wrapped-printer');
 // Set to false to use logged trips only.
 const INCLUDE_PRESTO_TRIPS = true;
 
+// Wide windows: scale stub + ticket (the header keeps its normal size) to the viewport height so nothing needs page scroll.
+// Phones (<= 860px) stack and scroll instead. Only the on-screen size changes; the PNG is untouched.
+const MIN_SCALE = 0.4;
+function fitToViewport() {
+    const root = document.documentElement;
+    root.style.removeProperty('--wrapped-scale');
+    if (window.innerWidth <= 860 || !previewCanvas) return;
+    const view = document.querySelector('.wrapped-view');
+    const css = view ? getComputedStyle(view) : null;
+    const header = document.querySelector('.header')?.offsetHeight || 0;
+    // The view's own padding scales with it, so it counts on the content side.
+    const content = (css ? parseFloat(css.paddingTop) + parseFloat(css.paddingBottom) : 0) + 400 * previewCanvas.height / previewCanvas.width + 44;
+    const scale = (window.innerHeight - header - 1) / content;
+    root.style.setProperty('--wrapped-scale', String(Math.min(1, Math.max(MIN_SCALE, scale))));
+}
+window.addEventListener('resize', fitToViewport);
+
 let loggedTrips = [];
 let prestoRides = [];
 let allTrips = [];
@@ -263,7 +280,9 @@ function rebuildTrips() {
 
 async function init() {
     let user = null;
-    if (!DEMO) {
+    if (DEMO) {
+        initHeader({ currentPage: 'wrapped' });
+    } else {
         const auth = await requireAuth({ returnToPage: true });
         user = auth.user;
         setStatus('Loading your trips…');
@@ -271,6 +290,7 @@ async function init() {
         initHeader({ isAdmin: auth.isAdmin, currentPage: 'wrapped' });
     }
 
+    fitToViewport();
     await loadCardFonts();
     downloadBtn?.addEventListener('click', handleDownload);
     shareBtn?.addEventListener('click', handleShare);

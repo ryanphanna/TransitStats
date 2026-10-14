@@ -1,11 +1,10 @@
-/* Wrapped page: the same transfer-ticket identity as the card (paper, signal red, mono). */
+/* Wrapped page: the same transfer-ticket identity as the card (paper, mono) on the app's standard page background. */
 .wrapped-surface {
-  --w-red: #d63a2a;
   --w-paper: #f5f4ee;
   --w-ink: #17202e;
   --w-faded: #5d6572;
   min-height: 100vh;
-  background: var(--w-red);
+  background: var(--bg-app);
   color: var(--w-ink);
   font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
 }
@@ -13,7 +12,7 @@
 .wrapped-view {
   max-width: 980px;
   margin: 0 auto;
-  padding: 56px 24px 64px;
+  padding: 16px 24px 24px;
   display: grid;
   grid-template-columns: minmax(0, 400px) minmax(0, 1fr);
   gap: 40px;
@@ -76,7 +75,7 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: var(--w-red);
+  background: var(--bg-app);
 }
 
 .wrapped-perf::before { left: -39px; }
@@ -179,7 +178,7 @@
 }
 
 .wrapped-btn:focus-visible {
-  outline: 3px solid var(--w-red);
+  outline: 3px solid var(--w-ink);
   outline-offset: 2px;
 }
 
@@ -268,14 +267,76 @@
   filter: drop-shadow(0 18px 22px rgba(0, 0, 0, 0.28));
 }
 
+/* On wide windows the stub and ticket scale together (wrapped.js sets --wrapped-scale) so the page fits under the header without scroll. */
+@media (min-width: 861px) {
+  .wrapped-view {
+    zoom: var(--wrapped-scale, 1);
+  }
+}
+
 @media (max-width: 860px) {
   .wrapped-view {
     grid-template-columns: 1fr;
-    padding-top: 28px;
+    padding-top: 12px;
     gap: 28px;
   }
 
   .wrapped-panel-top {
     min-height: 0;
   }
+}
+
+/* The shared header matches the dashboard's floating pills, but sits in the flow above the content instead of over it. */
+.wrapped-surface .header,
+body.dark.wrapped-surface .header,
+html[data-theme="dark"] .wrapped-surface .header {
+  position: relative;
+  background: transparent;
+  border-bottom: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.wrapped-surface .header-container {
+  max-width: none;
+  padding: 22px 24px 4px;
+  align-items: flex-start;
+}
+
+.wrapped-surface .header .logo {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 4px 12px 4px 5px;
+  border: 1px solid rgb(255 255 255 / 88%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 82%);
+  box-shadow: 0 8px 22px rgb(16 42 42 / 8%);
+  backdrop-filter: blur(14px);
+}
+
+.wrapped-surface .header .logo-text {
+  display: inline;
+  font-size: 0.92rem;
+}
+
+.wrapped-surface .header-actions {
+  gap: 8px;
+  margin-left: auto;
+}
+
+.wrapped-surface .header .header-action-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgb(255 255 255 / 88%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 82%);
+  color: var(--text-primary);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 8px 22px rgb(16 42 42 / 8%);
+  backdrop-filter: blur(14px);
 }

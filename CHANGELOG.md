@@ -8,6 +8,10 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Wrapped now fits the window without scrolling on laptops.** It uses the same page background as the rest of the app, the top bar no longer covers the printer and ticket, and the stub and ticket scale together to the window height (phones still stack and scroll). The downloaded image is unchanged.
+- **Signed-out visitors on the local dev server go straight to login.** The dashboard used to sit on its loading skeleton for a minute because the session check got an HTML page instead of an answer.
+- **Google Analytics can now actually load.** The site's security policy was blocking it, so no visits were being counted. Only the Google Analytics addresses were allowed.
+- **The site owner's own visits no longer count in analytics.** Localhost and any browser opened once with ?ts_internal=1 skip Google Analytics. Wrapped visits are now counted too.
 - **Picking a public identity someone already has now says so.** You see "That one's taken. Try another combination." next to the picker, and can change an emoji and save again.
 - **Saving a public identity works again.**
 - **PRESTO import is now available to everyone.** Every signed-in user can import their PRESTO history from the import page and settings, and new accounts with no rides see the import prompt.
