@@ -6,27 +6,48 @@ const { AGENCY_CITY } = require('../constants');
 const { getConnectionGroup, areConnectedStops, normalizeStopName } = require('../transfer-connections');
 const { getStopCandidateDirection, collapseEquivalentStopCandidates, stopNameKey } = require('../utils');
 const { findAtlasStopByCode } = require('../atlas-enrich');
+const { AGENCY_ALIASES, canonicalAgency } = require('../agency-aliases');
 const TopologyConstraints = require('../topology-constraints');
 let _topology = null;
 try { _topology = require('../topology.json'); } catch (_) { /* optional */ }
 
+// Every label a stop's `agencies` array might use for the same agency ("GO" / "GO Transit",
+// "PRT" / "Pittsburgh Regional Transit"), so a code the library has under another label of the
+// agency is found there instead of being re-created from Atlas.
+function agencyLabelVariants(agency) {
+  const canonical = canonicalAgency(agency);
+  const variants = new Set([agency, canonical]);
+  for (const [alias, target] of Object.entries(AGENCY_ALIASES)) {
+    if (target === canonical) { variants.add(alias); variants.add(alias.toUpperCase()); }
+  }
+  return [...variants].filter(Boolean);
+}
+
 // Shared lookup. Throws on a database error so callers can tell "no such stop" from "could not
 // check". crossAgency=false skips the fallback that scans the whole stops collection and writes
 // (auto-expanding a stop's agencies), for read-only checks.
-async function _lookupStopCore(stopCode, stopName, agency, route, direction, { crossAgency = true } = {}) {
+async function _lookupStopCore(stopCode, stopName, agency, route, direction, { crossAgency = true, useAtlas = true } = {}) {
   {
     if (!stopCode && !stopName) return null;
 
     // Code lookup — uses composite index (agencies array-contains + code ==)
     if (stopCode) {
-      const snap = await db.collection('stops')
-        .where('agencies', 'array-contains', agency)
+      // The agency's own label first, then its other known labels.
+      const labels = agencyLabelVariants(agency);
+      const snaps = await Promise.all(labels.map(label => db.collection('stops')
+        .where('agencies', 'array-contains', label)
         .where('code', '==', stopCode)
         .limit(1)
-        .get();
-      if (!snap.empty) {
-        const doc = snap.docs[0];
+        .get()));
+      const hitIndex = snaps.findIndex(snap => !snap.empty);
+      if (hitIndex >= 0) {
+        const doc = snaps[hitIndex].docs[0];
         const data = doc.data();
+        // Found under another label of the same agency: record this label too (write path only).
+        if (crossAgency && !(data.agencies || []).includes(agency) && doc.ref?.update) {
+          doc.ref.update({ agencies: FieldValue.arrayUnion(agency), updatedAt: new Date() })
+            .catch(err => console.error('agencies label union failed:', err.message));
+        }
         return { id: doc.id, ...data, stopCode: data.code, stopName: data.name };
       }
     }
@@ -44,23 +65,23 @@ async function _lookupStopCore(stopCode, stopName, agency, route, direction, { c
       }
     }
 
+    // Cross-agency fallback: stop exists in library under a different agency.
+    // If found, auto-expand the stop's agencies array so future lookups hit directly.
+    const term = stopCode || stopName;
+    let atlasUnavailable = false;
+    if (crossAgency && term) {
+      const found = await _findAndExpandStop(term, agency);
+      if (found) return found;
+    }
+
     // Atlas fallback for a stop code the library does not have: the agency's own Atlas stops-meta
     // (never another agency's). The write path adds the stop to the library; the read-only check
     // just reports it. An Atlas outage skips this step (the other fallbacks still run) and is
     // remembered, so a read-only check never mistakes it for "no such stop".
-    let atlasUnavailable = false;
-    if (stopCode) {
-      const atlas = await findAtlasStopByCode(agency, stopCode);
-      if (atlas.status === 'error') atlasUnavailable = true;
-      if (atlas.status === 'found') return crossAgency ? _addAtlasStop(agency, atlas.stop) : _atlasStopRecord(agency, atlas.stop);
-    }
-
-    // Cross-agency fallback: stop exists in library under a different agency.
-    // If found, auto-expand the stop's agencies array so future lookups hit directly.
-    const term = stopCode || stopName;
-    if (crossAgency && term) {
-      const found = await _findAndExpandStop(term, agency);
-      if (found) return found;
+    if (useAtlas && stopCode) {
+      const atlasResult = await findAtlasStopByCode(agency, stopCode);
+      if (atlasResult.status === 'error') atlasUnavailable = true;
+      if (atlasResult.status === 'found') return crossAgency ? _addAtlasStop(agency, atlasResult.stop) : _atlasStopRecord(agency, atlasResult.stop);
     }
 
     // Trusted topology fallback: for routes covered by topology.json, treat a
@@ -92,15 +113,23 @@ function _atlasStopRecord(agency, stop) {
   return { id: `atlas_${stop.slug}_${stop.code}`.replace(/[^a-zA-Z0-9_-]/g, '_'), ...data, stopCode: data.code, stopName: data.name };
 }
 
-// Adds the Atlas stop to the library under a deterministic id (idempotent). The Atlas name is the
-// only label a code-only stop has; onStopCreated then fills in anything else that is missing.
+// Adds the Atlas stop to the library under a deterministic id. create() never overwrites: if the
+// doc already exists (another label of the agency, a racing text) only this agency's label is
+// unioned in; name, routes, aliases and createdAt are never touched.
 async function _addAtlasStop(agency, stop) {
   const record = _atlasStopRecord(agency, stop);
   const { id, stopCode, stopName, ...data } = record;
+  const ref = db.collection('stops').doc(id);
   try {
-    await db.collection('stops').doc(id).set({ ...data, createdAt: new Date(), updatedAt: new Date() }, { merge: true });
+    await ref.create({ ...data, createdAt: new Date(), updatedAt: new Date() });
   } catch (error) {
-    console.warn('Could not add Atlas stop to the library:', error.message);
+    const alreadyExists = error.code === 6 || /already exists|ALREADY_EXISTS/i.test(error.message || '');
+    try {
+      if (alreadyExists) await ref.update({ agencies: FieldValue.arrayUnion(agency), updatedAt: new Date() });
+      else console.warn('Could not add Atlas stop to the library:', error.message);
+    } catch (updateError) {
+      console.warn('Could not update Atlas stop agencies:', updateError.message);
+    }
   }
   return record;
 }
@@ -117,11 +146,12 @@ async function lookupStop(stopCode, stopName, agency, route = null, direction = 
 /**
  * Read-only stop check: never writes and never scans the whole collection. Resolves to
  * { status: 'found' | 'notFound' | 'error', stop } so a database error is never mistaken for a
- * stop that does not exist.
+ * stop that does not exist. { atlas: false } skips the Atlas step (used where a guess must not
+ * depend on Atlas, e.g. choosing between two agencies).
  */
-async function lookupStopCheck(stopCode, stopName, agency, route = null, direction = null) {
+async function lookupStopCheck(stopCode, stopName, agency, route = null, direction = null, { atlas = true } = {}) {
   try {
-    const stop = await _lookupStopCore(stopCode, stopName, agency, route, direction, { crossAgency: false });
+    const stop = await _lookupStopCore(stopCode, stopName, agency, route, direction, { crossAgency: false, useAtlas: atlas });
     return stop ? { status: 'found', stop } : { status: 'notFound', stop: null };
   } catch (error) {
     console.error('Error checking stop:', error);

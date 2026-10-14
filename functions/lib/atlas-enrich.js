@@ -3,14 +3,18 @@
  *
  * Atlas publishes atlas/{slug}-stops-meta.json weekly (official name, routes
  * served, direction of travel per stop) — Civic-Minds/Atlas#161, shipped in
- * Atlas commit 0276e20. When a stop doc is created here with a code but
- * missing facts, we fill the blanks from that file.
+ * Atlas commit 0276e20. Two uses:
+ *  - enrichStopDoc: when a stop doc is created with a code but missing facts, fill the blanks.
+ *  - findAtlasStopByCode: when a texted stop code is not in the library at all, describe it from
+ *    the trip's own agency's file so lookupStop can add it (see db/stops.js).
  *
  * Layering rules (TransitStats#152):
  *  - `name` is the user's label — NEVER set or changed by this module.
  *  - Official names land in `aliases` verbatim, for matching only.
  *  - Only missing fields are filled; curated values are never overwritten.
  *  - Atlas/R2 is read-only; if the file doesn't exist yet (404), do nothing.
+ *  - Fetches use a short timeout (this runs while a rider's text is being handled), and failures
+ *    are cached only briefly so an outage does not block lookups for hours.
  */
 
 const { FieldValue } = require('firebase-admin/firestore');
@@ -21,24 +25,30 @@ const ATLAS_R2_BASE = process.env.ATLAS_R2_BASE || 'https://data.transitatlas.fy
 
 // Per-instance cache: the meta file is ~1 MB and refreshed weekly upstream.
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const MISSING_TTL_MS = 10 * 60 * 1000; // no file published yet (404)
+const ERROR_TTL_MS = 90 * 1000; // network/server problem: retry soon
+const FETCH_TIMEOUT_MS = 4000;
+const SLUG_PATTERN = /^[a-z0-9-]+$/;
 const metaCache = new Map(); // slug -> { fetchedAt, data | null }
 
 // Resolves { data, status } where status is 'ok', 'missing' (no file published: 404) or 'error'
 // (network/server problem), so callers can tell "Atlas has no such file" from "could not reach Atlas".
 async function fetchStopsMetaStatus(slug) {
+  if (!SLUG_PATTERN.test(String(slug || ''))) return { data: null, status: 'missing' };
   const cached = metaCache.get(slug);
-  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.result;
+  if (cached && Date.now() - cached.fetchedAt < cached.ttl) return cached.result;
   let result = { data: null, status: 'error' };
   try {
     const res = await fetch(`${ATLAS_R2_BASE}/atlas/${slug}-stops-meta.json`, {
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (res.ok) result = { data: await res.json(), status: 'ok' };
     else if (res.status === 404) result = { data: null, status: 'missing' };
   } catch (_) {
     // network error — treat as unavailable, retry after TTL
   }
-  metaCache.set(slug, { fetchedAt: Date.now(), result });
+  const ttl = result.status === 'ok' ? CACHE_TTL_MS : result.status === 'missing' ? MISSING_TTL_MS : ERROR_TTL_MS;
+  metaCache.set(slug, { fetchedAt: Date.now(), ttl, result });
   return result;
 }
 
@@ -61,7 +71,7 @@ async function findAtlasStopByCode(agency, code) {
   } catch (_) {
     return { status: 'error', stop: null };
   }
-  if (!slug) return { status: 'notFound', stop: null };
+  if (!slug || !SLUG_PATTERN.test(slug)) return { status: 'notFound', stop: null };
   const { data, status } = await fetchStopsMetaStatus(slug);
   if (status === 'error') return { status: 'error', stop: null };
   if (!data?.stops) return { status: 'notFound', stop: null };
@@ -167,4 +177,8 @@ async function enrichStopDoc(db, stopId, stop) {
   return 'enriched';
 }
 
-module.exports = { buildStopEnrichment, enrichStopDoc, fetchStopsMeta, findAtlasStopByCode };
+function resetMetaCacheForTests() {
+  metaCache.clear();
+}
+
+module.exports = { buildStopEnrichment, enrichStopDoc, fetchStopsMeta, findAtlasStopByCode, resetMetaCacheForTests };

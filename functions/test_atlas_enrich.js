@@ -48,3 +48,31 @@ test('buildStopEnrichment: returns null when nothing to add or no match', () => 
   assert.equal(buildStopEnrichment({ code: '404', name: 'B' }, meta([])), null);
   assert.equal(buildStopEnrichment({ name: 'no code' }, meta([])), null);
 });
+
+test('findAtlasStopByCode: rejects an unsafe slug before building a URL, and caches errors only briefly', async () => {
+  const { findAtlasStopByCode, resetMetaCacheForTests } = require('./lib/atlas-enrich');
+  const agencyModule = require('./atlas-agency');
+  agencyModule.resetAgencyCachesForTests();
+  resetMetaCacheForTests();
+  const original = global.fetch;
+  const urls = [];
+  global.fetch = async (url) => {
+    urls.push(String(url));
+    if (String(url).endsWith('/atlas/agencies.json')) {
+      return { ok: true, status: 200, json: async () => ({ agencies: [{ slug: '../evil', name: 'Evil Transit' }, { slug: 'okslug', name: 'Ok Transit' }] }) };
+    }
+    return { ok: false, status: 500, json: async () => ({}) };
+  };
+  try {
+    assert.equal((await findAtlasStopByCode('Evil Transit', '1')).status, 'notFound');
+    assert.ok(!urls.some(u => u.includes('evil')), 'no request is made for a slug that fails the pattern');
+    assert.equal((await findAtlasStopByCode('Ok Transit', '1')).status, 'error');
+    const before = urls.length;
+    assert.equal((await findAtlasStopByCode('Ok Transit', '1')).status, 'error');
+    assert.equal(urls.length, before, 'an error is cached for a short time, not refetched every call');
+  } finally {
+    global.fetch = original;
+    agencyModule.resetAgencyCachesForTests();
+    resetMetaCacheForTests();
+  }
+});

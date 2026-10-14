@@ -7,7 +7,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const Module = require('node:module');
 
-function loadStopsModule({ stops = [], stopRoutes = {}, failQueries = false, scans = [], writes = [] } = {}) {
+function loadStopsModule({ stops = [], stopRoutes = {}, failQueries = false, scans = [], writes = [], createError = null } = {}) {
   const stopsPath = require.resolve('./lib/db/stops');
   delete require.cache[stopsPath];
 
@@ -22,7 +22,11 @@ function loadStopsModule({ stops = [], stopRoutes = {}, failQueries = false, sca
       if (name === 'stops') {
         return {
           doc(id) {
-            return { set: async (data, opts) => { writes.push({ id, data, opts }); } };
+            return {
+              set: async (data, opts) => { writes.push({ op: 'set', id, data, opts }); },
+              create: async (data) => { if (createError) throw createError; writes.push({ op: 'create', id, data }); },
+              update: async (data) => { writes.push({ op: 'update', id, data }); },
+            };
           },
           where(field, op, value) {
             if (field === 'agencies' && op === 'array-contains') {
@@ -65,7 +69,7 @@ function loadStopsModule({ stops = [], stopRoutes = {}, failQueries = false, sca
   const originalLoad = Module._load;
   Module._load = function patchedLoad(request, parent, isMain) {
     if (parent && parent.id === stopsPath) {
-      if (request === './core') return { db: fakeDb };
+      if (request === './core') return { db: fakeDb, FieldValue: { arrayUnion: (...v) => ({ _op: 'arrayUnion', values: v }) } };
       if (request === '../constants') return { AGENCY_CITY: { TTC: 'Toronto' } };
       if (request === 'firebase-admin') {
         return {
@@ -353,9 +357,9 @@ test('lookupStop: an unknown stop code is found in the agency\'s Atlas stops-met
     assert.equal(result?.stopCode, '14444');
     assert.equal(result.stopName, 'Spadina Station');
     assert.equal(writes.length, 1);
+    assert.equal(writes[0].op, 'create'); // never set/merge: an existing doc can't be overwritten
     assert.deepEqual(writes[0].data.agencies, ['TTC']);
     assert.equal(writes[0].data.source, 'atlas');
-    assert.equal(writes[0].opts.merge, true);
   } finally { restore(); }
 });
 
@@ -396,5 +400,46 @@ test('lookupStop: a code the library already has never calls Atlas', async () =>
     const m = loadStopsModule({ stops: [{ id: 'ttc_1', data: { agencies: ['TTC'], code: '1', name: 'Known', aliases: [] } }] });
     assert.equal((await m.lookupStop('1', null, 'TTC', '1')).stopCode, '1');
     assert.equal(calls, 0);
+  } finally { global.fetch = original; }
+});
+
+test('lookupStop: if the Atlas stop doc already exists, only this agency label is unioned in', async () => {
+  const restore = stubAtlas({ directory: ATLAS_DIRECTORY, metas: { ttc: [{ code: '14444', name: 'Renamed By Atlas', routes: ['9'] }] } });
+  try {
+    const writes = [];
+    const m = loadStopsModule({ stops: [], writes, createError: Object.assign(new Error('6 ALREADY_EXISTS'), { code: 6 }) });
+    const result = await m.lookupStop('14444', null, 'TTC', '1');
+    assert.equal(result?.stopCode, '14444');
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].op, 'update');
+    assert.deepEqual(Object.keys(writes[0].data).sort(), ['agencies', 'updatedAt']); // name, routes, aliases, createdAt untouched
+  } finally { restore(); }
+});
+
+test('lookupStop: a code the library has under another label of the agency is found there, not re-created from Atlas', async () => {
+  let fetches = 0;
+  const original = global.fetch;
+  global.fetch = async () => { fetches += 1; return { ok: false, status: 500 }; };
+  try {
+    const writes = [];
+    const m = loadStopsModule({
+      stops: [{ id: 'go_un', data: { agencies: ['GO'], code: 'UN', name: 'Union Station GO', aliases: [] } }],
+      writes,
+    });
+    const result = await m.lookupStop('UN', null, 'GO Transit', 'LW');
+    assert.equal(result?.stopCode, 'UN');
+    assert.equal(fetches, 0);
+    assert.equal(writes.filter(w => w.op === 'create').length, 0);
+  } finally { global.fetch = original; }
+});
+
+test('lookupStopCheck: { atlas: false } never consults Atlas', async () => {
+  let fetches = 0;
+  const original = global.fetch;
+  global.fetch = async () => { fetches += 1; return { ok: false, status: 500 }; };
+  try {
+    const m = loadStopsModule({ stops: [] });
+    assert.equal((await m.lookupStopCheck('777777', null, 'TTC', '1', null, { atlas: false })).status, 'notFound');
+    assert.equal(fetches, 0);
   } finally { global.fetch = original; }
 });

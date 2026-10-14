@@ -6,7 +6,7 @@ const {
 } = require('./twilio');
 const {
   setPendingState,
-  lookupStop,
+  lookupStopCheck,
   findMatchingStops,
   getRoutesAtStop,
   getUserProfile,
@@ -99,10 +99,14 @@ async function resolveTripAgency(
   const lastAgency = await getLastTripAgency(userId);
   if (!lastAgency || lastAgency === resolvedAgency) return { resolvedAgency, handled: false };
 
-  const [stopInDefault, stopInLast] = await Promise.all([
-    lookupStop(parsedStop.stopCode, parsedStop.stopName, resolvedAgency, route, direction),
-    lookupStop(parsedStop.stopCode, parsedStop.stopName, lastAgency, route, direction),
+  // Guessing which agency a stop belongs to must never write or depend on Atlas (numeric codes
+  // resolve through Atlas almost anywhere): read-only check against the library only.
+  const [defaultCheck, lastCheck] = await Promise.all([
+    lookupStopCheck(parsedStop.stopCode, parsedStop.stopName, resolvedAgency, route, direction, { atlas: false }),
+    lookupStopCheck(parsedStop.stopCode, parsedStop.stopName, lastAgency, route, direction, { atlas: false }),
   ]);
+  const stopInDefault = defaultCheck.status === 'found' ? defaultCheck.stop : null;
+  const stopInLast = lastCheck.status === 'found' ? lastCheck.stop : null;
 
   if (stopInDefault && stopInLast) {
     const defaultAgency = configuredAgency || resolvedAgency;

@@ -68,3 +68,19 @@ for (const [label, slug] of Object.entries(EXPECTED)) {
     assert.equal(chooseMatch(DIRECTORY, label), slug);
   });
 }
+
+test('a failed agency-directory fetch is remembered briefly instead of retried on every call', async () => {
+  const { resolveAtlasAgency, resetAgencyCachesForTests } = require('./atlas-agency');
+  resetAgencyCachesForTests();
+  const original = global.fetch;
+  let calls = 0;
+  global.fetch = async () => { calls += 1; return { ok: false, status: 503 }; };
+  try {
+    await assert.rejects(() => resolveAtlasAgency('TTC'), /unavailable/);
+    await assert.rejects(() => resolveAtlasAgency('TTC'), /unavailable/);
+    assert.equal(calls, 1);
+  } finally {
+    global.fetch = original;
+    resetAgencyCachesForTests();
+  }
+});
