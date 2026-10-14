@@ -3,6 +3,31 @@
  * Pure drawing helpers; no DOM writes of user data.
  */
 
+import { drawTicket, TICKET_FONTS } from './wrapped/ticket.js';
+import { drawLineMap, LINEMAP_FONTS } from './wrapped/linemap.js';
+import { drawPoster, POSTER_FONTS } from './wrapped/poster.js';
+
+export const WRAPPED_CONCEPTS = Object.freeze({
+    classic: { label: 'Classic', draw: drawClassic, fonts: [] },
+    ticket: { label: 'A: Transfer ticket', draw: drawTicket, fonts: TICKET_FONTS },
+    linemap: { label: 'B: Line map', draw: drawLineMap, fonts: LINEMAP_FONTS },
+    poster: { label: 'C: Departure poster', draw: drawPoster, fonts: POSTER_FONTS },
+});
+
+export const DEFAULT_CONCEPT = 'ticket';
+
+/** Load the web fonts a concept needs; canvas text does not wait for them. */
+export function loadConceptFonts(concept = DEFAULT_CONCEPT) {
+    const fonts = WRAPPED_CONCEPTS[concept]?.fonts || [];
+    if (!document.fonts) return Promise.resolve();
+    return Promise.all(fonts.map(font => document.fonts.load(font).catch(() => null)));
+}
+
+export function drawWrappedCard(ctx, { displayName, wrapped, concept = DEFAULT_CONCEPT } = {}) {
+    const entry = WRAPPED_CONCEPTS[concept] || WRAPPED_CONCEPTS[DEFAULT_CONCEPT];
+    entry.draw(ctx, { displayName, wrapped });
+}
+
 export const WRAPPED_CARD = Object.freeze({
     width: 1080,
     height: 1920,
@@ -43,7 +68,7 @@ function formatCount(value) {
  * @param {CanvasRenderingContext2D} ctx
  * @param {{ displayName?: string, wrapped: object }} options
  */
-export function drawWrappedCard(ctx, { displayName = 'Traveler', wrapped } = {}) {
+function drawClassic(ctx, { displayName = 'Traveler', wrapped } = {}) {
     const { width: W, height: H } = WRAPPED_CARD;
     const name = String(displayName || 'Traveler').trim() || 'Traveler';
 
@@ -191,12 +216,12 @@ export function drawWrappedCard(ctx, { displayName = 'Traveler', wrapped } = {})
  * Build a PNG blob for the given Wrapped summary.
  * @returns {Promise<Blob>}
  */
-export function renderWrappedPngBlob({ displayName, wrapped } = {}) {
+export function renderWrappedPngBlob({ displayName, wrapped, concept } = {}) {
     const canvas = document.createElement('canvas');
     canvas.width = WRAPPED_CARD.width;
     canvas.height = WRAPPED_CARD.height;
     const ctx = canvas.getContext('2d');
-    drawWrappedCard(ctx, { displayName, wrapped });
+    drawWrappedCard(ctx, { displayName, wrapped, concept });
     return new Promise((resolve, reject) => {
         canvas.toBlob(blob => {
             if (blob) resolve(blob);

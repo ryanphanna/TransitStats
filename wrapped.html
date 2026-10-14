@@ -11,6 +11,8 @@
     <link rel="stylesheet" href="styles/main.css">
     <link rel="stylesheet" href="styles/pages/wrapped.css">
     <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;800;900&family=Hanken+Grotesk:wght@500;700;800;900&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 </head>
 <body class="wrapped-surface">
     <main id="app-root">
@@ -22,6 +24,8 @@
 
                 <label class="wrapped-month-label" for="wrapped-month">Month</label>
                 <select id="wrapped-month" class="wrapped-month" aria-describedby="wrapped-status"></select>
+                <p id="wrapped-concept-label" class="wrapped-month-label">Design (temporary)</p>
+                <div id="wrapped-concept" class="wrapped-concepts" role="group" aria-labelledby="wrapped-concept-label"></div>
                 <p id="wrapped-status" class="wrapped-status">Loading your trips…</p>
 
                 <div class="wrapped-actions">

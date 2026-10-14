@@ -7,8 +7,14 @@ import { Stats } from '../stats.js';
 import { UI } from '../ui-utils.js';
 import { db } from '../firebase.js';
 import { buildPrestoTrips, projectPrestoTripsForStats } from '../presto-stop-matcher.js';
-import { downloadBlob, drawWrappedCard, renderWrappedPngBlob, WRAPPED_CARD } from '../wrapped-card.js';
+import {
+    DEFAULT_CONCEPT, WRAPPED_CONCEPTS, downloadBlob, drawWrappedCard, loadConceptFonts, renderWrappedPngBlob, WRAPPED_CARD,
+} from '../wrapped-card.js';
 
+const conceptGroup = document.getElementById('wrapped-concept');
+// Dev-only sample data: /wrapped?demo=1 skips sign-in. Stripped from production builds.
+const DEMO = import.meta.env.DEV && new URLSearchParams(location.search).has('demo');
+let activeConcept = DEFAULT_CONCEPT;
 const monthSelect = document.getElementById('wrapped-month');
 const statusEl = document.getElementById('wrapped-status');
 const previewCanvas = document.getElementById('wrapped-preview');
@@ -25,6 +31,15 @@ let loggedTrips = [];
 let prestoRides = [];
 let allTrips = [];
 let currentWrapped = null;
+
+function displayNameForCard() {
+    if (DEMO) return 'Ryan';
+    return Profile.getDisplayName?.(window.currentUser) || Profile.data?.displayName || 'Traveler';
+}
+
+function currentConcept() {
+    return activeConcept;
+}
 
 function setStatus(message) {
     if (statusEl) statusEl.textContent = message;
@@ -72,7 +87,7 @@ function renderPreview(wrapped, displayName) {
     previewCanvas.height = Math.round(WRAPPED_CARD.height * scale);
     const ctx = previewCanvas.getContext('2d');
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
-    drawWrappedCard(ctx, { displayName, wrapped });
+    drawWrappedCard(ctx, { displayName, wrapped, concept: currentConcept() });
 }
 
 function showEmpty(show) {
@@ -93,9 +108,7 @@ function refresh() {
 
     const wrapped = Stats.computeWrapped(allTrips, month.year, month.monthIndex);
     currentWrapped = wrapped;
-    const displayName = Profile.getDisplayName?.(window.currentUser)
-        || Profile.data?.displayName
-        || 'Traveler';
+    const displayName = displayNameForCard();
 
     if (!wrapped.trips) {
         showEmpty(true);
@@ -117,10 +130,8 @@ async function handleDownload() {
     if (!currentWrapped?.trips) return;
     try {
         downloadBtn.disabled = true;
-        const displayName = Profile.getDisplayName?.(window.currentUser)
-            || Profile.data?.displayName
-            || 'Traveler';
-        const blob = await renderWrappedPngBlob({ displayName, wrapped: currentWrapped });
+        const displayName = displayNameForCard();
+        const blob = await renderWrappedPngBlob({ displayName, wrapped: currentWrapped, concept: currentConcept() });
         downloadBlob(blob, `${fileStem(currentWrapped)}.png`);
         UI.showNotification('Wrapped card downloaded.', 'success');
     } catch (error) {
@@ -135,10 +146,8 @@ async function handleShare() {
     if (!currentWrapped?.trips) return;
     try {
         shareBtn.disabled = true;
-        const displayName = Profile.getDisplayName?.(window.currentUser)
-            || Profile.data?.displayName
-            || 'Traveler';
-        const blob = await renderWrappedPngBlob({ displayName, wrapped: currentWrapped });
+        const displayName = displayNameForCard();
+        const blob = await renderWrappedPngBlob({ displayName, wrapped: currentWrapped, concept: currentConcept() });
         const file = new File([blob], `${fileStem(currentWrapped)}.png`, { type: 'image/png' });
         const shareData = {
             title: `Transit Wrapped · ${currentWrapped.label}`,
@@ -183,13 +192,40 @@ function rebuildTrips() {
 }
 
 async function init() {
-    const { user, isAdmin } = await requireAuth();
-    await Profile.load(user);
-    initHeader({ isAdmin, currentPage: 'wrapped' });
+    let user = null;
+    if (!DEMO) {
+        const auth = await requireAuth();
+        user = auth.user;
+        await Profile.load(user);
+        initHeader({ isAdmin: auth.isAdmin, currentPage: 'wrapped' });
+    }
 
+    Object.entries(WRAPPED_CONCEPTS).forEach(([key, concept]) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'wrapped-concept-btn';
+        button.dataset.concept = key;
+        button.textContent = concept.label;
+        button.setAttribute('aria-pressed', String(key === activeConcept));
+        button.addEventListener('click', async () => {
+            activeConcept = key;
+            conceptGroup?.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
+            await loadConceptFonts(key);
+            refresh();
+        });
+        conceptGroup?.appendChild(button);
+    });
+    await loadConceptFonts(DEFAULT_CONCEPT);
     monthSelect?.addEventListener('change', refresh);
     downloadBtn?.addEventListener('click', handleDownload);
     shareBtn?.addEventListener('click', handleShare);
+
+    if (DEMO) {
+        const demo = await import('../wrapped/demo-data.js');
+        prestoRides = demo.demoPrestoRides();
+        onTrips(demo.demoTrips());
+        return;
+    }
 
     TripController.listen(user.uid, onTrips);
     if (INCLUDE_PRESTO_TRIPS) {
@@ -204,7 +240,7 @@ async function init() {
     await Trips.loadStopsLibrary();
     onTrips(TripController.allTrips);
     // The card is drawn on a canvas, which doesn't wait for web fonts.
-    document.fonts?.load('800 64px Inter').then(() => currentWrapped && refresh());
+    loadConceptFonts(currentConcept()).then(() => currentWrapped && refresh());
 }
 
 init().catch(error => {

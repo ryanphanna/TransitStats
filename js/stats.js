@@ -220,6 +220,12 @@ export const Stats = {
         const busiestDay = this.computeBusiestDay(monthTrips);
         const peak = this.computePeakBucket(monthTrips);
         const period = this.computeTripPeriodCounts(monthTrips);
+        const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+        const dayCounts = Array(daysInMonth).fill(0);
+        monthTrips.forEach(trip => {
+            const date = this.getTripDate(trip);
+            if (date) dayCounts[date.getDate() - 1]++;
+        });
 
         return {
             year,
@@ -231,6 +237,8 @@ export const Stats = {
             routes: metrics.routes,
             stops: metrics.stops,
             daysRidden: period.daysRidden,
+            daysInMonth,
+            dayCounts,
             topRoute: metrics.topRoutes[0] || null,
             topRoutes: metrics.topRoutes,
             favoriteStop: metrics.topStops[0] || null,
