@@ -209,6 +209,7 @@ export default defineConfig(({ mode, command }) => {
                 '**/.claude/**',
                 '**/.agent/**',
                 'tests/firestore.rules.test.js',
+                'tests/storage.rules.test.js',
             ],
         },
     };
