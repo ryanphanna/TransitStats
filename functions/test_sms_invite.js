@@ -6,7 +6,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  createInviteHandlers, WELCOME_TEXT, SETUP_TEXT, LINKED_TEXT, NOT_INVITED_TEXT, SETUP_PROBLEM_TEXT, PROVISIONED_CLAIM,
+  createInviteHandlers, WELCOME_TEXT, SETUP_TEXT, CONFIRM_TEXT, NOT_INVITED_TEXT, SETUP_PROBLEM_TEXT, PROVISIONED_CLAIM,
 } = require('./lib/sms-invite');
 const { setInvitePhone } = require('./scripts/set-invite-phone');
 
@@ -69,12 +69,16 @@ function build({ seed = {}, users = [], respond = true, sendOk = true } = {}) {
   const db = fakeDb(seed);
   const adminAuth = fakeAuth(users);
   const sms = [];
+  const pending = [];
   const handlers = createInviteHandlers({
     db, adminAuth, FieldValue,
+    storeVerificationCode: async (phone, email, code) => { db.data.set(`smsVerification/${phone}`, { email, code }); },
+    setPendingState: async (phone, state) => { pending.push({ phone, state }); },
+    generateVerificationCode: () => '123456',
     sendSmsReply: async (to, message) => { sms.push({ to, message }); return sendOk; },
     shouldRespondToUnknown: async () => respond,
   });
-  return { db, adminAuth, sms, handlers };
+  return { db, adminAuth, sms, pending, handlers };
 }
 
 const invited = { 'allowedUsers/new@example.com': { email: 'new@example.com', phone: PHONE } };
@@ -88,6 +92,8 @@ test('invited, no account yet: creates the account and profile, links the phone,
   const link = db.data.get(`phoneNumbers/${PHONE}`);
   assert.equal(link.userId, 'uid-new@example.com');
   assert.equal(link.email, 'new@example.com');
+  // Texting works at once, but phone-code login waits for the email owner.
+  assert.equal(link.loginConfirmed, false);
   const profile = db.data.get('profiles/uid-new@example.com');
   assert.equal(profile.isAdmin, false);
   assert.equal(profile.isPremium, false);
@@ -101,18 +107,36 @@ test('invited, no account yet: creates the account and profile, links the phone,
   assert.doesNotMatch(SETUP_TEXT, /invit/i);
 });
 
-test('invited, verified account already exists: links the phone to it and confirms by text, no new account or email', async () => {
-  const { db, adminAuth, sms, handlers } = build({
+test('invited, verified account already exists: NOT linked until the email owner confirms with a code', async () => {
+  const { db, adminAuth, sms, pending, handlers } = build({
     seed: { ...invited, 'profiles/existing-uid': { displayName: 'Keep me' } },
     users: [{ uid: 'existing-uid', email: 'new@example.com', emailVerified: true }],
   });
   await handlers.handleUnknownSender(PHONE);
 
+  // No link yet, no new account, no profile change, no sign-in link.
+  assert.equal(db.data.has(`phoneNumbers/${PHONE}`), false);
   assert.equal(adminAuth.calls.created.length, 0);
   assert.equal(adminAuth.calls.links.length, 0);
-  assert.equal(db.data.get(`phoneNumbers/${PHONE}`).userId, 'existing-uid');
   assert.equal(db.data.get('profiles/existing-uid').displayName, 'Keep me');
-  assert.deepEqual(sms, [{ to: PHONE, message: LINKED_TEXT }]);
+  // The code goes to the account's email, never into the text; the reply asks for it.
+  const mail = [...db.data.entries()].find(([key]) => key.startsWith('mail/'))[1];
+  assert.equal(mail.to, 'new@example.com');
+  assert.match(mail.message.text, /123456/);
+  assert.deepEqual(sms, [{ to: PHONE, message: CONFIRM_TEXT }]);
+  assert.doesNotMatch(CONFIRM_TEXT, /123456|invit/i);
+  assert.deepEqual(db.data.get(`smsVerification/${PHONE}`), { email: 'new@example.com', code: '123456' });
+  assert.deepEqual(pending, [{ phone: PHONE, state: { type: 'awaiting_verification', email: 'new@example.com' } }]);
+});
+
+test('a recycled/mistyped number cannot reach an existing account without the emailed code', async () => {
+  const { db, handlers } = build({
+    seed: invited,
+    users: [{ uid: 'existing-uid', email: 'new@example.com', emailVerified: true }],
+  });
+  await handlers.handleUnknownSender(PHONE);
+  await handlers.handleUnknownSender(PHONE);   // repeat texts don't link either
+  assert.equal(db.data.has(`phoneNumbers/${PHONE}`), false);
 });
 
 test('an unverified account we did not create is NOT linked (pre-registered squat)', async () => {
@@ -134,7 +158,9 @@ test('an unverified account we provisioned earlier is accepted', async () => {
     users: [{ uid: 'ours', email: 'new@example.com', emailVerified: false, customClaims: { [PROVISIONED_CLAIM]: true } }],
   });
   await handlers.handleUnknownSender(PHONE);
-  assert.equal(db.data.get(`phoneNumbers/${PHONE}`).userId, 'ours');
+  const link = db.data.get(`phoneNumbers/${PHONE}`);
+  assert.equal(link.userId, 'ours');
+  assert.equal(link.loginConfirmed, false);
 });
 
 test('not invited: replies invite-only, with no "sign up on the website" line, and creates nothing', async () => {

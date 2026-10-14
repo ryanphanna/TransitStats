@@ -25,13 +25,16 @@ const WELCOME_TEXT = [
 
 const SETUP_TEXT = 'You\'re all set! Text your trips here as you ride, like \'504 King to Spadina\'. '
   + 'We also emailed you a link to sign in on the website.';
-const LINKED_TEXT = 'You\'re all set! Text your trips here as you ride, like \'504 King to Spadina\'.';
+const CONFIRM_TEXT = 'Almost there! We emailed a 6-digit code to the address on your account. Reply with it to finish setting up.';
 const SETUP_PROBLEM_TEXT = 'We couldn\'t finish setting up this number. Please contact us for help.';
 const NOT_INVITED_TEXT = 'TransitStats is invite-only. If you already have an account, text REGISTER and your email to link this number.';
 const SIGN_IN_URL = 'https://transitstats.fyi/import';
 const PROVISIONED_CLAIM = 'smsInviteProvisioned';
 
-function createInviteHandlers({ db, adminAuth, sendSmsReply, shouldRespondToUnknown, FieldValue, logger }) {
+function createInviteHandlers({
+  db, adminAuth, sendSmsReply, shouldRespondToUnknown, FieldValue, logger,
+  storeVerificationCode, setPendingState, generateVerificationCode,
+}) {
   const log = logger || { info() {}, warn() {}, error() {} };
 
   async function isOptedOut(phone) {
@@ -61,13 +64,16 @@ function createInviteHandlers({ db, adminAuth, sendSmsReply, shouldRespondToUnkn
       // invited address to capture the phone link.
       const provisionedByUs = existing.customClaims?.[PROVISIONED_CLAIM] === true;
       if (!existing.emailVerified && !provisionedByUs) return { error: 'unverified-existing' };
-      return { uid: existing.uid, existed: true };
+      // A verified account may hold someone's data: linking a phone to it needs
+      // the email owner's confirmation. One we created (unverified, our claim)
+      // is still empty and handled like a brand-new account.
+      return { uid: existing.uid, needsConfirmation: existing.emailVerified === true };
     } catch (error) {
       if (error?.code !== 'auth/user-not-found') throw error;
     }
     const created = await adminAuth.createUser({ email, emailVerified: false });
     await adminAuth.setCustomUserClaims(created.uid, { [PROVISIONED_CLAIM]: true });
-    return { uid: created.uid, existed: false };
+    return { uid: created.uid, needsConfirmation: false };
   }
 
   async function ensureProfile(uid, email) {
@@ -100,6 +106,23 @@ function createInviteHandlers({ db, adminAuth, sendSmsReply, shouldRespondToUnkn
     });
   }
 
+  // Same proof REGISTER asks for: a code sent to the account's own email,
+  // replied to from this phone. Replying runs through handleVerificationCode,
+  // which links by Firebase Auth lookup and is attempt-limited.
+  async function startPhoneConfirmation(phoneNumber, email) {
+    const code = generateVerificationCode();
+    await storeVerificationCode(phoneNumber, email, code, 20 * 60 * 1000);
+    await db.collection('mail').add({
+      to: email,
+      message: {
+        subject: 'Your TransitStats text code',
+        text: `Your code is: ${code}\n\nReply to the text message with this code to finish connecting your phone. If this wasn't you, ignore this email.`,
+        html: `<p>Your code is: <strong>${code}</strong></p><p>Reply to the text message with this code to finish connecting your phone. If this wasn't you, ignore this email.</p>`,
+      },
+    });
+    await setPendingState(phoneNumber, { type: 'awaiting_verification', email }, 20 * 60 * 1000);
+  }
+
   /**
    * An unlinked number texted us. Returns true when it was handled (replied or
    * deliberately ignored), so the dispatcher stops there.
@@ -126,6 +149,12 @@ function createInviteHandlers({ db, adminAuth, sendSmsReply, shouldRespondToUnkn
       return true;
     }
 
+    if (account.needsConfirmation) {
+      await startPhoneConfirmation(phoneNumber, invite.email);
+      await sendSmsReply(phoneNumber, CONFIRM_TEXT);
+      return true;
+    }
+
     await ensureProfile(account.uid, invite.email);
 
     // Never overwrite an existing link (a race, or the number already belongs
@@ -136,15 +165,14 @@ function createInviteHandlers({ db, adminAuth, sendSmsReply, shouldRespondToUnkn
         email: invite.email,
         registeredAt: FieldValue.serverTimestamp(),
         source: 'invite',
+        // Texting trips works right away, but phone-code LOGIN stays off until
+        // the email owner signs in on the website (a recycled or mistyped
+        // number must not unlock an account the invitee later fills).
+        loginConfirmed: false,
       });
     } catch (error) {
       if (error?.code !== 6 && !/already exists/i.test(error?.message || '')) throw error;
       log.info('Phone already linked during invite setup', { traceId });
-      return true;
-    }
-
-    if (account.existed) {
-      await sendSmsReply(phoneNumber, LINKED_TEXT);
       return true;
     }
 
@@ -196,7 +224,7 @@ module.exports = {
   createInviteHandlers,
   WELCOME_TEXT,
   SETUP_TEXT,
-  LINKED_TEXT,
+  CONFIRM_TEXT,
   NOT_INVITED_TEXT,
   SETUP_PROBLEM_TEXT,
   PROVISIONED_CLAIM,

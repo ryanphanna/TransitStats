@@ -26,13 +26,14 @@ const {
   clearPendingState,
   setPendingState,
   getLastTripAgency,
+  storeVerificationCode,
   db,
   FieldValue,
 } = require('./db');
 const { sendSmsReply, getTwilioPhoneNumber } = require('./twilio');
 const { parseWithGemini, constructStopInput } = require('./gemini');
 const { parseMultiLineTripFormat, parseSingleLineTripFormat, parseCasualTripFormat, parseEndTripFormat } = require('./parsing');
-const { isValidRoute, normalizeDirection, getRouteDisplay, getStopDisplay, normalizeAgency } = require('./utils');
+const { isValidRoute, normalizeDirection, getRouteDisplay, getStopDisplay, normalizeAgency, generateVerificationCode } = require('./utils');
 const { getConfiguredPrimaryAgency } = require('./primary-agency');
 const handlers = require('./handlers');
 const { createInviteHandlers } = require('./sms-invite');
@@ -43,6 +44,7 @@ function getInviteHandlers() {
   if (!inviteHandlers) {
     inviteHandlers = createInviteHandlers({
       db, adminAuth: getAuth(), sendSmsReply, shouldRespondToUnknown, FieldValue, logger,
+      storeVerificationCode, setPendingState, generateVerificationCode,
     });
   }
   return inviteHandlers;
