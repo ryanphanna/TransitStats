@@ -3,11 +3,50 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function isAdmin() {
       return request.auth != null &&
+             request.auth.token.email_verified == true &&
              get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())).data.isAdmin == true;
     }
 
     function ownsDoc(userId) {
       return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Invite-only: signing in (e.g. with an email link) is open to anyone, so
+    // every user-data write must also come from an invited account.
+    //  - Email accounts: a verified email that is on the allowedUsers list
+    //    (the same doc js/auth.js checkWhitelist reads).
+    //  - Phone accounts: signed in with a custom token (no email), which only
+    //    our functions mint, and only for a phone number registered by an
+    //    invited user.
+    function isInvited() {
+      return request.auth != null && (
+        (request.auth.token.email_verified == true &&
+         exists(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())))
+        ||
+        (!('email' in request.auth.token) && request.auth.token.firebase.sign_in_provider == 'custom')
+      );
+    }
+
+    // Fields a signed-in user may set on their own profile. Everything else
+    // (email, pilot, phone links, isAdmin, isPremium, ...) is written only by
+    // the Admin SDK / functions, so allowlist rather than denylist.
+    function clientProfileFields() {
+      return ['userId', 'displayName', 'username', 'emojiUsername', 'usernameAliases', 'usernameType',
+              'defaultAgency', 'defaultAgencyMode', 'primaryAgency', 'mapStopMode', 'isPublic',
+              'betaFeatures', 'createdAt', 'updatedAt'];
+    }
+
+    // Public emoji identities are three distinct keys from js/identity.js
+    // joined with '-' (a test keeps this list in sync with that file).
+    function emojiKeys() {
+      return ['bus', 'train', 'subway', 'streetcar', 'lightrail', 'rocket', 'bike', 'scooter', 'walk', 'ferry', 'station', 'map', 'ticket', 'stop', 'bridge', 'cablecar', 'helicopter', 'airplane', 'sailing', 'taxi', 'truck', 'anchor', 'fuel', 'traffic', 'auto', 'monorail', 'bullettrain', 'tram', 'minibus', 'motorcycle', 'scooter2', 'busstop', 'motorway', 'tracks', 'v_traffic', 'construction', 'rowboat', 'speedboat', 'ship2', 'departure', 'arrival', 'aerialtram', 'mountainrail', 'panda', 'fox', 'koala', 'lion', 'tiger', 'frog', 'octopus', 'butterfly', 'owl', 'dino', 'whale', 'crab', 'bee', 'cat', 'dog', 'taco', 'pizza', 'burger', 'ramen', 'sushi', 'icecream', 'donut', 'coffee', 'beer', 'apple', 'cookie', 'cake', 'bread', 'pretzel', 'avocado', 'soccer', 'basketball', 'baseball', 'tennis', 'volleyball', 'football', 'pool', 'pingpong', 'skate', 'surf', 'cycle', 'climb', 'game', 'guitar', 'camera', 'tree', 'cactus', 'flower', 'moon', 'sun', 'cloud', 'fire', 'star', 'mountain', 'ocean', 'crystal', 'robot', 'alien', 'ghost', 'heart', 'gift', 'crown', 'gem', 'key', 'lock'];
+    }
+
+    function isEmojiUsername(username) {
+      let p = username.split('-');
+      return p.size() == 3
+        && p[0] in emojiKeys() && p[1] in emojiKeys() && p[2] in emojiKeys()
+        && p[0] != p[1] && p[0] != p[2] && p[1] != p[2];
     }
 
     // Profiles - users can read/write their own profile. Never publicly readable,
@@ -17,17 +56,16 @@ service cloud.firestore {
       allow read: if ownsDoc(userId) || isAdmin();
       allow create: if isAdmin() || (
         ownsDoc(userId) &&
-        request.resource.data.isAdmin == false &&
-        request.resource.data.isPremium == false
+        isInvited() &&
+        request.resource.data.keys().hasOnly(clientProfileFields().concat(['isAdmin', 'isPremium'])) &&
+        (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false) &&
+        (!('isPremium' in request.resource.data) || request.resource.data.isPremium == false) &&
+        (!('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid)
       );
       allow update: if isAdmin() || (
         ownsDoc(userId) &&
-        request.resource.data.isAdmin == resource.data.isAdmin &&
-        request.resource.data.isPremium == resource.data.isPremium &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName', 'username', 'defaultAgency', 'defaultAgencyMode', 'primaryAgency', 'isPublic',
-          'betaFeatures', 'updatedAt', 'isAdmin', 'isPremium'
-        ])
+        isInvited() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(clientProfileFields())
       );
       allow delete: if ownsDoc(userId) || isAdmin();
     }
@@ -39,23 +77,28 @@ service cloud.firestore {
     // fields for the public profile page.
     match /trips/{tripId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow write: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow create: if isInvited() && request.resource.data.userId == request.auth.uid;
+      allow update: if isInvited() && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
 
     // PRESTO pilot activity stays separate from canonical trip history.
     match /prestoTransactions/{transactionId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update: if request.auth != null && resource.data.userId == request.auth.uid
+      allow create: if isInvited() && request.resource.data.userId == request.auth.uid;
+      allow update: if isInvited() && resource.data.userId == request.auth.uid
                     && request.resource.data.userId == request.auth.uid;
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
 
     // Templates - users can read/write their own templates
     match /templates/{templateId} {
-      allow read, write: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if isInvited() && request.resource.data.userId == request.auth.uid;
+      allow update: if isInvited() && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
 
     // Phone numbers - only cloud functions can read/write (admin SDK)
@@ -129,7 +172,7 @@ service cloud.firestore {
     // Usernames - for public profiles
     match /usernames/{username} {
       allow read: if true; // Public profiles must be resolvable without auth
-      allow create: if request.auth != null 
+      allow create: if isInvited()
         && request.resource.data.uid == request.auth.uid
         && username.size() >= 1
         && username.size() <= 20
@@ -139,7 +182,7 @@ service cloud.firestore {
             && username.matches('^[a-z0-9-]+$'))
           ||
           (request.resource.data.type == 'emoji'
-            && username.matches('^[a-z0-9_-]+$'))
+            && isEmojiUsername(username))
         );
       allow update, delete: if false; // Usernames are permanent for now
     }
@@ -147,7 +190,7 @@ service cloud.firestore {
     // Prediction Stats - for silent accuracy evaluation
     match /predictionStats/{statId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow create: if isInvited() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if false;
     }
 

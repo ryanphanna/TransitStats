@@ -4,6 +4,7 @@
 const { admin, db, FieldValue, Timestamp } = require('./core');
 const { isRateLimited, isGeminiRateLimited, shouldRespondToUnknown, checkIdempotency, checkContentDuplicate } = require('./rate-limit');
 const {
+  getAuthUidByEmail,
   getUserByPhone,
   getUserProfile,
   isEmailAllowed,
@@ -26,6 +27,7 @@ module.exports = {
   shouldRespondToUnknown,
   checkIdempotency,
   checkContentDuplicate,
+  getAuthUidByEmail,
   getUserByPhone,
   getUserProfile,
   isEmailAllowed,

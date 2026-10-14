@@ -171,32 +171,40 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
 
     try {
       const verifyRef = db.collection('phoneLoginVerification').doc(phoneNumber);
-      const verifyDoc = await verifyRef.get();
-      if (!verifyDoc.exists) {
-        res.status(400).json({ error: 'No pending verification found. Please request a new code.' });
+      // Check, count and consume the code in ONE transaction. Done as separate
+      // reads and writes, parallel guesses all saw the same attempts value and
+      // could exceed the 3-attempt limit (or reuse one correct code twice).
+      const outcome = await db.runTransaction(async transaction => {
+        const verifyDoc = await transaction.get(verifyRef);
+        if (!verifyDoc.exists) return 'missing';
+        const verifyData = verifyDoc.data();
+        if (verifyData.expiresAt.toDate() < new Date()) {
+          transaction.delete(verifyRef);
+          return 'expired';
+        }
+        if (verifyData.attempts >= 3) {
+          transaction.delete(verifyRef);
+          return 'locked';
+        }
+        if (verifyData.code !== code) {
+          transaction.update(verifyRef, { attempts: FieldValue.increment(1) });
+          return 'invalid';
+        }
+        transaction.delete(verifyRef);
+        return 'ok';
+      });
+
+      const failures = {
+        missing: 'No pending verification found. Please request a new code.',
+        expired: 'Verification code has expired. Please request a new one.',
+        locked: 'Too many failed verification attempts. Please request a new code.',
+        invalid: 'Invalid verification code.',
+      };
+      if (outcome !== 'ok') {
+        res.status(400).json({ error: failures[outcome] });
         return;
       }
 
-      const verifyData = verifyDoc.data();
-      if (verifyData.expiresAt.toDate() < new Date()) {
-        await verifyRef.delete();
-        res.status(400).json({ error: 'Verification code has expired. Please request a new one.' });
-        return;
-      }
-
-      if (verifyData.attempts >= 3) {
-        await verifyRef.delete();
-        res.status(400).json({ error: 'Too many failed verification attempts. Please request a new code.' });
-        return;
-      }
-
-      if (verifyData.code !== code) {
-        await verifyRef.update({ attempts: FieldValue.increment(1) });
-        res.status(400).json({ error: 'Invalid verification code.' });
-        return;
-      }
-
-      await verifyRef.delete();
       const phoneDoc = await db.collection('phoneNumbers').doc(phoneNumber).get();
       if (!phoneDoc.exists) {
         res.status(400).json({ error: 'Registration record not found for this phone number.' });

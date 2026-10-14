@@ -1,5 +1,6 @@
 import { auth, authPersistenceReady, authPersistenceStatus, firestorePersistenceStatus } from '../firebase.js';
 import { Auth } from '../auth.js';
+import { loginUrlFor } from './return-path.js';
 
 // Mobile browsers can suspend a tab while Firebase is restoring IndexedDB,
 // and the shared-session request can then take longer than a normal page load.
@@ -71,8 +72,67 @@ async function verifyWithRetry(user) {
     return verification;
 }
 
+// Firebase keeps a signed-in user in localStorage or IndexedDB. Returns false
+// only when we can positively see there is none (or storage doesn't exist at
+// all); any error or uncertainty returns true so the grace period still applies.
+export async function hasPersistedFirebaseUser() {
+    try {
+        for (let i = 0; i < localStorage.length; i += 1) {
+            if (localStorage.key(i)?.startsWith('firebase:authUser:')) return true;
+        }
+    } catch {
+        return true;
+    }
+    if (typeof indexedDB === 'undefined') return false;
+    try {
+        return await new Promise((resolve) => {
+            const request = indexedDB.open('firebaseLocalStorageDb');
+            request.onupgradeneeded = () => {
+                // Database didn't exist: nothing was ever persisted. Don't leave an empty one behind.
+                request.transaction.abort();
+                resolve(false);
+            };
+            request.onerror = () => resolve(request.error?.name === 'AbortError' ? false : true);
+            request.onblocked = () => resolve(true);
+            request.onsuccess = () => {
+                const db = request.result;
+                try {
+                    if (!db.objectStoreNames.contains('firebaseLocalStorage')) {
+                        db.close();
+                        resolve(false);
+                        return;
+                    }
+                    const keysRequest = db.transaction('firebaseLocalStorage', 'readonly')
+                        .objectStore('firebaseLocalStorage').getAllKeys();
+                    keysRequest.onsuccess = () => {
+                        db.close();
+                        resolve(keysRequest.result.some(key => String(key).startsWith('firebase:authUser:')));
+                    };
+                    keysRequest.onerror = () => { db.close(); resolve(true); };
+                } catch {
+                    db.close();
+                    resolve(true);
+                }
+            };
+        });
+    } catch {
+        return true;
+    }
+}
+
 async function waitForRestoredUser(initialUser) {
     if (initialUser) return initialUser;
+
+    // Never signed in on this browser: nothing persisted and the shared cookie
+    // check says there is no session. Skip the grace period and redirect now.
+    // Anything uncertain (stored user, network error, 5xx) keeps the full wait.
+    if (!(await hasPersistedFirebaseUser())) {
+        if (auth.currentUser) return auth.currentUser;
+        const sharedUser = await Auth.restoreSharedSession();
+        if (sharedUser) return sharedUser;
+        if (auth.currentUser) return auth.currentUser;
+        if (Auth.lastRestoreFoundNoSession) return null;
+    }
 
     const startedAt = Date.now();
     const deadline = startedAt + AUTH_RESTORE_GRACE_MS;
@@ -113,6 +173,7 @@ else document.body.classList.remove('dark');
 /**
  * Resolves when auth is confirmed. Redirects to / if not authed or not whitelisted.
  * @param {object} options
+ * @param {boolean} options.returnToPage — send the visitor back to this page after sign-in
  * @param {boolean} options.adminOnly — redirect to /dashboard if user is not admin
  */
 export function requireAuth(options = {}) {
@@ -122,7 +183,7 @@ export function requireAuth(options = {}) {
         const listen = () => auth.onAuthStateChanged(async (user) => {
             if (checking || resolved) return;
             checking = true;
-            const loginUrl = '/';
+            const loginUrl = options.returnToPage ? loginUrlFor(window.location.pathname) : '/';
             // A Vite live reload can recreate the page before Firebase has
             // finished hydrating its LOCAL session. Give that restoration a
             // short grace period instead of treating the transient null as a

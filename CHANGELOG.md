@@ -8,6 +8,8 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Opening Wrapped while signed out now goes to the login page instead of loading forever**, and signing in brings you back to Wrapped. A failed trip load now shows an error instead of spinning.
+- **Signed-out visitors are sent to login right away on every page.** The 60-second wait is now kept only when a saved session might still be restoring, so a visitor who was never signed in no longer waits.
 - **PRESTO import preview now shows what it skipped and cancels refunded fares.** Row types it doesn't import (e.g. "3 Refund, 2 Autoload") are listed, and a fare that a matching refund reverses is left out instead of counting as a ride.
 - **PRESTO import is friendlier about the file.** A CSV with a hidden byte-order mark now imports, uploading the PDF report explains to export the CSV instead, and an unreadable date format gets a plain message rather than every row flagged.
 - **GO trips from a PRESTO import stay correct after a missed tap-off.** Rows were paired two at a time, so one missing tap-off scrambled every later GO trip on the map; they're now paired by time gap and fare.
