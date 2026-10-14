@@ -4,13 +4,16 @@
 const { db, FieldValue } = require('./core');
 const { AGENCY_CITY } = require('../constants');
 const { getConnectionGroup, areConnectedStops, normalizeStopName } = require('../transfer-connections');
-const { getStopCandidateDirection, collapseEquivalentStopCandidates } = require('../utils');
+const { getStopCandidateDirection, collapseEquivalentStopCandidates, stopNameKey } = require('../utils');
 const TopologyConstraints = require('../topology-constraints');
 let _topology = null;
 try { _topology = require('../topology.json'); } catch (_) { /* optional */ }
 
-async function lookupStop(stopCode, stopName, agency, route = null, direction = null) {
-  try {
+// Shared lookup. Throws on a database error so callers can tell "no such stop" from "could not
+// check". crossAgency=false skips the fallback that scans the whole stops collection and writes
+// (auto-expanding a stop's agencies), for read-only checks.
+async function _lookupStopCore(stopCode, stopName, agency, route, direction, { crossAgency = true } = {}) {
+  {
     if (!stopCode && !stopName) return null;
 
     // Code lookup — uses composite index (agencies array-contains + code ==)
@@ -43,7 +46,7 @@ async function lookupStop(stopCode, stopName, agency, route = null, direction = 
     // Cross-agency fallback: stop exists in library under a different agency.
     // If found, auto-expand the stop's agencies array so future lookups hit directly.
     const term = stopCode || stopName;
-    if (term) {
+    if (crossAgency && term) {
       const found = await _findAndExpandStop(term, agency);
       if (found) return found;
     }
@@ -57,9 +60,30 @@ async function lookupStop(stopCode, stopName, agency, route = null, direction = 
     }
 
     return null;
+  }
+}
+
+async function lookupStop(stopCode, stopName, agency, route = null, direction = null) {
+  try {
+    return await _lookupStopCore(stopCode, stopName, agency, route, direction);
   } catch (error) {
     console.error('Error looking up stop:', error);
     return null;
+  }
+}
+
+/**
+ * Read-only stop check: never writes and never scans the whole collection. Resolves to
+ * { status: 'found' | 'notFound' | 'error', stop } so a database error is never mistaken for a
+ * stop that does not exist.
+ */
+async function lookupStopCheck(stopCode, stopName, agency, route = null, direction = null) {
+  try {
+    const stop = await _lookupStopCore(stopCode, stopName, agency, route, direction, { crossAgency: false });
+    return stop ? { status: 'found', stop } : { status: 'notFound', stop: null };
+  } catch (error) {
+    console.error('Error checking stop:', error);
+    return { status: 'error', stop: null };
   }
 }
 
@@ -196,9 +220,11 @@ async function findMatchingStops(stopName, agency) {
 
 function _findStopCandidates(stopName, docs) {
   const lowerName = stopName.toLowerCase();
+  const inputKey = stopNameKey(stopName);
   const inputGroup = getConnectionGroup(stopName);
   const normalizedInput = normalizeStopName(stopName);
-  const exactMatches = [];
+  const literalMatches = [];
+  const keyedMatches = [];
   const connectedMatches = [];
   const seen = new Set();
 
@@ -213,11 +239,15 @@ function _findStopCandidates(stopName, docs) {
       direction: data.direction || null,
     };
     const names = [data.name, ...(data.aliases || [])].filter(Boolean);
-    const exact = names.some(name => name.toLowerCase() === lowerName);
-    if (exact) {
+    // Literal name match first; the station-key match (punctuation twins, platform records of the
+    // same station) is only a fallback, so a directional platform asked for by its full name never
+    // resolves to its opposite-direction twin.
+    const literal = names.some(name => name.toLowerCase() === lowerName);
+    const keyed = !literal && inputKey && names.some(name => stopNameKey(name) === inputKey);
+    if (literal || keyed) {
       if (!seen.has(doc.id)) {
         seen.add(doc.id);
-        exactMatches.push(candidate);
+        (literal ? literalMatches : keyedMatches).push(candidate);
       }
       continue;
     }
@@ -233,15 +263,18 @@ function _findStopCandidates(stopName, docs) {
     }
   }
 
-  return [...exactMatches, ...connectedMatches];
+  return [...(literalMatches.length ? literalMatches : keyedMatches), ...connectedMatches];
 }
 
 async function _resolveCandidates(candidates, agency, route, direction, rawStopName) {
+  // Fold duplicate records of one station (platform children, punctuation twins) before the
+  // route check, so a duplicate can't make a single station look ambiguous or unconfirmed.
+  candidates = collapseEquivalentStopCandidates(candidates, { strict: true, direction });
   if (!route || candidates.length === 1) return candidates[0];
 
   const routeResult = await _filterCandidatesByRoute(candidates, agency, route);
   let narrowed = routeResult.candidates;
-  if (routeResult.confirmed) narrowed = collapseEquivalentStopCandidates(narrowed);
+  if (routeResult.confirmed) narrowed = collapseEquivalentStopCandidates(narrowed, { direction });
   if (narrowed.length === 0) {
     if (candidates.length === 1) return candidates[0];
     console.warn(`lookupStop: ${candidates.length} stops named "${rawStopName}" but none confirmed for route ${route} via stopRoutes`);
@@ -350,6 +383,7 @@ function _candidateMatchesRouteMode(candidate, routeMode) {
 
 module.exports = {
   lookupStop,
+  lookupStopCheck,
   findMatchingStops,
   getRoutesAtStop,
   getStopsLibrary,

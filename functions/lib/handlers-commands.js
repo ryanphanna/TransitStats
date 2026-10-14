@@ -28,7 +28,7 @@ const {
   hasPremiumAccess,
 } = require('./utils');
 const { getConfiguredPrimaryAgency } = require('./primary-agency');
-const { isPhoneConfirmed, UNLOCKED_TEXT, LINKED_NEUTRAL_TEXT } = require('./phone-confirmation');
+const { isPhoneConfirmed, EMAIL_NOT_FOUND_TEXT, UNLOCKED_TEXT, LINKED_NEUTRAL_TEXT } = require('./phone-confirmation');
 const { KNOWN_AGENCIES } = require('./constants');
 const {
   lookupAgencyTimezone,
@@ -251,7 +251,7 @@ async function handleRegister(phoneNumber, email, traceId = null) {
 
   const allowed = await isEmailAllowed(email);
   if (!allowed) {
-    await sendSmsReply(phoneNumber, 'Invite-only. Sign up at transitstats.fyi for access info.');
+    await sendSmsReply(phoneNumber, EMAIL_NOT_FOUND_TEXT);
     return;
   }
 
@@ -276,7 +276,7 @@ async function handleRegister(phoneNumber, email, traceId = null) {
   // Resolve the account through Firebase Auth. The profile `email` field is not
   // trustworthy (clients could write it), so it must never pick the account.
   if (!(await getAuthUidByEmail(email))) {
-    await sendSmsReply(phoneNumber, `No account found for ${email}. Sign up at transitstats.fyi, then text REGISTER again.`);
+    await sendSmsReply(phoneNumber, EMAIL_NOT_FOUND_TEXT);
     return;
   }
 

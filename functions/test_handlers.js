@@ -134,12 +134,14 @@ function loadHandlers(overrides = {}) {
       const match = String(candidate?.stopName || '').match(/\b(northbound|southbound|eastbound|westbound)\b/i);
       return match ? `${match[1][0].toUpperCase()}${match[1].slice(1).toLowerCase()}` : null;
     },
-    collapseEquivalentStopCandidates: (candidates) => {
+    collapseEquivalentStopCandidates: (candidates, options = {}) => {
       const seen = new Set();
       return candidates.filter((candidate) => {
         const name = String(candidate?.stopName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         const direction = candidate?.direction || '';
-        const key = `${name}|${direction.toLowerCase()}`;
+        // Strict (pre-route) collapsing never merges records that carry different stop codes.
+        const code = options.strict ? (candidate?.stopCode || '') : '';
+        const key = `${name}|${direction.toLowerCase()}|${code}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;

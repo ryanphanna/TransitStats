@@ -7,7 +7,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const Module = require('node:module');
 
-function loadStopsModule({ stops = [], stopRoutes = {} } = {}) {
+function loadStopsModule({ stops = [], stopRoutes = {}, failQueries = false, scans = [] } = {}) {
   const stopsPath = require.resolve('./lib/db/stops');
   delete require.cache[stopsPath];
 
@@ -26,11 +26,11 @@ function loadStopsModule({ stops = [], stopRoutes = {} } = {}) {
               const docs = stops
                 .filter(s => Array.isArray(s.data.agencies) && s.data.agencies.includes(value))
                 .map(s => wrapDoc(s.id, s.data));
-              return { get: async () => ({ docs, empty: docs.length === 0 }) };
+              return { get: async () => { if (failQueries) throw new Error('unavailable'); return { docs, empty: docs.length === 0 }; } };
             }
             throw new Error(`Unexpected stops.where: ${field} ${op}`);
           },
-          get: async () => ({ docs: stops.map(s => wrapDoc(s.id, s.data)) }),
+          get: async () => { scans.push('stops'); return { docs: stops.map(s => wrapDoc(s.id, s.data)) }; },
         };
       }
 
@@ -247,4 +247,66 @@ test('lookupStop: transfer-complex ambiguity stays unresolved without direction'
 
   const result = await lookupStop(null, 'College', 'TTC', '506');
   assert.equal(result, null);
+});
+
+test('lookupStop: a station name finds its platform record and its parent as one stop', async () => {
+  const { lookupStop } = loadStopsModule({
+    stops: [
+      { id: 'ttc_main_nb', data: { agencies: ['TTC'], code: '5001-N', name: 'Main Street Station - Northbound Platform', aliases: [] } },
+      { id: 'ttc_main', data: { agencies: ['TTC'], code: '5001', name: 'Main Street Station', aliases: [] } },
+    ],
+    stopRoutes: { TTC_5001: ['2'], 'TTC_5001-N': ['2'] },
+  });
+
+  const result = await lookupStop(null, 'Main Street Station', 'TTC', '2');
+  assert.ok(result, 'platform + parent should resolve to one stop, not stay ambiguous');
+  assert.equal(result.stopCode, '5001');
+});
+
+test('lookupStop: a station typed with different punctuation still matches', async () => {
+  const { lookupStop } = loadStopsModule({
+    stops: [{ id: 'ttc_stg', data: { agencies: ['TTC'], code: '88', name: 'St. George Station', aliases: [] } }],
+    stopRoutes: { TTC_88: ['1'] },
+  });
+  const result = await lookupStop(null, 'St George Station', 'TTC', '1');
+  assert.equal(result?.stopCode, '88');
+});
+
+test('lookupStop: genuinely different stops that share a prefix are not matched', async () => {
+  const { lookupStop } = loadStopsModule({
+    stops: [{ id: 'ttc_cp', data: { agencies: ['TTC'], code: '12', name: 'College Park Station', aliases: [] } }],
+    stopRoutes: { TTC_12: ['1'] },
+  });
+  assert.equal(await lookupStop(null, 'College Station', 'TTC', '1'), null);
+});
+
+test('lookupStopCheck: reports found / notFound / error and never mistakes an error for a missing stop', async () => {
+  const stops = [{ id: 'ttc_88', data: { agencies: ['TTC'], code: '88', name: 'Main Station', aliases: [] } }];
+  const ok = loadStopsModule({ stops, stopRoutes: { TTC_88: ['1'] } });
+  assert.equal((await ok.lookupStopCheck(null, 'Main Station', 'TTC', '1')).status, 'found');
+  assert.equal((await ok.lookupStopCheck(null, 'Nowhere Station', 'TTC', '1')).status, 'notFound');
+  const broken = loadStopsModule({ stops, failQueries: true });
+  assert.equal((await broken.lookupStopCheck(null, 'Main Station', 'TTC', '1')).status, 'error');
+});
+
+test('lookupStopCheck: no whole-collection scan (lookupStop still does one for other-agency stops)', async () => {
+  const scans = [];
+  const stops = [{ id: 'go_1', data: { agencies: ['GO Transit'], agency: 'GO Transit', code: '1', name: 'Zzyzx Terminal', aliases: [] } }];
+  const m = loadStopsModule({ stops, scans });
+  assert.equal((await m.lookupStopCheck(null, 'Zzyzx Terminal', 'TTC', '1')).status, 'notFound');
+  assert.equal(scans.length, 0);
+});
+
+test('lookupStop: a platform asked for by its full name never resolves to its opposite-direction twin', async () => {
+  const m = loadStopsModule({
+    stops: [
+      { id: 'sb', data: { agencies: ['TTC'], code: '9001-S', name: 'College Station - Southbound Platform', aliases: [] } },
+      { id: 'nb', data: { agencies: ['TTC'], code: '9001-N', name: 'College Station - Northbound Platform', aliases: [] } },
+    ],
+    stopRoutes: { 'TTC_9001-N': ['1'], 'TTC_9001-S': ['1'] },
+  });
+  const result = await m.lookupStop(null, 'College Station - Northbound Platform', 'TTC', '1', 'Northbound');
+  assert.equal(result?.stopCode, '9001-N');
+  const southbound = await m.lookupStop(null, 'College Station - Southbound Platform', 'TTC', '1');
+  assert.equal(southbound?.stopCode, '9001-S');
 });

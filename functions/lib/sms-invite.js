@@ -27,7 +27,7 @@ const SETUP_TEXT = 'You\'re all set! Text your trips here as you ride, like \'50
   + 'We also emailed you a link to sign in on the website.';
 const CONFIRM_TEXT = 'Almost there! We emailed a 6-digit code to the address on your account. Reply with it to finish setting up.';
 const SETUP_PROBLEM_TEXT = 'We couldn\'t finish setting up this number. Please contact us for help.';
-const NOT_INVITED_TEXT = 'TransitStats is invite-only. If you already have an account, text REGISTER and your email to link this number.';
+const NOT_INVITED_TEXT = 'This number isn\'t linked to a TransitStats account yet. Text REGISTER and your account email to link it.';
 const SIGN_IN_URL = 'https://transitstats.fyi/import';
 const PROVISIONED_CLAIM = 'smsInviteProvisioned';
 
