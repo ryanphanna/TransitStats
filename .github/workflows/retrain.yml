@@ -42,17 +42,18 @@ jobs:
         run: |
           mkdir -p /tmp/transitstats-model-baseline
           python3 - <<'EOF'
-          import os, firebase_admin
+          import json, os, firebase_admin
           from firebase_admin import credentials, storage
           key = os.path.expanduser("~/Desktop/Dev/Credentials/Firebase for Transit Stats.json")
           firebase_admin.initialize_app(credentials.Certificate(key), {"projectId": "transitstats-21ba4"})
-          bucket = storage.bucket(os.environ.get("ML_MODEL_BUCKET") or None)
-          for name in ["model_v4_meta.json", "model_v4_endstop_meta.json", "model_v5_meta.json", "model_v5_endstop_meta.json"]:
-              blob = bucket.blob("models/" + name)
-              if blob.exists():
-                  blob.download_to_filename("/tmp/transitstats-model-baseline/" + name)
-              else:
-                  print("No baseline for", name, "(first run)")
+          bucket = storage.bucket(os.environ.get("ML_MODEL_BUCKET") or "transitstats-21ba4.firebasestorage.app")
+          pointer = bucket.blob("models/latest.json")
+          if not pointer.exists():
+              print("No published models yet (first run): skipping baseline")
+          else:
+              version = json.loads(pointer.download_as_bytes())["version"]
+              for name in ["model_v4_meta.json", "model_v4_endstop_meta.json", "model_v5_meta.json", "model_v5_endstop_meta.json"]:
+                  bucket.blob(f"models/{version}/{name}").download_to_filename("/tmp/transitstats-model-baseline/" + name)
           EOF
 
       - name: Export trips from Firestore

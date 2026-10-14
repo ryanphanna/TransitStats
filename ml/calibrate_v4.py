@@ -62,6 +62,8 @@ def canonicalize_stop(name, lib):
                 return item["name"].lower().replace(" and ", "/").replace(" & ", "/").replace(" @ ", "/").replace(" at ", "/")
     return lower
 
+# Models are not in the repo (see functions/lib/model-store.js); run from ml/ after training, or
+# download a published version from gs://<bucket>/models/<version>/ first.
 with open('model_v4.json', 'r') as f:
     model_data = json.load(f)
 

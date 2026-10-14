@@ -5,13 +5,15 @@
  *   node scripts/upload-models.js [--dir ../ml] [--bucket <name>] [--dry-run]
  *
  * --dir     folder that holds the model_v*.json / model_v*.onnx files (default: lib/, the old location)
- * --bucket  bucket name (default: the project's default bucket, or ML_MODEL_BUCKET)
+ * --bucket  bucket name (default: ML_MODEL_BUCKET, else transitstats-21ba4.firebasestorage.app)
+ * Files go to models/<version>/ and models/latest.json (the pointer) is written last, so the
+ * functions never load a half-uploaded set.
  * Needs Admin credentials (GOOGLE_APPLICATION_CREDENTIALS) with write access to the bucket.
  * Every file must exist, so a half-finished upload can't leave the functions on a mixed model set.
  */
 const fs = require('fs');
 const path = require('path');
-const { MODEL_FILE_NAMES, PREFIX } = require('../lib/model-store');
+const { MODEL_FILE_NAMES, PREFIX, POINTER, bucketName } = require('../lib/model-store');
 
 function parseArgs(argv) {
   const args = { dryRun: false, dir: path.join(__dirname, '..', 'lib') };
@@ -23,25 +25,37 @@ function parseArgs(argv) {
   return args;
 }
 
-/** `bucket` is injectable for tests. Returns the list of files handled. */
-async function uploadModels({ dir, bucket, dryRun = false, log = console.log }) {
+function newVersion() {
+  return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+}
+
+/** `bucket` is injectable for tests. Returns the version that was (or would be) published. */
+async function uploadModels({ dir, bucket, bucketLabel = '', dryRun = false, version = newVersion(), log = console.log }) {
   const missing = MODEL_FILE_NAMES.filter(name => !fs.existsSync(path.join(dir, name)));
   if (missing.length) throw new Error(`Missing model files in ${dir}: ${missing.join(', ')}`);
 
+  log(`${dryRun ? '[dry-run] ' : ''}target gs://${bucketLabel || bucket?.name}/${PREFIX}${version}/`);
   for (const name of MODEL_FILE_NAMES) {
     const size = fs.statSync(path.join(dir, name)).size;
     if (dryRun) {
-      log(`[dry-run] would upload ${name} (${size} bytes) to ${PREFIX}${name}`);
+      log(`[dry-run] would upload ${name} (${size} bytes)`);
     } else {
-      await bucket.upload(path.join(dir, name), { destination: PREFIX + name, resumable: false });
+      await bucket.upload(path.join(dir, name), { destination: `${PREFIX}${version}/${name}`, resumable: false });
       log(`uploaded ${name} (${size} bytes)`);
     }
   }
-  return MODEL_FILE_NAMES;
+  if (dryRun) {
+    log(`[dry-run] would point ${POINTER} at ${version}`);
+  } else {
+    await bucket.file(POINTER).save(JSON.stringify({ version, files: MODEL_FILE_NAMES }), { contentType: 'application/json' });
+    log(`published ${POINTER} -> ${version}`);
+  }
+  return version;
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const name = args.bucket || bucketName();
   let bucket = null;
   if (!args.dryRun) {
     const { initializeApp, applicationDefault } = require('firebase-admin/app');
@@ -49,12 +63,11 @@ async function main() {
     initializeApp({
       credential: applicationDefault(),
       projectId: process.env.GCLOUD_PROJECT || 'transitstats-21ba4',
-      storageBucket: args.bucket || process.env.ML_MODEL_BUCKET || undefined,
+      storageBucket: name,
     });
-    bucket = getStorage().bucket();
-    console.log(`Uploading to gs://${bucket.name}/${PREFIX}`);
+    bucket = getStorage().bucket(name);
   }
-  await uploadModels({ dir: args.dir, bucket, dryRun: args.dryRun });
+  await uploadModels({ dir: args.dir, bucket, bucketLabel: name, dryRun: args.dryRun });
 }
 
 if (require.main === module) {

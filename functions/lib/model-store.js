@@ -13,6 +13,10 @@ const path = require('path');
 const logger = require('./logger');
 
 const PREFIX = 'models/';
+// The pointer is written last, so a half-finished upload is never loaded: files live in
+// models/<version>/ and models/latest.json names the complete version.
+const POINTER = PREFIX + 'latest.json';
+const DEFAULT_BUCKET = 'transitstats-21ba4.firebasestorage.app';
 const REFRESH_MS = 60 * 60 * 1000;
 const RETRY_AFTER_FAILURE_MS = 5 * 60 * 1000;
 
@@ -34,24 +38,33 @@ let _models = null;
 let _checkedAt = 0;
 let _inflight = null;
 
-async function readModelFile(name) {
-  // ML_MODEL_DIR reads from disk instead of Cloud Storage (local runs and tests).
-  if (process.env.ML_MODEL_DIR) {
-    return fs.promises.readFile(path.join(process.env.ML_MODEL_DIR, name));
-  }
-  const { getStorage } = require('firebase-admin/storage');
-  const bucket = getStorage().bucket(process.env.ML_MODEL_BUCKET || undefined);
-  const [contents] = await bucket.file(PREFIX + name).download();
-  return contents;
+function bucketName() {
+  return process.env.ML_MODEL_BUCKET || DEFAULT_BUCKET;
+}
+
+function getBucket() {
+  // The admin app is initialised without a default bucket, so always name it.
+  return require('firebase-admin/storage').getStorage().bucket(bucketName());
 }
 
 async function loadFromSource() {
+  let read;
+  if (process.env.ML_MODEL_DIR) {
+    // Local runs and tests: a plain folder of model files, no pointer.
+    read = name => fs.promises.readFile(path.join(process.env.ML_MODEL_DIR, name));
+  } else {
+    const bucket = getBucket();
+    const [pointerBytes] = await bucket.file(POINTER).download();
+    const { version } = JSON.parse(pointerBytes.toString('utf8'));
+    if (!version) throw new Error('models/latest.json has no version');
+    read = async name => (await bucket.file(`${PREFIX}${version}/${name}`).download())[0];
+  }
   const models = {};
   for (const [key, name] of Object.entries(JSON_FILES)) {
-    models[key] = JSON.parse((await readModelFile(name)).toString('utf8'));
+    models[key] = JSON.parse((await read(name)).toString('utf8'));
   }
   for (const [key, name] of Object.entries(BINARY_FILES)) {
-    models[key] = await readModelFile(name);
+    models[key] = await read(name);
   }
   return models;
 }
@@ -133,4 +146,4 @@ function resetForTests() {
   _session.reset();
 }
 
-module.exports = { ensure, current, isUserAllowed, getOnnxSession, resetForTests, MODEL_FILE_NAMES, PREFIX };
+module.exports = { ensure, current, isUserAllowed, getOnnxSession, resetForTests, bucketName, MODEL_FILE_NAMES, PREFIX, POINTER };
