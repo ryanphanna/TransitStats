@@ -9,6 +9,7 @@
 const UNLOCK_PROMPT_TEXT = 'We emailed you a code. Reply with it to unlock that.';
 const UNLOCK_UNAVAILABLE_TEXT = 'That isn\'t available on this number yet.';
 const UNLOCKED_TEXT = 'Unlocked. You can use every command from this number now.';
+const EMAIL_NOT_FOUND_TEXT = 'We couldn\'t find an account for that email. Try the one you signed in with, or visit transitstats.fyi.';
 const LINKED_NEUTRAL_TEXT = 'This number is already linked to an account.';
 const OTP_UNCONFIRMED_TEXT = 'This number isn\'t unlocked yet. Text us, then reply with the code we email you.';
 
@@ -40,4 +41,4 @@ function tripStartedByPhone(trip, phoneNumber) {
 // Neutral on purpose: it must not reveal whether the owner has a trip running.
 const LOCKED_TRIP_TEXT = 'Couldn\'t do that from this number right now.';
 
-module.exports = { UNLOCKED_TEXT, LINKED_NEUTRAL_TEXT, phoneTag, tripStartedByPhone, LOCKED_TRIP_TEXT, UNLOCK_PROMPT_TEXT, UNLOCK_UNAVAILABLE_TEXT, OTP_UNCONFIRMED_TEXT, isPhoneConfirmed };
+module.exports = { EMAIL_NOT_FOUND_TEXT, UNLOCKED_TEXT, LINKED_NEUTRAL_TEXT, phoneTag, tripStartedByPhone, LOCKED_TRIP_TEXT, UNLOCK_PROMPT_TEXT, UNLOCK_UNAVAILABLE_TEXT, OTP_UNCONFIRMED_TEXT, isPhoneConfirmed };
