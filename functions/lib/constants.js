@@ -49,6 +49,7 @@ exports.KNOWN_AGENCIES = [
   'Santa Rosa CityBus',
   'CityBus',
   'NFTA Metro',
+  'PRT',
 ];
 
 exports.BAD_ROUTE_SUFFIXES = [

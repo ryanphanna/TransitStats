@@ -79,6 +79,10 @@ export const AGENCY_ALIASES = {
   'nfta metro': 'NFTA Metro',
   'mfta': 'NFTA Metro',
   'niagara frontier transportation authority': 'NFTA Metro',
+  // PRT (Pittsburgh Regional Transit, formerly Port Authority)
+  'prt': 'PRT',
+  'pittsburgh regional transit': 'PRT',
+  'port authority of allegheny county': 'PRT',
   // SMART
   'smart': 'SMART',
   // Santa Rosa CityBus

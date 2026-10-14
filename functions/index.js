@@ -60,7 +60,8 @@ exports.publicProfilePage = publicProfilePage;
 
 // Background trigger: fill Layer-2 facts (direction, routes, official-name alias)
 // on newly created stop docs from Atlas R2 stops-meta. No-ops gracefully while
-// the artifact doesn't exist yet; never touches the user-chosen name.
+// the artifact doesn't exist yet; never changes an existing name. (lookupStop can also
+// create a stop doc from Atlas for an unknown code; its name is the official Atlas name.)
 exports.onStopCreated = onDocumentCreated('stops/{stopId}', async (event) => {
   const stop = event.data?.data();
   if (!stop) return;
