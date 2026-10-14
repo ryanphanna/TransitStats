@@ -214,17 +214,17 @@ test('heuristic: stop too long rejected', () => {
   assert.equal(isHeuristicLogValid('A'.repeat(61), '510'), false);
 });
 
-test('multi-line: a third line that is not a known agency is never stored as the agency', () => {
-  for (const junk of ['Downtown', 'Union Station', 'Somewhere']) {
-    const result = parseMultiLineTripFormat(`506\nCollege\n${junk}`, DEFAULT_AGENCY);
-    assert.equal(result.agency, DEFAULT_AGENCY, junk);
-    assert.equal(result.agencyExplicit, false, junk);
-    assert.equal(result.direction, null, junk);
+test('multi-line: an unknown third line is stored as typed (riders use systems outside the list)', () => {
+  for (const typed of ['BART', 'CTA', 'UP Express', 'DRT']) {
+    const result = parseMultiLineTripFormat(`506\nCollege\n${typed}`, DEFAULT_AGENCY);
+    assert.equal(result.agency, typed === 'BART' ? 'BART' : typed, typed);
+    assert.equal(result.agencyExplicit, true, typed);
+    assert.equal(result.direction, null, typed);
   }
 });
 
-test('multi-line: typos and cut-off words on line 3 are read as the direction', () => {
-  const cases = { Northa: 'Northbound', Sout: 'Southbound', Nort: 'Northbound', Sotuh: 'Southbound', Eastb: 'Eastbound', Wset: 'Westbound' };
+test('multi-line: Downtown, Uptown and Inbound/Outbound are directions, not agencies', () => {
+  const cases = { Downtown: 'Downtown', Uptown: 'Uptown', Inbound: 'Inbound', Outbound: 'Outbound' };
   for (const [typed, expected] of Object.entries(cases)) {
     const result = parseMultiLineTripFormat(`506\nCollege\n${typed}`, DEFAULT_AGENCY);
     assert.equal(result.direction, expected, typed);
@@ -232,11 +232,36 @@ test('multi-line: typos and cut-off words on line 3 are read as the direction', 
   }
 });
 
-test('multi-line: agency aliases on line 3 or 4 resolve to the canonical agency', () => {
+test('multi-line: typos and cut-off words on line 3 are read as the direction', () => {
+  const cases = { Northa: 'Northbound', Sou: 'Southbound', Sout: 'Southbound', Nort: 'Northbound', Sotuh: 'Southbound', Eastb: 'Eastbound', Wesbound: 'Westbound' };
+  for (const [typed, expected] of Object.entries(cases)) {
+    const result = parseMultiLineTripFormat(`506\nCollege\n${typed}`, DEFAULT_AGENCY);
+    assert.equal(result.direction, expected, typed);
+    assert.equal(result.agencyExplicit, false, typed);
+  }
+});
+
+test('multi-line: ordinary words that merely look like directions are not directions', () => {
+  for (const word of ['Test', 'Best', 'Fast', 'Last', 'Easy', 'Worth', 'Mouth', 'Nest']) {
+    const result = parseMultiLineTripFormat(`506\nCollege\n${word}`, DEFAULT_AGENCY);
+    assert.equal(result.direction, null, word);
+    assert.equal(result.agency, word, word); // stored as typed
+  }
+});
+
+test('multi-line: agency aliases resolve, ignoring spacing and punctuation', () => {
   assert.equal(parseMultiLineTripFormat('47\nLansdowne\nGO', DEFAULT_AGENCY).agency, 'GO Transit');
+  assert.equal(parseMultiLineTripFormat('47\nLansdowne\nGO  Transit', DEFAULT_AGENCY).agency, 'GO Transit');
+  assert.equal(parseMultiLineTripFormat('47\nLansdowne\nTTC.', DEFAULT_AGENCY).agency, 'TTC');
   const four = parseMultiLineTripFormat('47\nLansdowne\nNorth\nMFTA', DEFAULT_AGENCY);
   assert.equal(four.agency, 'NFTA Metro');
   assert.equal(four.direction, 'Northbound');
-  const junkFour = parseMultiLineTripFormat('47\nLansdowne\nNorth\nDowntown', DEFAULT_AGENCY);
-  assert.equal(junkFour.agency, DEFAULT_AGENCY);
+  assert.equal(parseMultiLineTripFormat('47\nLansdowne\nNorth\nUP Express', DEFAULT_AGENCY).agency, 'UP Express');
+});
+
+test('single-line agency override understands aliases too', () => {
+  const { parseAgencyOverride } = require('./lib/parsing');
+  assert.equal(parseAgencyOverride('506 college mfta').agency, 'NFTA Metro');
+  assert.equal(parseAgencyOverride('506 college GO Transit').agency, 'GO Transit');
+  assert.equal(parseAgencyOverride('506 college').agency, null);
 });

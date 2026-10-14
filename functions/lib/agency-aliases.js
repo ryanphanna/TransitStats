@@ -2,7 +2,7 @@
 // Single list of agency aliases, shared by the web app and the Cloud Functions
 // (functions/lib/agency-aliases.js is generated from this file by scripts/sync-shared.mjs).
 // Maps any recognized alias (lowercase) to the canonical stored agency name.
-// Anything not in this map is stored as-is (title-cased by the parser).
+// Anything not in this map is stored as typed.
 const AGENCY_ALIASES = {
   // TTC
   'ttc': 'TTC',
