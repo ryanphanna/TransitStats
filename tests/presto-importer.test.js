@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 // module for its parsing/summary functions doesn't require a real project.
 vi.mock('../js/firebase.js', () => ({ db: {}, serverTimestamp: () => null }));
 
-import { assertDatesReadable, classifyType, markRefundedFares, parseAmountCents, parseCsv, parseDate, summarize, toRecord } from '../js/presto-importer.js';
+import { assertDatesReadable, classifyType, money, markRefundedFares, parseAmountCents, parseCsv, parseDate, summarize, toRecord } from '../js/presto-importer.js';
 
 describe('parseCsv', () => {
     it('parses a PRESTO Transit Usage Report into row objects', () => {
@@ -234,5 +234,14 @@ describe('refunds and skipped row types', () => {
             mk('1/1/2026 9:00:00 AM', 'Epurse Load', '$20.00'),
         ]));
         expect(summary.skipped).toEqual({ Refund: 2, Autoload: 1 });
+    });
+});
+
+describe('money', () => {
+    it('puts the minus sign before the dollar sign', () => {
+        expect(money(-1005)).toBe('-$10.05');
+        expect(money(1005)).toBe('$10.05');
+        expect(money(0)).toBe('$0.00');
+        expect(money(-5)).toBe('-$0.05');
     });
 });

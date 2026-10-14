@@ -5,7 +5,6 @@ import { MapEngine } from './map-engine.js';
 import { PredictionEngine } from './predict.js';
 import { buildPrestoTrips } from './presto-stop-matcher.js';
 import { setAtlasCardEmptyState } from './shared/atlas-card.js';
-import { canUsePrestoImport } from './shared/presto-access.js';
 
 /**
  * TransitStats Trips Orchestrator
@@ -124,8 +123,6 @@ export const Trips = {
         // A load error must never be mistaken for "no rides yet" — the CTA
         // stays hidden whenever the trip listener is broken.
         const isEmpty = trips.length === 0 && this._prestoTrips.length === 0;
-        // /import is limited to admins and the PRESTO pilot, so only they get the CTA.
-        const canImport = canUsePrestoImport({ isAdmin: window.isAdmin, pilot: window.userPilot });
-        setAtlasCardEmptyState(isEmpty && !this.loadError && canImport);
+        setAtlasCardEmptyState(isEmpty && !this.loadError);
     },
 };

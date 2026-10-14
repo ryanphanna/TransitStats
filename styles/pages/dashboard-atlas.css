@@ -157,7 +157,6 @@ body.dark .dashboard-map-wash {
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .atlas-live-dot {
@@ -417,7 +416,6 @@ body.dark .dashboard-map-wash {
   font-size: 0.68rem;
   font-weight: 900;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
 }
 
 .atlas-period-heading svg {
@@ -604,7 +602,6 @@ body.dark .dashboard-map-wash {
   font-size: 0.62rem;
   font-weight: 900;
   letter-spacing: 0.12em;
-  text-transform: uppercase;
 }
 
 .atlas-panel h3 {
@@ -769,14 +766,20 @@ body.dark .dashboard-map-wash {
     height: 100%;
   }
 
+  /* Fill the real visible viewport (dvh tracks the mobile browser bar) but
+     never shrink below the height the cards need. */
   .dashboard-atlas-hero {
     min-height: 680px;
+    min-height: max(680px, 100vh);
+    min-height: max(680px, 100dvh);
     height: auto;
   }
 
   .dashboard-atlas-hero-inner {
     width: calc(100% - 28px);
     min-height: 680px;
+    min-height: max(680px, 100vh);
+    min-height: max(680px, 100dvh);
   }
 
   .atlas-map-label {
