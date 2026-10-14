@@ -26,7 +26,7 @@ describe('GA internal-session guard', () => {
 
     it('every page that loads GA uses the same guarded snippet', () => {
         const withGa = PAGES.filter(p => readFileSync(p, 'utf8').includes('G-Z8L60LPC8G'));
-        expect(withGa.length).toBeGreaterThan(0);
+        expect(withGa).toEqual(expect.arrayContaining(['index.html', 'dashboard.html', 'import.html', 'wrapped.html']));
         for (const p of withGa) {
             expect(snippetOf(p), p).toBe(snippetOf('index.html'));
             expect(readFileSync(p, 'utf8'), p).not.toMatch(/<script async src="https:\/\/www\.googletagmanager/);

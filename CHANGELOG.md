@@ -9,7 +9,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 ## [Unreleased]
 
 - **Google Analytics can now actually load.** The site's security policy was blocking it, so no visits were being counted. Only the Google Analytics addresses were allowed.
-- **The site owner's own visits no longer count in analytics.** Localhost and any browser opened once with ?ts_internal=1 skip Google Analytics.
+- **The site owner's own visits no longer count in analytics.** Localhost and any browser opened once with ?ts_internal=1 skip Google Analytics. Wrapped visits are now counted too.
 - **Picking a public identity someone already has now says so.** You see "That one's taken. Try another combination." next to the picker, and can change an emoji and save again.
 - **Saving a public identity works again.**
 - **PRESTO import is now available to everyone.** Every signed-in user can import their PRESTO history from the import page and settings, and new accounts with no rides see the import prompt.
