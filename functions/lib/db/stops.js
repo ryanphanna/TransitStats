@@ -5,6 +5,7 @@ const { db, FieldValue } = require('./core');
 const { AGENCY_CITY } = require('../constants');
 const { getConnectionGroup, areConnectedStops, normalizeStopName } = require('../transfer-connections');
 const { getStopCandidateDirection, collapseEquivalentStopCandidates, stopNameKey } = require('../utils');
+const { findAtlasStopByCode } = require('../atlas-enrich');
 const TopologyConstraints = require('../topology-constraints');
 let _topology = null;
 try { _topology = require('../topology.json'); } catch (_) { /* optional */ }
@@ -43,6 +44,17 @@ async function _lookupStopCore(stopCode, stopName, agency, route, direction, { c
       }
     }
 
+    // Atlas fallback for a stop code the library does not have: the agency's own Atlas stops-meta
+    // (never another agency's). The write path adds the stop to the library; the read-only check
+    // just reports it. An Atlas outage skips this step (the other fallbacks still run) and is
+    // remembered, so a read-only check never mistakes it for "no such stop".
+    let atlasUnavailable = false;
+    if (stopCode) {
+      const atlas = await findAtlasStopByCode(agency, stopCode);
+      if (atlas.status === 'error') atlasUnavailable = true;
+      if (atlas.status === 'found') return crossAgency ? _addAtlasStop(agency, atlas.stop) : _atlasStopRecord(agency, atlas.stop);
+    }
+
     // Cross-agency fallback: stop exists in library under a different agency.
     // If found, auto-expand the stop's agencies array so future lookups hit directly.
     const term = stopCode || stopName;
@@ -59,8 +71,38 @@ async function _lookupStopCore(stopCode, stopName, agency, route, direction, { c
       if (topologyMatch) return topologyMatch;
     }
 
+    if (atlasUnavailable && !crossAgency) throw new Error('Atlas stops-meta unavailable');
     return null;
   }
+}
+
+function _atlasStopRecord(agency, stop) {
+  const data = {
+    agency,
+    agencies: [agency],
+    code: stop.code,
+    name: stop.name || `Stop ${stop.code}`,
+    aliases: stop.aliases || [],
+    routes: stop.routes || [],
+    direction: stop.direction || null,
+    lat: stop.lat ?? null,
+    lng: stop.lng ?? null,
+    source: 'atlas',
+  };
+  return { id: `atlas_${stop.slug}_${stop.code}`.replace(/[^a-zA-Z0-9_-]/g, '_'), ...data, stopCode: data.code, stopName: data.name };
+}
+
+// Adds the Atlas stop to the library under a deterministic id (idempotent). The Atlas name is the
+// only label a code-only stop has; onStopCreated then fills in anything else that is missing.
+async function _addAtlasStop(agency, stop) {
+  const record = _atlasStopRecord(agency, stop);
+  const { id, stopCode, stopName, ...data } = record;
+  try {
+    await db.collection('stops').doc(id).set({ ...data, createdAt: new Date(), updatedAt: new Date() }, { merge: true });
+  } catch (error) {
+    console.warn('Could not add Atlas stop to the library:', error.message);
+  }
+  return record;
 }
 
 async function lookupStop(stopCode, stopName, agency, route = null, direction = null) {

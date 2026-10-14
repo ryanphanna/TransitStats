@@ -23,20 +23,65 @@ const ATLAS_R2_BASE = process.env.ATLAS_R2_BASE || 'https://data.transitatlas.fy
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const metaCache = new Map(); // slug -> { fetchedAt, data | null }
 
-async function fetchStopsMeta(slug) {
+// Resolves { data, status } where status is 'ok', 'missing' (no file published: 404) or 'error'
+// (network/server problem), so callers can tell "Atlas has no such file" from "could not reach Atlas".
+async function fetchStopsMetaStatus(slug) {
   const cached = metaCache.get(slug);
-  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.data;
-  let data = null;
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.result;
+  let result = { data: null, status: 'error' };
   try {
     const res = await fetch(`${ATLAS_R2_BASE}/atlas/${slug}-stops-meta.json`, {
       signal: AbortSignal.timeout(15000),
     });
-    if (res.ok) data = await res.json();
+    if (res.ok) result = { data: await res.json(), status: 'ok' };
+    else if (res.status === 404) result = { data: null, status: 'missing' };
   } catch (_) {
     // network error — treat as unavailable, retry after TTL
   }
-  metaCache.set(slug, { fetchedAt: Date.now(), data });
-  return data;
+  metaCache.set(slug, { fetchedAt: Date.now(), result });
+  return result;
+}
+
+async function fetchStopsMeta(slug) {
+  return (await fetchStopsMetaStatus(slug)).data;
+}
+
+/**
+ * Looks up a stop code in the Atlas stops-meta of the TRIP'S OWN agency (the agency boundary: the
+ * slug comes only from that agency, so a code is never matched against another system's file).
+ * Resolves { status: 'found' | 'notFound' | 'error', stop }. The stop is a plain description
+ * (official name, routes, unanimous direction); nothing is written here.
+ */
+async function findAtlasStopByCode(agency, code) {
+  const clean = String(code || '').trim();
+  if (!agency || !clean) return { status: 'notFound', stop: null };
+  let slug;
+  try {
+    slug = await resolveAtlasAgency(agency);
+  } catch (_) {
+    return { status: 'error', stop: null };
+  }
+  if (!slug) return { status: 'notFound', stop: null };
+  const { data, status } = await fetchStopsMetaStatus(slug);
+  if (status === 'error') return { status: 'error', stop: null };
+  if (!data?.stops) return { status: 'notFound', stop: null };
+  const entries = data.stops.filter(e => e.code && String(e.code).trim() === clean);
+  if (entries.length === 0) return { status: 'notFound', stop: null };
+  const directions = new Set(entries.map(e => e.direction).filter(Boolean));
+  const names = [...new Set(entries.map(e => e.name).filter(Boolean))];
+  return {
+    status: 'found',
+    stop: {
+      slug,
+      code: clean,
+      name: names[0] || null,
+      aliases: names.slice(1),
+      routes: [...new Set(entries.flatMap(e => e.routes || []))],
+      direction: directions.size === 1 && entries.every(e => e.direction) ? [...directions][0] : null,
+      lat: entries[0].lat ?? null,
+      lng: entries[0].lng ?? entries[0].lon ?? null,
+    },
+  };
 }
 
 /**
@@ -122,4 +167,4 @@ async function enrichStopDoc(db, stopId, stop) {
   return 'enriched';
 }
 
-module.exports = { buildStopEnrichment, enrichStopDoc, fetchStopsMeta };
+module.exports = { buildStopEnrichment, enrichStopDoc, fetchStopsMeta, findAtlasStopByCode };
