@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Stations typed as a platform, or with different punctuation, now match.** "X Station" and "X Station - Northbound Platform" (or "St. George" and "St George") are treated as one station, so these trips become clean data instead of staying unmatched. Different stops are never merged.
 - **Corrected trips can become clean data.** When a trip's stops, agency, route or direction are corrected, the stop match is re-checked, so a fixed trip no longer stays "unmatched" forever (and a trip corrected to something unresolvable stops counting as matched).
 - **Texted trips no longer get a made-up agency.** A third line like "Downtown" or a typo such as "Northa" used to be saved as the agency, which kept those trips out of predictions. Typos are now read as the direction, and only real agency names count as agencies.
 - **Agency names are cleaned up in one place.** "MFTA" and "NFTA" now both become NFTA Metro, and "GO" becomes GO Transit, wherever an agency is typed by text message.

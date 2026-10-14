@@ -248,3 +248,34 @@ test('lookupStop: transfer-complex ambiguity stays unresolved without direction'
   const result = await lookupStop(null, 'College', 'TTC', '506');
   assert.equal(result, null);
 });
+
+test('lookupStop: a station name finds its platform record and its parent as one stop', async () => {
+  const { lookupStop } = loadStopsModule({
+    stops: [
+      { id: 'ttc_main_nb', data: { agencies: ['TTC'], code: '5001-N', name: 'Main Street Station - Northbound Platform', aliases: [] } },
+      { id: 'ttc_main', data: { agencies: ['TTC'], code: '5001', name: 'Main Street Station', aliases: [] } },
+    ],
+    stopRoutes: { TTC_5001: ['2'], 'TTC_5001-N': ['2'] },
+  });
+
+  const result = await lookupStop(null, 'Main Street Station', 'TTC', '2');
+  assert.ok(result, 'platform + parent should resolve to one stop, not stay ambiguous');
+  assert.equal(result.stopCode, '5001');
+});
+
+test('lookupStop: a station typed with different punctuation still matches', async () => {
+  const { lookupStop } = loadStopsModule({
+    stops: [{ id: 'ttc_stg', data: { agencies: ['TTC'], code: '88', name: 'St. George Station', aliases: [] } }],
+    stopRoutes: { TTC_88: ['1'] },
+  });
+  const result = await lookupStop(null, 'St George Station', 'TTC', '1');
+  assert.equal(result?.stopCode, '88');
+});
+
+test('lookupStop: genuinely different stops that share a prefix are not matched', async () => {
+  const { lookupStop } = loadStopsModule({
+    stops: [{ id: 'ttc_cp', data: { agencies: ['TTC'], code: '12', name: 'College Park Station', aliases: [] } }],
+    stopRoutes: { TTC_12: ['1'] },
+  });
+  assert.equal(await lookupStop(null, 'College Station', 'TTC', '1'), null);
+});

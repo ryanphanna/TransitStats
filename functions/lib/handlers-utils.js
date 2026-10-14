@@ -124,7 +124,8 @@ async function resolveTripAgency(
 }
 
 async function narrowStopCandidates(candidates, route, direction, agency = null) {
-  let narrowed = await enrichStopCandidatesWithRoutes(candidates, agency);
+  // Fold duplicate records of one station first (platforms, punctuation twins), keeping their routes.
+  let narrowed = collapseEquivalentStopCandidates(await enrichStopCandidatesWithRoutes(candidates, agency), { strict: true, direction });
   if (narrowed.length > 1 && route) {
     // Filter by route — keep stops that serve this route (or have no route data)
     const routeFiltered = narrowed.filter(c =>
@@ -137,7 +138,7 @@ async function narrowStopCandidates(candidates, route, direction, agency = null)
     Array.isArray(candidate.routes) &&
     candidate.routes.some(r => normalizeRoute(r) === normalizeRoute(route))
   ));
-  if (hasRouteEvidence) narrowed = collapseEquivalentStopCandidates(narrowed);
+  if (hasRouteEvidence) narrowed = collapseEquivalentStopCandidates(narrowed, { direction });
   // Further narrow by direction if provided and candidates still ambiguous
   if (narrowed.length > 1 && direction) {
     const normalize = value => value?.toString().trim().toLowerCase().replace(/bound$/, '');

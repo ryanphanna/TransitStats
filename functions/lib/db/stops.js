@@ -4,7 +4,7 @@
 const { db, FieldValue } = require('./core');
 const { AGENCY_CITY } = require('../constants');
 const { getConnectionGroup, areConnectedStops, normalizeStopName } = require('../transfer-connections');
-const { getStopCandidateDirection, collapseEquivalentStopCandidates } = require('../utils');
+const { getStopCandidateDirection, collapseEquivalentStopCandidates, stopNameKey } = require('../utils');
 const TopologyConstraints = require('../topology-constraints');
 let _topology = null;
 try { _topology = require('../topology.json'); } catch (_) { /* optional */ }
@@ -196,6 +196,7 @@ async function findMatchingStops(stopName, agency) {
 
 function _findStopCandidates(stopName, docs) {
   const lowerName = stopName.toLowerCase();
+  const inputKey = stopNameKey(stopName);
   const inputGroup = getConnectionGroup(stopName);
   const normalizedInput = normalizeStopName(stopName);
   const exactMatches = [];
@@ -213,7 +214,8 @@ function _findStopCandidates(stopName, docs) {
       direction: data.direction || null,
     };
     const names = [data.name, ...(data.aliases || [])].filter(Boolean);
-    const exact = names.some(name => name.toLowerCase() === lowerName);
+    // Same station by name: identical text, or punctuation twins / platform records of that station.
+    const exact = names.some(name => name.toLowerCase() === lowerName || (inputKey && stopNameKey(name) === inputKey));
     if (exact) {
       if (!seen.has(doc.id)) {
         seen.add(doc.id);
@@ -237,11 +239,14 @@ function _findStopCandidates(stopName, docs) {
 }
 
 async function _resolveCandidates(candidates, agency, route, direction, rawStopName) {
+  // Fold duplicate records of one station (platform children, punctuation twins) before the
+  // route check, so a duplicate can't make a single station look ambiguous or unconfirmed.
+  candidates = collapseEquivalentStopCandidates(candidates, { strict: true, direction });
   if (!route || candidates.length === 1) return candidates[0];
 
   const routeResult = await _filterCandidatesByRoute(candidates, agency, route);
   let narrowed = routeResult.candidates;
-  if (routeResult.confirmed) narrowed = collapseEquivalentStopCandidates(narrowed);
+  if (routeResult.confirmed) narrowed = collapseEquivalentStopCandidates(narrowed, { direction });
   if (narrowed.length === 0) {
     if (candidates.length === 1) return candidates[0];
     console.warn(`lookupStop: ${candidates.length} stops named "${rawStopName}" but none confirmed for route ${route} via stopRoutes`);

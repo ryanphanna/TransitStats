@@ -34,3 +34,45 @@ test('normalizeAgency uses the shared alias list (GO, NFTA/MFTA)', () => {
   assert.equal(normalizeAgency('MFTA'), 'NFTA Metro');
   assert.equal(normalizeAgency('Unknown Agency'), 'Unknown Agency');
 });
+
+test('collapseEquivalentStopCandidates folds a platform record into its parent station', () => {
+  const { collapseEquivalentStopCandidates } = require('./lib/utils');
+  const parent = { stopCode: '9001', stopName: 'College Station', routes: [] };
+  const child = { stopCode: '9001-N', stopName: 'College Station - Northbound Platform', routes: ['1'] };
+  const out = collapseEquivalentStopCandidates([child, parent], { strict: true });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].stopCode, '9001');
+  assert.deepEqual(out[0].routes, ['1']); // route evidence from the folded platform is kept
+});
+
+test('collapseEquivalentStopCandidates keeps the platform that matches the requested direction', () => {
+  const { collapseEquivalentStopCandidates } = require('./lib/utils');
+  const parent = { stopCode: '9001', stopName: 'College Station', routes: [] };
+  const child = { stopCode: '9001-N', stopName: 'College Station - Northbound Platform', routes: [] };
+  const out = collapseEquivalentStopCandidates([child, parent], { strict: true, direction: 'Northbound' });
+  assert.equal(out.length, 2);
+});
+
+test('collapseEquivalentStopCandidates never merges different stops', () => {
+  const { collapseEquivalentStopCandidates } = require('./lib/utils');
+  // Same name, different stop codes: two real stops.
+  const sameName = [{ stopCode: '8121', stopName: 'Spadina / Dundas' }, { stopCode: '7349', stopName: 'Spadina / Dundas' }];
+  assert.equal(collapseEquivalentStopCandidates(sameName, { strict: true }).length, 2);
+  // Different stations that merely share a prefix.
+  const different = [{ stopName: 'College Station' }, { stopName: 'College Park Station' }];
+  assert.equal(collapseEquivalentStopCandidates(different, { strict: true }).length, 2);
+  // Two directional platforms with no parent present stay distinct.
+  const platforms = [
+    { stopCode: 'a', stopName: 'X Station - Northbound Platform' },
+    { stopCode: 'b', stopName: 'X Station - Southbound Platform' },
+  ];
+  assert.equal(collapseEquivalentStopCandidates(platforms, { strict: true }).length, 2);
+});
+
+test('collapseEquivalentStopCandidates merges punctuation twins', () => {
+  const { collapseEquivalentStopCandidates } = require('./lib/utils');
+  const twins = [{ stopName: 'St. George Station', routes: [] }, { stopCode: '77', stopName: 'St George Station', routes: ['1'] }];
+  const out = collapseEquivalentStopCandidates(twins, { strict: true });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].stopCode, '77');
+});
