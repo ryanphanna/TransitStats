@@ -1,9 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const snapshots = new Map();
+const getIdToken = vi.fn(async () => 'fresh-id-token');
 
 vi.mock('../js/firebase.js', () => ({
-    auth: {},
+    auth: {
+        get currentUser() {
+            return globalThis.__authCurrentUser || null;
+        },
+    },
     authPersistenceReady: Promise.resolve(),
     db: {
         collection(name) {
@@ -54,5 +59,63 @@ describe('Auth.checkWhitelist', () => {
             allowed: false,
             error: 'Access denied. This app is invite-only.',
         });
+    });
+});
+
+describe('Auth.syncSharedSession', () => {
+    beforeEach(() => {
+        getIdToken.mockClear();
+        localStorage.clear();
+        globalThis.__authCurrentUser = { uid: 'user_1', getIdToken };
+        global.fetch = vi.fn(async () => ({ ok: true, status: 204 }));
+    });
+
+    it('always force-refreshes the ID token before minting the cookie', async () => {
+        await expect(Auth.syncSharedSession(globalThis.__authCurrentUser)).resolves.toBe(true);
+        expect(getIdToken).toHaveBeenCalledWith(true);
+        expect(Auth.getLastSharedSessionSync()).toMatchObject({ ok: true, status: 204 });
+    });
+
+    it('records a failed sync without throwing', async () => {
+        global.fetch = vi.fn(async () => ({ ok: false, status: 500 }));
+        await expect(Auth.syncSharedSession(globalThis.__authCurrentUser)).resolves.toBe(false);
+        expect(Auth.getLastSharedSessionSync()).toMatchObject({ ok: false, status: 500 });
+    });
+});
+
+describe('Auth.startSharedSessionKeepAlive', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-10-14T12:00:00Z'));
+        localStorage.clear();
+        globalThis.__authCurrentUser = { uid: 'user_1', getIdToken };
+        global.fetch = vi.fn(async () => ({ ok: true, status: 204 }));
+        Auth._keepAliveBound = false;
+        Auth._lastKeepAliveSyncAt = 0;
+    });
+
+    afterEach(() => {
+        window.clearInterval(Auth._keepAliveTimer);
+        vi.useRealTimers();
+    });
+
+    it('coalesces focus and visibilitychange on one tab return into one session call', async () => {
+        Auth.startSharedSessionKeepAlive(globalThis.__authCurrentUser);
+        window.dispatchEvent(new Event('focus'));
+        document.dispatchEvent(new Event('visibilitychange'));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('syncs again on a later return and on the 45-minute tick', async () => {
+        Auth.startSharedSessionKeepAlive(globalThis.__authCurrentUser);
+        window.dispatchEvent(new Event('focus'));
+        await vi.advanceTimersByTimeAsync(60 * 1000);
+        window.dispatchEvent(new Event('focus'));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+
+        await vi.advanceTimersByTimeAsync(45 * 60 * 1000);
+        expect(global.fetch.mock.calls.length).toBeGreaterThanOrEqual(3);
     });
 });

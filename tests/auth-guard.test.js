@@ -1,0 +1,81 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const authState = { currentUser: null, listener: null };
+
+vi.mock('../js/firebase.js', () => ({
+    auth: {
+        get currentUser() { return authState.currentUser; },
+        onAuthStateChanged(cb) { authState.listener = cb; return () => {}; },
+    },
+    authPersistenceReady: Promise.resolve(),
+    authPersistenceStatus: 'ok',
+    firestorePersistenceStatus: 'ok',
+    db: {},
+}));
+
+import { Auth } from '../js/auth.js';
+import { requireAuth } from '../js/shared/auth-guard.js';
+
+const user = { uid: 'user_1', email: 'a@example.com' };
+
+function lastBreadcrumb() {
+    return JSON.parse(localStorage.getItem('transitstats_auth_breadcrumb') || 'null');
+}
+
+describe('requireAuth whitelist retries', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        localStorage.clear();
+        authState.currentUser = user;
+        authState.listener = null;
+        global.fetch = vi.fn(async () => ({ status: 401, json: async () => ({}) }));
+        vi.spyOn(Auth, 'signOut').mockResolvedValue();
+        vi.spyOn(Auth, 'syncSharedSession').mockResolvedValue(true);
+        vi.spyOn(Auth, 'startSharedSessionKeepAlive').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    async function start() {
+        const settled = vi.fn();
+        requireAuth().then(settled);
+        await vi.advanceTimersByTimeAsync(0);
+        authState.listener(user);
+        return settled;
+    }
+
+    it('stops retrying after the cap, leaves the spinner and does not sign out', async () => {
+        const check = vi.spyOn(Auth, 'checkWhitelist').mockResolvedValue({ allowed: false, retryable: true, error: 'Verification failed. Try again.' });
+        const settled = await start();
+
+        await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+        const callsAtCap = check.mock.calls.length;
+        expect(lastBreadcrumb()).toMatchObject({ reason: 'verification-unavailable' });
+        expect(document.body.hasAttribute('data-auth-restoring')).toBe(false);
+        expect(Auth.signOut).not.toHaveBeenCalled();
+        expect(settled).not.toHaveBeenCalled();
+
+        // The loop is really over: no further whitelist reads.
+        await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+        expect(check.mock.calls.length).toBe(callsAtCap);
+    });
+
+    it('recovers without signing out when the whitelist comes back mid-outage', async () => {
+        vi.spyOn(Auth, 'checkWhitelist')
+            .mockResolvedValueOnce({ allowed: false, retryable: true })
+            .mockResolvedValueOnce({ allowed: false, retryable: true })
+            .mockResolvedValueOnce({ allowed: false, retryable: true })
+            .mockResolvedValue({ allowed: true, isAdmin: false, pilot: null });
+        const settled = await start();
+
+        await vi.advanceTimersByTimeAsync(30 * 1000);
+
+        expect(settled).toHaveBeenCalledWith({ user, isAdmin: false, pilot: null });
+        expect(Auth.signOut).not.toHaveBeenCalled();
+        expect(Auth.startSharedSessionKeepAlive).toHaveBeenCalledWith(user);
+    });
+});

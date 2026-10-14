@@ -9,6 +9,10 @@ const AUTH_RESTORE_GRACE_MS = 60000;
 const AUTH_SHARED_SESSION_DELAY_MS = 750;
 const AUTH_SHARED_SESSION_RETRY_DELAYS_MS = [1500, 3000, 7500, 15000, 30000];
 const AUTH_RESTORE_POLL_MS = 250;
+// Cap on how long a Firestore outage can hold the page on the restoring
+// spinner before falling back to the normal signed-out path.
+const AUTH_VERIFY_RETRY_MAX_MS = 60000;
+const AUTH_VERIFY_RETRY_DELAY_MS = 3000;
 
 function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -47,6 +51,7 @@ async function recordAuthBreadcrumb(reason, extra = {}) {
             hasCurrentUser: Boolean(auth.currentUser),
             sharedSessionStatus,
             sharedSessionError,
+            lastSharedSessionSync: Auth.getLastSharedSessionSync?.() || null,
             authPersistence: authPersistenceStatus,
             firestorePersistence: firestorePersistenceStatus,
             ...extra,
@@ -136,15 +141,32 @@ export function requireAuth(options = {}) {
             }
             let verification = await verifyWithRetry(sessionUser);
             // A temporary Firestore outage must not become a fake logout. Keep
-            // the Firebase session and retry the verification in the
-            // background until the whitelist can be read again.
-            const verificationDeadline = Date.now() + AUTH_RESTORE_GRACE_MS;
-            while (verification.retryable && Date.now() < verificationDeadline) {
+            // the Firebase session (and the shared cookie) and retry until the
+            // whitelist can be read again — never signOut on retryable flakes.
+            const verifyRetryDeadline = Date.now() + AUTH_VERIFY_RETRY_MAX_MS;
+            while (verification.retryable && Date.now() < verifyRetryDeadline) {
                 console.warn('Auth verification is temporarily unavailable; keeping the Firebase session.');
-                await wait(3000);
-                sessionUser = await waitForRestoredUser(auth.currentUser);
-                if (!sessionUser) continue;
+                setAuthRestoring(true);
+                await wait(AUTH_VERIFY_RETRY_DELAY_MS);
+                sessionUser = auth.currentUser || await waitForRestoredUser(auth.currentUser);
+                if (!sessionUser) {
+                    await recordAuthBreadcrumb('no-restored-session', {
+                        duringWhitelistRetry: true,
+                        initialUser: Boolean(user),
+                    });
+                    window.location.href = loginUrl;
+                    return;
+                }
                 verification = await verifyWithRetry(sessionUser);
+            }
+            if (verification.retryable) {
+                // Still unreadable after the cap: stop the spinner and send the
+                // user to login without signing out, so the session survives.
+                console.warn('[auth-guard] Verification still unavailable; redirecting to login.');
+                await recordAuthBreadcrumb('verification-unavailable', { verificationError: verification.error || null });
+                setAuthRestoring(false);
+                window.location.href = loginUrl;
+                return;
             }
             if (!verification.allowed) {
                 console.warn('[auth-guard] Whitelist rejected the session.', {
@@ -162,6 +184,7 @@ export function requireAuth(options = {}) {
                 return;
             }
             await Auth.syncSharedSession(sessionUser);
+            Auth.startSharedSessionKeepAlive(sessionUser);
             window.currentUser = sessionUser;
             window.isAdmin = verification.isAdmin;
             window.userPilot = verification.pilot || null;
