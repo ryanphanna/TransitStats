@@ -53,35 +53,6 @@
 }
 
 /* --- Edit Trip / Management --- */
-.trip-info { position: relative; }
-.btn-edit-trip {
-  position: absolute;
-  top: 0; right: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  width: 32px; height: 32px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.2s;
-  opacity: 0;
-}
-
-.trip-card:hover .btn-edit-trip { opacity: 1; transform: translateX(-4px); }
-.btn-edit-trip:hover { background: var(--accent-light); color: white; border-color: transparent; }
-
-.modal-select {
-  width: 100%;
-  padding: 12px;
-  border: 2px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font-family: inherit;
-  font-weight: 600;
-  outline: none;
-}
 
 .agency-autocomplete {
   position: relative;
@@ -138,14 +109,6 @@
 .agency-autocomplete-empty {
   padding: 9px 10px;
 }
-
-.btn-danger-outline {
-  background: transparent;
-  border: 2px solid var(--danger);
-  color: var(--danger);
-}
-.btn-danger-outline:hover { background: var(--danger); color: white; }
-.btn-danger { background: var(--danger); border-color: var(--danger); color: white; }
 
 /* --- Settings panel (tabbed modal, replaces the old /settings page) --- */
 .modal-settings {

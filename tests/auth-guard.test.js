@@ -64,6 +64,17 @@ describe('requireAuth whitelist retries', () => {
         expect(check.mock.calls.length).toBe(callsAtCap);
     });
 
+    it('does not wait for the shared-session cookie sync before resolving', async () => {
+        vi.spyOn(Auth, 'checkWhitelist').mockResolvedValue({ allowed: true, isAdmin: false, pilot: null });
+        Auth.syncSharedSession.mockReturnValue(new Promise(() => {}));
+        const settled = await start();
+
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(settled).toHaveBeenCalledWith({ user, isAdmin: false, pilot: null });
+        expect(Auth.syncSharedSession).toHaveBeenCalledWith(user);
+    });
+
     it('recovers without signing out when the whitelist comes back mid-outage', async () => {
         vi.spyOn(Auth, 'checkWhitelist')
             .mockResolvedValueOnce({ allowed: false, retryable: true })

@@ -1,93 +1,4 @@
 /* --- Settings companion surface --- */
-.settings-surface {
-  background: linear-gradient(180deg, #f8fbfa 0%, var(--bg-app) 42%);
-}
-
-.settings-surface .header {
-  position: absolute;
-  background: transparent;
-  border-bottom: 0;
-  box-shadow: none;
-  pointer-events: none;
-}
-
-.settings-surface .header-container {
-  max-width: none;
-  padding: 18px 24px;
-  pointer-events: none;
-}
-
-.settings-surface .header-container > * {
-  pointer-events: auto;
-}
-
-.settings-surface .nav-desktop {
-  display: none;
-}
-
-.settings-surface .header .logo-text {
-  display: inline;
-  font-size: 0.92rem;
-}
-
-.settings-surface .header .logo {
-  display: inline-flex;
-  align-items: center;
-  min-height: 38px;
-  padding: 4px 12px 4px 5px;
-  border: 1px solid rgb(255 255 255 / 88%);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 82%);
-  box-shadow: 0 8px 22px rgb(16 42 42 / 8%);
-  backdrop-filter: blur(14px);
-}
-
-.settings-surface .header-actions {
-  gap: 8px;
-  margin-left: auto;
-}
-
-.settings-surface .header-action-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 0 11px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 82%);
-  color: var(--text-primary);
-  font-size: 0.7rem;
-  font-weight: 800;
-  text-decoration: none;
-  box-shadow: 0 8px 22px rgb(16 42 42 / 8%);
-  backdrop-filter: blur(14px);
-}
-
-.settings-surface .header-action-link svg {
-  width: 16px;
-  height: 16px;
-}
-
-body.dark.settings-surface,
-html[data-theme="dark"] body.settings-surface {
-  background: var(--bg-app);
-}
-
-body.dark.settings-surface .header,
-html[data-theme="dark"] body.settings-surface .header {
-  background: transparent;
-}
-
-.settings-group-title {
-  margin-bottom: 8px;
-  padding-left: 2px;
-  color: var(--text-primary);
-  font-size: 0.82rem;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  text-transform: none;
-}
 
 .settings-card {
   overflow: hidden;
@@ -137,12 +48,6 @@ html[data-theme="dark"] body.settings-surface .header {
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.14em;
-}
-
-.settings-action {
-  min-height: 34px;
-  padding: 7px 12px !important;
-  border-radius: 12px;
 }
 
 .settings-text-action {
@@ -481,27 +386,6 @@ html[data-theme="dark"] body.settings-surface .header {
 }
 
 @media (min-width: 641px) {
-  #view-settings.settings-view {
-    padding-top: 78px;
-    padding-bottom: 16px;
-  }
-
-  .settings-page-header {
-    margin-bottom: 14px;
-  }
-
-  .settings-page-col {
-    gap: 16px;
-  }
-
-  .settings-page-col .settings-group:last-child {
-    grid-column: auto;
-    margin-top: 0;
-  }
-
-  .settings-group-title {
-    margin-bottom: 6px;
-  }
 
   .settings-row {
     min-height: 56px;
@@ -515,17 +399,6 @@ html[data-theme="dark"] body.settings-surface .header {
 }
 
 @media (max-width: 640px) {
-  .settings-view {
-    padding-top: 84px;
-  }
-
-  .settings-page-container {
-    padding: 0 16px;
-  }
-
-  .settings-page-col {
-    gap: 20px;
-  }
 
   .settings-row {
     align-items: flex-start;

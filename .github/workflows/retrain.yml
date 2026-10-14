@@ -28,25 +28,40 @@ jobs:
       - name: Install dependencies
         run: pip install -r ml/requirements.txt
 
-      - name: Write service account key
+      - name: Save current model metrics
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
         run: |
-          mkdir -p "$HOME/Desktop/Dev/Credentials"
-          echo "$FIREBASE_KEY" > "$HOME/Desktop/Dev/Credentials/Firebase for Transit Stats.json"
-
-      - name: Save current model metrics
-        run: |
+          printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
+          trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
           mkdir -p /tmp/transitstats-model-baseline
-          cp ml/model_v4_meta.json /tmp/transitstats-model-baseline/
-          cp ml/model_v4_endstop_meta.json /tmp/transitstats-model-baseline/
-          cp ml/model_v5_meta.json /tmp/transitstats-model-baseline/
-          cp ml/model_v5_endstop_meta.json /tmp/transitstats-model-baseline/
+          python3 - <<'EOF'
+          import json, os, firebase_admin
+          from firebase_admin import credentials, storage
+          key = os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
+          firebase_admin.initialize_app(credentials.Certificate(key), {"projectId": "transitstats-21ba4"})
+          bucket = storage.bucket(os.environ.get("ML_MODEL_BUCKET") or "transitstats-21ba4.firebasestorage.app")
+          pointer = bucket.blob("models/latest.json")
+          if not pointer.exists():
+              print("No published models yet (first run): skipping baseline")
+          else:
+              version = json.loads(pointer.download_as_bytes())["version"]
+              for name in ["model_v4_meta.json", "model_v4_endstop_meta.json", "model_v5_meta.json", "model_v5_endstop_meta.json"]:
+                  bucket.blob(f"models/{version}/{name}").download_to_filename("/tmp/transitstats-model-baseline/" + name)
+          EOF
 
       - name: Export trips from Firestore
         env:
           TRANSITSTATS_PROJECT_ID: transitstats-21ba4
-        run: GRPC_DNS_RESOLVER=native python3 ml/export_trips.py
+          # Only these users' trips are ever used for training (set as a repository secret).
+          TRAIN_USER_IDS: ${{ secrets.TRAIN_USER_IDS }}
+          FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
+        run: |
+          printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
+          trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          GRPC_DNS_RESOLVER=native python3 ml/export_trips.py
 
       - name: Retrain end-stop models (V4 + V5)
         run: GRPC_DNS_RESOLVER=native python3 ml/train_endstop.py
@@ -57,12 +72,22 @@ jobs:
       - name: Reject material model regressions
         run: python3 ml/check_model_regression.py --baseline-dir /tmp/transitstats-model-baseline --candidate-dir ml
 
-      - name: Copy end-stop models to functions/lib
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install functions dependencies
+        run: npm ci --prefix functions
+
+      - name: Upload models to private storage
+        env:
+          FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
         run: |
-          cp ml/model_v4_endstop.json functions/lib/model_v4_endstop.json
-          cp ml/model_v4_endstop_meta.json functions/lib/model_v4_endstop_meta.json
-          cp ml/model_v5_endstop.onnx functions/lib/model_v5_endstop.onnx
-          cp ml/model_v5_endstop_meta.json functions/lib/model_v5_endstop_meta.json
+          printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
+          trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          node functions/scripts/upload-models.js --dir ml
 
       - name: Append retrain results to MODEL_LOG
         run: |
@@ -113,30 +138,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git switch --create "$MODEL_BRANCH"
-          git add \
-            functions/lib/model_v4_endstop.json \
-            functions/lib/model_v4_endstop_meta.json \
-            functions/lib/model_v5_endstop.onnx \
-            functions/lib/model_v5_endstop_meta.json \
-            functions/lib/model_v4.json \
-            functions/lib/model_v4_meta.json \
-            functions/lib/model_v5.onnx \
-            functions/lib/model_v5_meta.json \
-            ml/model_v4_endstop.json \
-            ml/model_v4_endstop_meta.json \
-            ml/model_v5_endstop.onnx \
-            ml/model_v5_endstop_meta.json \
-            ml/model_v4.json \
-            ml/model_v4_meta.json \
-            ml/model_v5.onnx \
-            ml/model_v5_meta.json \
-            ml/MODEL_LOG.md
+          git add ml/MODEL_LOG.md
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No model changes to publish."
+            echo "No log changes to publish."
             exit 0
           fi
-          git commit -m "chore: weekly model retrain"
+          git commit -m "chore: weekly model retrain log"
           git push origin "$MODEL_BRANCH"
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
@@ -149,5 +157,5 @@ jobs:
           gh pr create \
             --base main \
             --head "$MODEL_BRANCH" \
-            --title "chore: weekly model retrain" \
-            --body "Automated model refresh passed the regression gate. Merge this PR to publish the updated models; the main-branch deployment workflow will deploy the functions after merge."
+            --title "chore: weekly model retrain log" \
+            --body "The weekly retrain passed the regression gate and the new models are already in private storage (the functions pick them up within an hour). This PR only records the accuracy log."

@@ -64,3 +64,10 @@ Tools/scratch/
 /ml/artifacts/
 /ml/reports/
 qa/.run/
+
+# Trained prediction models contain real stop and route names: never commit them. They live in a
+# private Cloud Storage bucket (see functions/lib/model-store.js and functions/scripts/upload-models.js).
+ml/model_v*
+ml/trips.csv
+ml/v6_*.json
+functions/lib/model_v*

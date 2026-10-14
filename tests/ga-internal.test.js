@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 
-const PAGES = readdirSync('.').filter(f => f.endsWith('.html'));
+const PAGES = [...readdirSync('.').filter(f => f.endsWith('.html')), 'functions/public-profile-template.html'];
 const GA = /<script>\s*\(function \(\) \{\s*var ID = 'G-Z8L60LPC8G'[\s\S]*?<\/script\s*>/i;
 
 function snippetOf(page) {
@@ -26,10 +26,18 @@ describe('GA internal-session guard', () => {
 
     it('every page that loads GA uses the same guarded snippet', () => {
         const withGa = PAGES.filter(p => readFileSync(p, 'utf8').includes('G-Z8L60LPC8G'));
-        expect(withGa).toEqual(expect.arrayContaining(['index.html', 'dashboard.html', 'import.html', 'wrapped.html']));
+        expect(withGa).toEqual(expect.arrayContaining(['index.html', 'dashboard.html', 'import.html', 'wrapped.html', 'public.html', 'functions/public-profile-template.html']));
         for (const p of withGa) {
             expect(snippetOf(p), p).toBe(snippetOf('index.html'));
             expect(readFileSync(p, 'utf8'), p).not.toMatch(/<script async src="https:\/\/www\.googletagmanager/);
+        }
+    });
+
+    it('public profile pages send nothing beyond the default page view', () => {
+        for (const p of ['public.html', 'functions/public-profile-template.html']) {
+            const snippet = snippetOf(p);
+            expect(snippet, p).not.toMatch(/gtag\('(event|set|get)'/);
+            expect(snippet, p).not.toMatch(/user_id|user_properties|username/i);
         }
     });
 

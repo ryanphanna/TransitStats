@@ -14,8 +14,8 @@ const LOCATION_ALIASES = new Map([
     ['Toronto- New USBT', 'Union Station Bus Terminal'],
 ]);
 
-export const PDF_ERROR = 'That looks like the PDF version of the report. In PRESTO, open Transit Usage Report, pick a year, click Get Report, then choose Export CSV (not Download PDF) and upload that file.';
-export const DATE_FORMAT_EXAMPLE = '4/1/2026 2:01:25 PM';
+const PDF_ERROR = 'That looks like the PDF version of the report. In PRESTO, open Transit Usage Report, pick a year, click Get Report, then choose Export CSV (not Download PDF) and upload that file.';
+const DATE_FORMAT_EXAMPLE = '4/1/2026 2:01:25 PM';
 
 function parseCsv(rawText) {
     // Spreadsheet and browser exports often start with a UTF-8 byte order mark,
@@ -384,4 +384,4 @@ export function initPrestoImporter({ user }) {
     });
 }
 
-export { classifyType, isRecordUsable, parseAmountCents, parseCsv, parseDate, summarize, toRecord };
+export { classifyType, parseAmountCents, parseCsv, parseDate, summarize, toRecord };

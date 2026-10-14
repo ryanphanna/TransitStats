@@ -7,178 +7,24 @@
   padding-top: 96px;
 }
 
-.container,
-.dashboard-grid,
-.settings-page-container,
-.routes-page-container,
-.admin-container {
+.container {
   max-width: var(--content-width);
 }
 
 .card,
-.settings-card,
-.routes-page-card,
-.public-card,
-.admin-view .card,
-.insights-view .card {
+.settings-card {
   border-color: var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
 }
 
-.card-header,
-.route-tracker-header,
-.routes-page-heading,
-.settings-page-header {
-  gap: 16px;
-}
-
-.card-header h3,
-.route-tracker-header h3,
-.routes-page-heading h1,
-.settings-page-title {
-  color: var(--text-primary);
-  letter-spacing: -0.035em;
-}
-
-.card-header h3,
-.route-tracker-header h3 {
-  font-size: 0.95rem;
-}
-
-.dashboard-view,
-.routes-view,
-.settings-view,
-.admin-view,
-.insights-view {
+.dashboard-view {
   background: var(--bg-app);
-}
-
-.dashboard-grid {
-  gap: 18px;
-}
-
-.dashboard-grid {
-  display: block;
-}
-
-.dashboard-trip-summary {
-  margin-bottom: 18px;
-  padding: 20px;
-}
-
-.dashboard-trip-summary-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.dashboard-trip-summary-heading h2 {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 1.35rem;
-  letter-spacing: -0.04em;
-}
-
-.dashboard-trip-summary-heading > svg {
-  width: 22px;
-  height: 22px;
-  color: var(--accent);
-}
-
-.dashboard-trip-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.dashboard-trip-summary-item {
-  min-width: 0;
-  padding: 14px 16px;
-  background: var(--bg-muted);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-
-.dashboard-trip-summary-item strong {
-  display: block;
-  color: var(--accent);
-  font-size: 1.75rem;
-  font-weight: 900;
-  letter-spacing: -0.03em;
-}
-
-.dashboard-trip-summary-item span {
-  color: var(--text-muted);
-  font-size: 0.7rem;
-  font-weight: 800;
-}
-
-@media (max-width: 480px) {
-  .dashboard-trip-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .dashboard-trip-summary-item {
-    padding: 12px 10px;
-  }
-
-  .dashboard-trip-summary-item strong {
-    font-size: 1.45rem;
-  }
-}
-
-.settings-page-header,
-.admin-page-intro {
-  margin-bottom: 24px;
-}
-
-.settings-page-title,
-.admin-page-intro h1 {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: clamp(1.7rem, 3vw, 2.35rem);
-  font-weight: 850;
-  letter-spacing: -0.055em;
-}
-
-.settings-page-intro,
-.admin-page-intro p:last-child {
-  margin: 7px 0 0;
-  color: var(--text-secondary);
-  font-size: 0.86rem;
-}
-
-.page-kicker {
-  margin: 0 0 7px;
-  color: var(--accent);
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-}
-
-.settings-page-grid {
-  display: block;
-}
-
-.settings-page-col {
-  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
-  gap: 20px;
 }
 
 .settings-card {
   padding: 0;
   overflow: hidden;
-}
-
-.settings-group-title {
-  margin-bottom: 9px;
-  padding-left: 1px;
-  color: var(--text-secondary);
-  font-size: 0.7rem;
 }
 
 .settings-row {
@@ -197,10 +43,6 @@
 
 .settings-main-label {
   letter-spacing: -0.01em;
-}
-
-.settings-page-col .settings-group:last-child {
-  margin-top: 4px;
 }
 
 .settings-public-profile-group {
@@ -223,142 +65,20 @@
   width: min(230px, 52%);
 }
 
-.dashboard-content {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.45fr) minmax(250px, 0.9fr);
-  gap: 18px;
-}
-
-.admin-page-intro h1 {
-  margin-bottom: 0;
-}
-
-.admin-page-intro p:last-child {
-  max-width: 620px;
-}
-
-.admin-container,
-.insights-view .container {
-  max-width: 1180px;
-}
-
-.users-view .container,
 #view-users .container {
   max-width: 920px !important;
 }
 
-.dashboard-route-tracker {
-  width: 100%;
-  margin-bottom: 18px;
-}
-
-.dashboard-grid > [class*="col-"] > .card,
-.dashboard-grid > [class*="col-"] > .profile-card {
-  margin-bottom: 18px;
-}
-
-.trip-card,
-.stat-box,
-.insight-row,
-.rt-agency-progress-row,
-.stop-card,
-.inbox-group-header,
-.inbox-item {
-  border-color: var(--border);
-  border-radius: 10px;
-}
-
-.trip-card:hover {
-  transform: none;
-  border-color: var(--accent-light);
-}
-
-.stat-box:hover {
-  transform: none;
-}
-
-.streak-box {
-  background: linear-gradient(135deg, var(--accent-glass), rgba(66, 201, 151, 0.14));
-  color: var(--text-primary);
-  border: 1px solid var(--accent-soft);
-  box-shadow: none;
-}
-
-.settings-page-col {
-  align-items: stretch;
-}
-
-.settings-page-col > .settings-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.settings-page-col > .settings-group > .settings-card {
-  flex: 1;
-}
-
-.settings-action {
-  flex: 0 0 auto;
-  min-height: 30px;
-  padding: 5px 9px !important;
-  border-radius: 8px;
-  font-size: 0.72rem !important;
-  font-weight: 700;
-}
-
-.map-controls,
-.beta-map-controls {
+.map-controls {
   top: 18px;
   left: 18px;
   right: 18px;
 }
 
-.header ~ .beta-map-view,
-.header ~ .beta-heatmap-view {
-  margin-top: 64px;
-}
-
-.filter-pills,
-.beta-map-pills,
-.beta-heatmap-panel,
-.map-diagnostics,
-.beta-map-diagnostics {
+.map-diagnostics {
   border-color: var(--border);
   box-shadow: var(--shadow);
   backdrop-filter: none;
-}
-
-.nav-item {
-  background: transparent;
-}
-
-.nav-item.active {
-  position: relative;
-  color: var(--text-primary);
-  background: transparent;
-}
-
-.nav-item.active::after {
-  content: '';
-  position: absolute;
-  right: 11px;
-  bottom: 2px;
-  left: 11px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--accent);
-}
-
-.filter-pills .pill,
-.beta-map-pills .pill,
-.beta-heatmap-controls .pill {
-  border-radius: 8px;
-}
-
-.filter-pills .pill.active,
-.beta-map-pills .pill.active,
-.beta-heatmap-controls .pill.active {
-  background: var(--accent);
 }
 
 .auth-card,
@@ -371,17 +91,13 @@
 }
 
 .auth-title,
-.auth-card-heading h2,
-.auth-sent-row strong {
+.auth-card-heading h2 {
   color: var(--text-primary);
 }
 
 .auth-subtitle,
-.auth-eyebrow,
-.auth-form-eyebrow,
 .auth-help,
-.auth-invite-note,
-.auth-label {
+.auth-invite-note {
   color: var(--text-secondary);
 }
 
@@ -418,22 +134,5 @@
 @media (max-width: 640px) {
   .view:not(.map-view):not(.beta-map-view):not(.beta-heatmap-view):not(.public-view) {
     padding-top: 84px;
-  }
-
-  .settings-page-col {
-    gap: 12px;
-    grid-template-columns: 1fr;
-  }
-
-  .settings-page-col .settings-group:last-child {
-    margin-top: 0;
-  }
-
-  .dashboard-content {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-route-tracker {
-    grid-column: auto;
   }
 }

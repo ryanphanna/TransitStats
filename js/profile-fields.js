@@ -1,6 +1,6 @@
 import { Identity } from './identity.js';
 
-export const AGENCY_DISPLAY_NAMES = {
+const AGENCY_DISPLAY_NAMES = {
     TTC: 'Toronto Transit Commission',
     GO: 'GO Transit',
     'GO Transit': 'GO Transit',
@@ -36,7 +36,7 @@ export const AGENCY_DISPLAY_NAMES = {
 export const BUILT_IN_AGENCY_OPTIONS = Object.entries(AGENCY_DISPLAY_NAMES)
     .map(([value, label]) => ({ value, label }));
 
-export function normalizeUsername(username) {
+function normalizeUsername(username) {
     return String(username || '').trim().toLowerCase().replace(/_/g, '-');
 }
 

@@ -113,4 +113,4 @@ function mergeImportedRides(loggedTrips, importedRides, windowMs = RIDE_MATCH_WI
     return [...(loggedTrips || []), ...unmatchedImportedRides(loggedTrips, importedRides, windowMs)];
 }
 
-module.exports = { RIDE_MATCH_WINDOW_MS, PRESTO_TIME_ZONE, normalizeRideAgency, prestoWallClockToInstant, loggedTripTime, importedRideTime, matchImportedRides, unmatchedImportedRides, mergeImportedRides };
+module.exports = { normalizeRideAgency, prestoWallClockToInstant, importedRideTime, matchImportedRides, unmatchedImportedRides, mergeImportedRides };

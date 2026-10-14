@@ -215,7 +215,7 @@ function injectPanel() {
     if (injected) return;
     injected = true;
     document.body.insertAdjacentHTML('beforeend', panelMarkup());
-    if (window.lucide) lucide.createIcons();
+    refreshIcons();
 
     document.querySelectorAll('.settings-panel-tab').forEach(tab => {
         tab.addEventListener('click', () => showTab(tab.dataset.settingsTab));

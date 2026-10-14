@@ -10,35 +10,7 @@ body {
   overflow-x: hidden;
   position: relative;
 }
-.profile-info {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.profile-info h2 { margin: 0; font-size: 1.25rem; font-weight: 800; line-height: 1.2; }
-.profile-info p { 
-  margin: 0; 
-  color: var(--text-muted); 
-  font-size: 0.85rem; 
-  line-height: 1; 
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
 
-.profile-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-.avatar {
-  font-size: 2rem;
-  background: transparent;
-  line-height: 1;
-}
-
-.focus-ring:focus-visible,
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
@@ -54,8 +26,4 @@ select:focus-visible {
 }
 
 .hidden { display: none !important; }
-.mt-4 { margin-top: 1rem; }
-.mb-3 { margin-bottom: 0.75rem; }
-.mb-4 { margin-bottom: 1rem; }
 .full-width { width: 100%; }
-.text-accent { color: var(--accent); }

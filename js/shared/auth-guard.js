@@ -75,7 +75,7 @@ async function verifyWithRetry(user) {
 // Firebase keeps a signed-in user in localStorage or IndexedDB. Returns false
 // only when we can positively see there is none (or storage doesn't exist at
 // all); any error or uncertainty returns true so the grace period still applies.
-export async function hasPersistedFirebaseUser() {
+async function hasPersistedFirebaseUser() {
     try {
         for (let i = 0; i < localStorage.length; i += 1) {
             if (localStorage.key(i)?.startsWith('firebase:authUser:')) return true;
@@ -244,7 +244,10 @@ export function requireAuth(options = {}) {
                 window.location.href = '/dashboard';
                 return;
             }
-            await Auth.syncSharedSession(sessionUser);
+            // Refreshing the token and minting the shared cookie is two network round trips
+            // on every page load. The page already has its Firebase session, and the cookie
+            // only matters for the next surface, so it must not hold up rendering.
+            void Auth.syncSharedSession(sessionUser);
             Auth.startSharedSessionKeepAlive(sessionUser);
             window.currentUser = sessionUser;
             window.isAdmin = verification.isAdmin;
