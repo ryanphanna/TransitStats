@@ -9,6 +9,7 @@ const {
   getRecentCompletedTrips,
   getStopsLibrary,
   lookupStop,
+  lookupStopCheck,
   db,
   FieldValue,
   hasBlockingCorrection,
@@ -268,11 +269,12 @@ async function autoConfirmStopMatch(tripData, endStopData) {
   return true;
 }
 
-// Fields a correction can change that decide whether a trip's stops resolve to known stops.
+// Fields whose change can alter whether a trip's stops resolve to known stops. Route-only and
+// direction-only edits are skipped on purpose (they do not change which stops were named).
 const STOP_MATCH_INPUT_FIELDS = [
   'startStopCode', 'startStopName', 'startStop',
   'endStopCode', 'endStopName', 'endStop',
-  'agency', 'route', 'direction',
+  'agency',
 ];
 
 function stopMatchInputsChanged(before, after) {
@@ -281,26 +283,29 @@ function stopMatchInputsChanged(before, after) {
 
 /**
  * Re-checks whether an ended trip's boarding and exit stops resolve to known stops after a
- * correction changed any of the inputs. Unlike the one-way auto-confirm at END, this can also
- * flip a trip back to unmatched when the corrected values no longer resolve, so corrected trips
- * neither stay unmatched forever nor stay matched on stale data.
+ * correction changed the stop or agency fields. Unlike the one-way auto-confirm at END, this can
+ * also flip a trip back to unmatched when the corrected values no longer resolve. It never writes
+ * a result it could not establish: if either lookup errors, the trip is left untouched. Uses the
+ * read-only lookup (no writes, no whole-collection scan).
  * @returns {Promise<{changed: boolean, matched: boolean}>}
  */
-async function refreshStopMatchAfterCorrection(before, after, lookup = lookupStop) {
+async function refreshStopMatchAfterCorrection(before, after, check = lookupStopCheck) {
   const unchanged = { changed: false, matched: after?.stop_matched === true };
   if (!before || !after || after.endTime == null) return unchanged;
+  // This very write already changed stop_matched (e.g. the auto-confirm): nothing to redo.
+  if (before.stop_matched !== after.stop_matched) return unchanged;
   if (!stopMatchInputsChanged(before, after)) return unchanged;
-  // Only recompute on edits to the stop inputs themselves; the stop_matched write we make
-  // afterwards is not an input, so it cannot loop.
+
   const hasEnd = after.endStopCode || after.endStopName || after.endStop;
   const hasStart = after.startStopCode || after.startStopName || after.startStop;
   let matched = false;
   if (hasStart && hasEnd) {
-    const [startStop, endStop] = await Promise.all([
-      lookup(after.startStopCode, after.startStopName || after.startStop, after.agency, after.route, after.direction),
-      lookup(after.endStopCode, after.endStopName || after.endStop, after.agency, after.route, after.direction),
+    const [start, end] = await Promise.all([
+      check(after.startStopCode, after.startStopName || after.startStop, after.agency, after.route, after.direction),
+      check(after.endStopCode, after.endStopName || after.endStop, after.agency, after.route, after.direction),
     ]);
-    matched = Boolean(startStop && endStop);
+    if (start.status === 'error' || end.status === 'error') return unchanged;
+    matched = start.status === 'found' && end.status === 'found';
   }
   return { changed: matched !== (after.stop_matched === true), matched };
 }

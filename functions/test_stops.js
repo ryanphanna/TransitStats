@@ -7,7 +7,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const Module = require('node:module');
 
-function loadStopsModule({ stops = [], stopRoutes = {} } = {}) {
+function loadStopsModule({ stops = [], stopRoutes = {}, failQueries = false, scans = [] } = {}) {
   const stopsPath = require.resolve('./lib/db/stops');
   delete require.cache[stopsPath];
 
@@ -26,11 +26,11 @@ function loadStopsModule({ stops = [], stopRoutes = {} } = {}) {
               const docs = stops
                 .filter(s => Array.isArray(s.data.agencies) && s.data.agencies.includes(value))
                 .map(s => wrapDoc(s.id, s.data));
-              return { get: async () => ({ docs, empty: docs.length === 0 }) };
+              return { get: async () => { if (failQueries) throw new Error('unavailable'); return { docs, empty: docs.length === 0 }; } };
             }
             throw new Error(`Unexpected stops.where: ${field} ${op}`);
           },
-          get: async () => ({ docs: stops.map(s => wrapDoc(s.id, s.data)) }),
+          get: async () => { scans.push('stops'); return { docs: stops.map(s => wrapDoc(s.id, s.data)) }; },
         };
       }
 
@@ -278,4 +278,21 @@ test('lookupStop: genuinely different stops that share a prefix are not matched'
     stopRoutes: { TTC_12: ['1'] },
   });
   assert.equal(await lookupStop(null, 'College Station', 'TTC', '1'), null);
+});
+
+test('lookupStopCheck: reports found / notFound / error and never mistakes an error for a missing stop', async () => {
+  const stops = [{ id: 'ttc_88', data: { agencies: ['TTC'], code: '88', name: 'Main Station', aliases: [] } }];
+  const ok = loadStopsModule({ stops, stopRoutes: { TTC_88: ['1'] } });
+  assert.equal((await ok.lookupStopCheck(null, 'Main Station', 'TTC', '1')).status, 'found');
+  assert.equal((await ok.lookupStopCheck(null, 'Nowhere Station', 'TTC', '1')).status, 'notFound');
+  const broken = loadStopsModule({ stops, failQueries: true });
+  assert.equal((await broken.lookupStopCheck(null, 'Main Station', 'TTC', '1')).status, 'error');
+});
+
+test('lookupStopCheck: no whole-collection scan (lookupStop still does one for other-agency stops)', async () => {
+  const scans = [];
+  const stops = [{ id: 'go_1', data: { agencies: ['GO Transit'], agency: 'GO Transit', code: '1', name: 'Zzyzx Terminal', aliases: [] } }];
+  const m = loadStopsModule({ stops, scans });
+  assert.equal((await m.lookupStopCheck(null, 'Zzyzx Terminal', 'TTC', '1')).status, 'notFound');
+  assert.equal(scans.length, 0);
 });

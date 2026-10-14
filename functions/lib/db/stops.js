@@ -9,8 +9,11 @@ const TopologyConstraints = require('../topology-constraints');
 let _topology = null;
 try { _topology = require('../topology.json'); } catch (_) { /* optional */ }
 
-async function lookupStop(stopCode, stopName, agency, route = null, direction = null) {
-  try {
+// Shared lookup. Throws on a database error so callers can tell "no such stop" from "could not
+// check". crossAgency=false skips the fallback that scans the whole stops collection and writes
+// (auto-expanding a stop's agencies), for read-only checks.
+async function _lookupStopCore(stopCode, stopName, agency, route, direction, { crossAgency = true } = {}) {
+  {
     if (!stopCode && !stopName) return null;
 
     // Code lookup — uses composite index (agencies array-contains + code ==)
@@ -43,7 +46,7 @@ async function lookupStop(stopCode, stopName, agency, route = null, direction = 
     // Cross-agency fallback: stop exists in library under a different agency.
     // If found, auto-expand the stop's agencies array so future lookups hit directly.
     const term = stopCode || stopName;
-    if (term) {
+    if (crossAgency && term) {
       const found = await _findAndExpandStop(term, agency);
       if (found) return found;
     }
@@ -57,9 +60,30 @@ async function lookupStop(stopCode, stopName, agency, route = null, direction = 
     }
 
     return null;
+  }
+}
+
+async function lookupStop(stopCode, stopName, agency, route = null, direction = null) {
+  try {
+    return await _lookupStopCore(stopCode, stopName, agency, route, direction);
   } catch (error) {
     console.error('Error looking up stop:', error);
     return null;
+  }
+}
+
+/**
+ * Read-only stop check: never writes and never scans the whole collection. Resolves to
+ * { status: 'found' | 'notFound' | 'error', stop } so a database error is never mistaken for a
+ * stop that does not exist.
+ */
+async function lookupStopCheck(stopCode, stopName, agency, route = null, direction = null) {
+  try {
+    const stop = await _lookupStopCore(stopCode, stopName, agency, route, direction, { crossAgency: false });
+    return stop ? { status: 'found', stop } : { status: 'notFound', stop: null };
+  } catch (error) {
+    console.error('Error checking stop:', error);
+    return { status: 'error', stop: null };
   }
 }
 
@@ -355,6 +379,7 @@ function _candidateMatchesRouteMode(candidate, routeMode) {
 
 module.exports = {
   lookupStop,
+  lookupStopCheck,
   findMatchingStops,
   getRoutesAtStop,
   getStopsLibrary,
