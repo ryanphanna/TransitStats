@@ -61,6 +61,7 @@ const {
   resolveTripAgency,
   maybeHandleStopDisambiguation,
   getPredictionPrompt,
+  getShownEndStopPredictions,
   getAchievementNote,
 } = require('./handlers-utils');
 
@@ -626,7 +627,7 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
   if (/^[123]$/.test((endStopInput || '').trim())) {
     if (endIsAdmin && activeTrip.endStopPredictions?.length) {
       const idx = parseInt(endStopInput.trim(), 10) - 1;
-      const predicted = activeTrip.endStopPredictions[idx];
+      const predicted = getShownEndStopPredictions(activeTrip.endStopPredictions)[idx];
       if (predicted) endStopInput = predicted.stop;
     }
   }

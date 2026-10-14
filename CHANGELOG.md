@@ -8,7 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
-- **End-stop guesses now show up on almost every trip, and the right stop comes up on 46% of trips (was 28%).** When a trip is new, the guesser falls back to the same route, then the same stop, and it looks further back in your history. Fallback guesses are less reliable than guesses for trips you've taken before. It also no longer ignores real stops with "Northbound"-style names.
+- **End-stop guesses are right on 46% of trips, up from 28%.** When a trip is new, the guesser now falls back to the same route, then the same stop, and it looks further back in your history. It also no longer ignores real stops with "Northbound"-style names. The SMS only suggests a stop when it's fairly sure (confidence 75 or higher).
 - **Wrapped now fits the window without scrolling on laptops.** It uses the same page background as the rest of the app, the top bar no longer covers the printer and ticket, and the stub and ticket scale together to the window height (phones still stack and scroll). The downloaded image is unchanged.
 - **Signed-out visitors on the local dev server go straight to login.** The dashboard used to sit on its loading skeleton for a minute because the session check got an HTML page instead of an answer.
 - **Google Analytics can now actually load.** The site's security policy was blocking it, so no visits were being counted. Only the Google Analytics addresses were allowed.

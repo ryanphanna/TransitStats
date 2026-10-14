@@ -827,7 +827,8 @@ test('handleTripLog: end-to-end prediction prompt does not surface illegal 506 d
 
   const history = [
     ...Array.from({ length: 8 }, (_, i) => makeTrip({ endStopName: 'Spadina Station', daysAgo: i + 1 })),
-    makeTrip({ endStopName: 'College / Spadina', daysAgo: 1 }),
+    // Enough legal history for the top guess to clear the admin display gate (confidence >= 75).
+    ...Array.from({ length: 7 }, (_, i) => makeTrip({ endStopName: 'College / Spadina', daysAgo: i + 1 })),
     makeTrip({ endStopName: 'College St at Bathurst St', daysAgo: 2 }),
   ];
 
@@ -1343,4 +1344,72 @@ test('handleAddNotes: updates most recent completed trip notes', async () => {
   assert.equal(calls.docUpdates.length, 1);
   assert.deepEqual(calls.docUpdates[0], { notes: 'crowded but fast' });
   assert.equal(calls.sendSmsReply[0]?.message, 'Added notes to 510 Southbound.');
+});
+
+test('getPredictionPrompt: admin end-stop list shows only guesses with confidence >= 75', () => {
+  const { getPredictionPrompt, getShownEndStopPredictions } = require('./lib/handlers-utils');
+  const plain = getPredictionPrompt(null);
+  assert.equal(getPredictionPrompt([{ stop: 'Elm St', confidence: 74 }, { stop: 'Oak St', confidence: 20 }]), plain);
+  assert.match(getPredictionPrompt([{ stop: 'Elm St', confidence: 75 }, { stop: 'Oak St', confidence: 20 }]),
+    /Heading to Elm St\? END 1 to end\./);
+  assert.deepStrictEqual(getShownEndStopPredictions([{ stop: 'A', confidence: 50 }, { stop: 'B', confidence: 90 }]),
+    [{ stop: 'B', confidence: 90 }]);
+});
+
+function endTripWithStoredGuesses(endStopPredictions) {
+  return loadHandlers({
+    dbModule: {
+      isEmailAdmin: async () => true,
+      getActiveTrip: async () => ({
+        id: 'trip_end_gate',
+        userId: 'u13',
+        route: '1',
+        direction: 'Southbound',
+        agency: 'TTC',
+        startStopName: 'Davisville',
+        startStopCode: null,
+        startTime: { toDate: () => new Date(Date.now() - 10 * 60000) },
+        prediction: null,
+        predictionV4: null,
+        predictionV5: null,
+        habitPrediction: null,
+        endStopPrediction: endStopPredictions[0],
+        endStopPredictionV4: null,
+        endStopPredictionV5: null,
+        endStopPredictions,
+        stop_matched: true,
+      }),
+      findMatchingStops: async (name) => (
+        name === 'College Station'
+          ? [{ id: 'stop_college', stopCode: null, stopName: 'College Station', routes: ['1'], direction: null, source: 'manual' }]
+          : []
+      ),
+      lookupStop: async (code, name) => (code === null && name === 'College Station'
+        ? { id: 'stop_college', stopCode: null, stopName: 'College Station', source: 'manual' }
+        : null),
+    },
+  });
+}
+
+test('handleEndTrip: admin END 1 resolves a shown (confidence >= 75) guess', async () => {
+  const { handlers, calls, restore } = endTripWithStoredGuesses([{ stop: 'College Station', confidence: 80, version: '3.5.0' }]);
+  try {
+    await handlers.handleEndTrip('+14165550013', { userId: 'u13' }, '1');
+  } finally {
+    restore();
+  }
+  assert.equal(calls.docUpdates[0]?.endStopName, 'College Station');
+});
+
+test('handleEndTrip: admin END 1 does not resolve a stored guess below 75', async () => {
+  const { handlers, calls, restore } = endTripWithStoredGuesses([{ stop: 'College Station', confidence: 60, version: '3.5.0' }]);
+  try {
+    await handlers.handleEndTrip('+14165550014', { userId: 'u13' }, '1');
+  } finally {
+    restore();
+  }
+  assert.ok(calls.docUpdates.length > 0, 'trip still ends');
+  // Same as a non-admin: "1" is parsed as typed input (a stop code), not the hidden guess.
+  assert.equal(calls.docUpdates[0].endStopCode, '1');
+  assert.notEqual(calls.docUpdates[0].endStopName, 'College Station');
 });
