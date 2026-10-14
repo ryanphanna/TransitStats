@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 
 const PAGES = readdirSync('.').filter(f => f.endsWith('.html'));
-const GA = /<script>\s*\(function \(\) \{\s*var ID = 'G-Z8L60LPC8G'[\s\S]*?<\/script>/;
+const GA = /<script>\s*\(function \(\) \{\s*var ID = 'G-Z8L60LPC8G'[\s\S]*?<\/script\s*>/i;
 
 function snippetOf(page) {
-    return GA.exec(readFileSync(page, 'utf8'))?.[0].replace(/^<script>|<\/script>$/g, '');
+    return GA.exec(readFileSync(page, 'utf8'))?.[0].replace(/^<script>|<\/script\s*>$/gi, '');
 }
 
 function run(url, store = {}) {
