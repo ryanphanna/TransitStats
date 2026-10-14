@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **PRESTO import preview now shows what it skipped and cancels refunded fares.** Row types it doesn't import (e.g. "3 Refund, 2 Autoload") are listed, and a fare that a matching refund reverses is left out instead of counting as a ride.
 - **PRESTO import is friendlier about the file.** A CSV with a hidden byte-order mark now imports, uploading the PDF report explains to export the CSV instead, and an unreadable date format gets a plain message rather than every row flagged.
 - **GO trips from a PRESTO import stay correct after a missed tap-off.** Rows were paired two at a time, so one missing tap-off scrambled every later GO trip on the map; they're now paired by time gap and fare.
 - **Rides you logged AND imported from PRESTO are no longer counted twice** in your dashboard totals, map and public profile. A logged trip and an imported ride of the same agency within 30 minutes count as one.
