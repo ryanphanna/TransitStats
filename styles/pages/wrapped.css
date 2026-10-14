@@ -44,22 +44,6 @@
   flex-direction: column;
 }
 
-.wrapped-reprint {
-  align-self: flex-start;
-  margin-top: 14px;
-  padding: 6px 0;
-  border: 0;
-  background: none;
-  color: var(--w-ink);
-  font: inherit;
-  font-size: 0.9rem;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-
-.wrapped-reprint:disabled { opacity: 0.4; cursor: not-allowed; }
-
 .wrapped-panel h1 {
   margin: 0 0 14px;
   font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
@@ -105,23 +89,93 @@
   font-size: 0.9rem;
 }
 
+@keyframes wrapped-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+/* One fixed-size row: Print fills it, then splits into Download and Share in place. */
 .wrapped-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  position: relative;
+  height: 48px;
   margin-top: 22px;
 }
 
 .wrapped-btn {
-  flex: 1 1 140px;
-  min-height: 48px;
-  padding: 0 18px;
+  position: absolute;
+  top: 0;
+  height: 48px;
+  padding: 0 10px;
+  white-space: nowrap;
   border: 2px solid var(--w-ink);
   border-radius: 6px;
   font: inherit;
   font-weight: 600;
   font-size: 0.95rem;
   cursor: pointer;
+  transition: opacity 0.25s ease-out, transform 0.25s ease-out, visibility 0s;
+}
+
+.wrapped-print {
+  left: 0;
+  right: 0;
+}
+
+.wrapped-download,
+.wrapped-share {
+  width: calc(50% - 5px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.wrapped-download { left: 0; transform: translateX(26%); }
+.wrapped-share { right: 0; transform: translateX(-26%); }
+
+.wrapped-actions[data-state="ready"] .wrapped-print,
+.wrapped-actions[data-state="none"] .wrapped-print {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.25s ease-out, visibility 0s linear 0.25s;
+}
+
+.wrapped-actions[data-state="ready"] .wrapped-download,
+.wrapped-actions[data-state="ready"] .wrapped-share {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+}
+
+.wrapped-reprint {
+  display: block;
+  height: 28px;
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--w-ink);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.25s ease-out;
+}
+
+.wrapped-reprint.is-visible {
+  visibility: visible;
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wrapped-btn,
+  .wrapped-reprint {
+    transition: none !important;
+  }
 }
 
 .wrapped-btn:focus-visible {

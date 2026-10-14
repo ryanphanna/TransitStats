@@ -24,11 +24,12 @@
                 <div class="wrapped-panel-bottom">
                     <p id="wrapped-status" class="wrapped-status">Loading your trips…</p>
 
-                    <div class="wrapped-actions">
-                        <button id="wrapped-download" class="wrapped-btn wrapped-btn-primary" type="button" disabled>Download PNG</button>
-                        <button id="wrapped-share" class="wrapped-btn wrapped-btn-secondary" type="button" disabled>Share</button>
+                    <div id="wrapped-actions" class="wrapped-actions" data-state="none">
+                        <button id="wrapped-print" class="wrapped-btn wrapped-btn-primary wrapped-print" type="button" disabled>Print transfer</button>
+                        <button id="wrapped-download" class="wrapped-btn wrapped-btn-primary wrapped-download" type="button" tabindex="-1">Download PNG</button>
+                        <button id="wrapped-share" class="wrapped-btn wrapped-btn-secondary wrapped-share" type="button" tabindex="-1">Share</button>
                     </div>
-                    <button id="wrapped-reprint" class="wrapped-reprint" type="button" disabled>Print again</button>
+                    <button id="wrapped-reprint" class="wrapped-reprint" type="button">Print again</button>
                 </div>
             </div>
 

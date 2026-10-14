@@ -15,9 +15,11 @@ const statusEl = document.getElementById('wrapped-status');
 const previewCanvas = document.getElementById('wrapped-preview');
 const downloadBtn = document.getElementById('wrapped-download');
 const shareBtn = document.getElementById('wrapped-share');
+const printBtn = document.getElementById('wrapped-print');
+const actionsEl = document.getElementById('wrapped-actions');
+const reprintBtn = document.getElementById('wrapped-reprint');
 const stageEl = document.getElementById('wrapped-stage');
 const printerEl = document.querySelector('.wrapped-printer');
-const reprintBtn = document.getElementById('wrapped-reprint');
 
 // Imported PRESTO rides count toward Wrapped like they do on the dashboard totals.
 // Set to false to use logged trips only.
@@ -27,7 +29,8 @@ let loggedTrips = [];
 let prestoRides = [];
 let allTrips = [];
 let currentWrapped = null;
-let hasPrinted = false;
+let printed = false;
+let printing = null;
 
 function displayNameForCard() {
     if (DEMO) return 'Ryan';
@@ -75,11 +78,12 @@ function prefersReducedMotion() {
 
 function playPrint(wrapped, displayName) {
     const run = ++printRun;
+    previewCanvas.style.visibility = 'visible';
     feedAnimation?.cancel();
     printerEl?.classList.remove('is-printing');
     if (prefersReducedMotion() || !previewCanvas?.animate) {
         renderPreview(wrapped, displayName);
-        return;
+        return Promise.resolve();
     }
     printerEl?.classList.add('is-printing');
 
@@ -97,12 +101,17 @@ function playPrint(wrapped, displayName) {
     const ridden = wrapped.dayCounts.filter(count => count > 0).length;
     const start = performance.now();
     const total = STAMP_START + STAMP_MS;
+    return new Promise(resolve => {
     const frame = now => {
-        if (run !== printRun) return;
+        if (run !== printRun) {
+            resolve();
+            return;
+        }
         const elapsed = now - start;
         if (elapsed >= total) {
             renderPreview(wrapped, displayName);
             printerEl?.classList.remove('is-printing');
+            resolve();
             return;
         }
         const punchProgress = Math.min(1, Math.max(0, (elapsed - PUNCH_START) / PUNCH_MS));
@@ -112,6 +121,36 @@ function playPrint(wrapped, displayName) {
     };
     renderPreview(wrapped, displayName, { punches: 0, stamp: 0 });
     requestAnimationFrame(frame);
+    });
+}
+
+// The ticket is only printed when someone presses "Print transfer"; it then stays out.
+async function startPrint() {
+    if (printing || !currentWrapped?.trips) return;
+    printing = playPrint(currentWrapped, displayNameForCard());
+    showButtons();
+    await printing;
+    printing = null;
+    printed = true;
+    showButtons();
+}
+
+// One fixed-size button row: Print fills it, then splits into Download and Share in place.
+function showButtons() {
+    const hasRides = currentWrapped?.trips > 0;
+    let state = 'none';
+    if (hasRides) state = printed ? 'ready' : (printing ? 'printing' : 'print');
+    actionsEl.dataset.state = state;
+    if (state === 'print' || state === 'printing') {
+        printBtn.textContent = state === 'printing' ? 'Printing…' : 'Print transfer';
+        printBtn.disabled = state === 'printing';
+    }
+    const ready = state === 'ready';
+    downloadBtn.tabIndex = ready ? 0 : -1;
+    shareBtn.tabIndex = ready ? 0 : -1;
+    reprintBtn.classList.toggle('is-visible', ready);
+    reprintBtn.tabIndex = ready ? 0 : -1;
+    reprintBtn.disabled = !!printing;
 }
 
 // "Download by Oct 31": the last day of this month, when the card switches to the next month.
@@ -129,18 +168,21 @@ function refresh() {
     currentWrapped = wrapped;
     const hasRides = wrapped.trips > 0;
     stageEl?.removeAttribute('hidden');
-    if (hasRides && !hasPrinted) {
-        hasPrinted = true;
-        playPrint(wrapped, displayNameForCard());
-    } else {
+    if (!hasRides) {
+        // Nothing to print: show the "no transfer issued" ticket straight away.
+        printed = false;
         printRun++;
         printerEl?.classList.remove('is-printing');
+        previewCanvas.style.visibility = 'visible';
         renderPreview(wrapped, displayNameForCard());
+    } else if (printed && !printing) {
+        renderPreview(wrapped, displayNameForCard());
+    } else if (!printing) {
+        // Empty slot until the user asks for the ticket.
+        previewCanvas.style.visibility = 'hidden';
     }
-    if (reprintBtn) reprintBtn.disabled = !hasRides;
 
-    if (downloadBtn) downloadBtn.disabled = !hasRides;
-    if (shareBtn) shareBtn.disabled = !hasRides;
+    showButtons();
     setStatus(hasRides
         ? `${wrapped.label} · ${wrapped.trips} ${wrapped.trips === 1 ? 'ride' : 'rides'}`
         : `No transfer issued for ${Stats.formatMonthLabel(month.year, month.monthIndex, { style: 'long' }).replace(/\s\d{4}$/, '')}.`);
@@ -155,6 +197,7 @@ async function handleDownload() {
     if (!currentWrapped?.trips) return;
     try {
         downloadBtn.disabled = true;
+        shareBtn.disabled = true;
         const displayName = displayNameForCard();
         const blob = await renderWrappedPngBlob({ displayName, wrapped: currentWrapped });
         downloadBlob(blob, `${fileStem(currentWrapped)}.png`);
@@ -164,6 +207,7 @@ async function handleDownload() {
         UI.showNotification('Could not download your Wrapped card.');
     } finally {
         downloadBtn.disabled = false;
+        shareBtn.disabled = false;
     }
 }
 
@@ -171,6 +215,7 @@ async function handleShare() {
     if (!currentWrapped?.trips) return;
     try {
         shareBtn.disabled = true;
+        downloadBtn.disabled = true;
         const displayName = displayNameForCard();
         const blob = await renderWrappedPngBlob({ displayName, wrapped: currentWrapped });
         const file = new File([blob], `${fileStem(currentWrapped)}.png`, { type: 'image/png' });
@@ -191,10 +236,16 @@ async function handleShare() {
         await handleDownload();
     } catch (error) {
         if (error?.name === 'AbortError') return;
+        if (error?.name === 'NotAllowedError') {
+            // The browser can refuse to share once the print animation has used up the click's permission.
+            await handleDownload();
+            return;
+        }
         console.error(error);
         UI.showNotification('Could not share your Wrapped card.');
     } finally {
         shareBtn.disabled = false;
+        downloadBtn.disabled = false;
     }
 }
 
@@ -222,7 +273,8 @@ async function init() {
     await loadCardFonts();
     downloadBtn?.addEventListener('click', handleDownload);
     shareBtn?.addEventListener('click', handleShare);
-    reprintBtn?.addEventListener('click', () => currentWrapped?.trips && playPrint(currentWrapped, displayNameForCard()));
+    printBtn?.addEventListener('click', startPrint);
+    reprintBtn?.addEventListener('click', startPrint);
 
     if (DEMO) {
         const demo = await import('../wrapped/demo-data.js');
