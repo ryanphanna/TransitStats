@@ -27,6 +27,9 @@ function buildHarness({
     setPendingState: [],
     clearPendingState: 0,
     handleTripLogArgs: [],
+    unknownSender: [],
+    optOuts: [],
+    optOutDeletes: [],
   };
 
   const handlers = {
@@ -79,11 +82,11 @@ function buildHarness({
     clearPendingState: async () => { calls.clearPendingState++; },
     setPendingState: async (_phoneNumber, state) => { calls.setPendingState.push(state); },
     db: {
-      collection: () => ({
+      collection: (name) => ({
         add: async () => {},
-        doc: () => ({
+        doc: (id) => ({
           update: async () => {},
-          delete: async () => {},
+          delete: async () => { if (name === 'smsOptOuts') calls.optOutDeletes.push(id); },
         }),
       }),
     },
@@ -144,6 +147,15 @@ function buildHarness({
       if (request === './utils') return utils;
       if (request === './handlers') return handlers;
       if (request === './logger') return logger;
+      if (request === './sms-invite') {
+        return {
+          createInviteHandlers: () => ({
+            handleUnknownSender: async (phone) => { calls.unknownSender.push(phone); },
+            markOptedOut: async (phone, reason) => { calls.optOuts.push([phone, reason]); },
+          }),
+        };
+      }
+      if (request === 'firebase-admin/auth') return { getAuth: () => ({}) };
     }
     return originalLoad(request, parent, isMain);
   };
@@ -256,21 +268,86 @@ test('dispatcher: MMS from known user triggers Snap-to-Start handler', async () 
   assert.equal(calls.sendSmsReply.length, 0);
 });
 
-test('dispatcher: MMS from unknown user gets conversational onboarding when allowed', async () => {
-  const { dispatch, calls } = buildHarness({
-    user: null,
-    shouldRespondToUnknown: true,
-  });
+test('dispatcher: MMS from an unlinked number goes to invite handling, not trip logging', async () => {
+  const { dispatch, calls } = buildHarness({ user: null });
   await dispatch('+14165550000', '', 'SM_MMS_2', { numMedia: 1, mediaUrl: 'https://example.com/stop.jpg' });
 
   assert.equal(calls.handleMmsTrip.length, 0);
-  assert.equal(calls.sendSmsReply.length, 1);
-  assert.equal(calls.sendSmsReply[0].phoneNumber, '+14165550000');
-  // v1.45.0 conversational registration: ask for the email directly and park
-  // an awaiting_email state, instead of the old "Text REGISTER [email]" reply.
-  assert.match(calls.sendSmsReply[0].message, /What's your email/);
-  assert.equal(calls.setPendingState.length, 1);
-  assert.equal(calls.setPendingState[0].type, 'awaiting_email');
+  assert.deepEqual(calls.unknownSender, ['+14165550000']);
+  assert.equal(calls.setPendingState.length, 0);
+});
+
+test('dispatcher: a text from an unlinked number goes to invite handling', async () => {
+  const { dispatch, calls } = buildHarness({ user: null });
+  await dispatch('+14165550001', '504 King to Spadina', 'SM_UNKNOWN_1');
+
+  assert.deepEqual(calls.unknownSender, ['+14165550001']);
+  assert.equal(calls.handleTripLog, 0);
+});
+
+test('dispatcher: STOP from an unlinked number records an opt-out and sends nothing', async () => {
+  const { dispatch, calls } = buildHarness({ user: null });
+  await dispatch('+14165550002', 'stop', 'SM_UNKNOWN_STOP');
+
+  assert.deepEqual(calls.optOuts, [['+14165550002', 'inbound-keyword']]);
+  assert.equal(calls.unknownSender.length, 0);
+  assert.equal(calls.sendSmsReply.length, 0);
+});
+
+test('dispatcher: START / UNSTOP from a linked number clears the opt-out and carries on', async () => {
+  const { dispatch, calls } = buildHarness({ user: { userId: 'u1' } });
+  await dispatch('+14165550003', 'UNSTOP', 'SM_LINKED_UNSTOP');
+  assert.deepEqual(calls.optOutDeletes, ['+14165550003']);
+});
+
+test('dispatcher: STOP / STOPALL from a linked number record an opt-out; other words do not', async () => {
+  const { dispatch, calls } = buildHarness({ user: { userId: 'u1' } });
+  await dispatch('+14165550004', 'stop', 'SM_LINKED_STOP');
+  await dispatch('+14165550004', 'STOPALL', 'SM_LINKED_STOPALL');
+  await dispatch('+14165550004', 'unsubscribe', 'SM_LINKED_UNSUB');
+  assert.deepEqual(calls.optOuts, [['+14165550004', 'inbound-keyword'], ['+14165550004', 'inbound-keyword']]);
+});
+
+test('dispatcher: STARTUP and START also clear the opt-out', async () => {
+  const { dispatch, calls } = buildHarness({ user: { userId: 'u1' } });
+  await dispatch('+14165550005', 'startup', 'SM_STARTUP');
+  assert.deepEqual(calls.optOutDeletes, ['+14165550005']);
+});
+
+test('dispatcher: a bare STOP/STOPALL from a linked rider is bookkeeping only (no trip action, no reply)', async () => {
+  for (const body of ['STOP', ' stop ', 'StopAll']) {
+    const { dispatch, calls } = buildHarness({
+      user: { userId: 'u1' },
+      parseEndTripResult: { isEnd: true, stop: null, notes: null },
+    });
+    await dispatch('+14165550006', body, `SM_BARE_${body.trim()}`);
+    assert.equal(calls.handleEndTrip, 0, `${body} must not end a trip`);
+    assert.equal(calls.sendSmsReply.length, 0, `${body} must not get a reply`);
+    assert.equal(calls.optOuts.length, 1);
+  }
+});
+
+test('dispatcher: bare STOP while a stop choice is pending does not answer the prompt or reply', async () => {
+  const { dispatch, calls } = buildHarness({
+    user: { userId: 'u1' },
+    pendingState: {
+      type: 'mms_stop_needed',
+      routeCandidates: [{ route: '510', agency: 'TTC' }],
+      defaultAgency: 'TTC',
+      receivedAt: 1710000000123,
+    },
+  });
+  await dispatch('+14165550006', 'STOP', 'SM_STOP_PENDING');
+  assert.equal(calls.sendSmsReply.length, 0);
+  assert.equal(calls.clearPendingState, 0);
+  assert.equal(calls.handleEndTrip, 0);
+});
+
+test('dispatcher: "STOP <stop>" still ends a trip', async () => {
+  const { dispatch, calls } = buildHarness({ user: { userId: 'u1' }, parseEndTripResult: null });
+  await dispatch('+14165550006', 'STOP Union Station', 'SM_STOP_STOP');
+  assert.equal(calls.handleEndTrip, 1);
+  assert.equal(calls.optOuts.length, 0);
 });
 
 test('dispatcher: mms_stop_needed single route uses stop reply and preserves receivedAt', async () => {

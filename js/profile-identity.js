@@ -72,19 +72,22 @@ export async function reserveUsername(profile, username) {
             return;
         }
 
-        await db.collection('usernames').doc(username).set({
+        // One batch: either both writes land or neither does, so a failed
+        // profile write can't leave the name reserved.
+        const batch = db.batch();
+        batch.set(db.collection('usernames').doc(username), {
             uid: user.uid,
             type: 'emoji',
             createdAt: serverTimestamp(),
         });
-
-        await db.collection('profiles').doc(user.uid).set({
+        batch.set(db.collection('profiles').doc(user.uid), {
             username,
             emojiUsername: username,
             usernameAliases: [username],
             usernameType: 'emoji',
             updatedAt: serverTimestamp(),
         }, { merge: true });
+        await batch.commit();
 
         profile.data = {
             ...profile.data,
@@ -98,7 +101,9 @@ export async function reserveUsername(profile, username) {
         UI.showNotification('Identity reserved!');
     } catch (error) {
         console.error('Username save failed:', error);
-        UI.showNotification('Failed to reserve identity: ' + error.message);
+        UI.showNotification(error?.code === 'permission-denied'
+            ? "Couldn't save your identity. Please try again, and contact support if it keeps happening."
+            : "Couldn't save your identity. Check your connection and try again.");
     }
 }
 
@@ -134,18 +139,20 @@ export async function reserveCustomUsername(profile, value) {
             currentUsername,
         ].filter(Boolean))];
 
-        await db.collection('usernames').doc(username).set({
+        const batch = db.batch();
+        batch.set(db.collection('usernames').doc(username), {
             uid: user.uid,
             type: 'custom',
             createdAt: serverTimestamp(),
         });
-        await db.collection('profiles').doc(user.uid).set({
+        batch.set(db.collection('profiles').doc(user.uid), {
             username,
             emojiUsername,
             usernameAliases: aliases,
             usernameType: 'custom',
             updatedAt: serverTimestamp(),
         }, { merge: true });
+        await batch.commit();
 
         profile.data = { ...profile.data, username, emojiUsername, usernameAliases: aliases, usernameType: 'custom' };
         window.currentUserProfile = profile.data;
@@ -153,6 +160,6 @@ export async function reserveCustomUsername(profile, value) {
         UI.showNotification('Custom username saved.', 'success');
     } catch (error) {
         console.error('Custom username save failed:', error);
-        UI.showNotification('Failed to save username: ' + error.message);
+        UI.showNotification("Couldn't save that username. Please try again.");
     }
 }

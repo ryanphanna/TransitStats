@@ -30,19 +30,28 @@ async function startServerIfNeeded() {
     throw new Error(`Vite did not become ready at ${baseUrl}`);
 }
 
-async function assertSignedOutRedirect(page, path) {
+async function assertSignedOutRedirect(page, path, expected = '/') {
     await page.goto(`${baseUrl}${path}`, { waitUntil: 'domcontentloaded' });
-    await page.waitForURL(`${baseUrl}/`, { timeout: 20_000 });
-    assert.equal(new URL(page.url()).pathname, '/');
+    await page.waitForURL(`${baseUrl}${expected}`, { timeout: 20_000 });
+    const url = new URL(page.url());
+    assert.equal(url.pathname + url.search, expected);
 }
 
 await startServerIfNeeded();
 const browser = await chromium.launch({ headless: true });
 try {
     const page = await browser.newPage();
+    // The dev server has no /auth/session endpoint (it answers with index.html),
+    // which the auth guard reads as "unsure" and waits 60s. Production answers
+    // 401 when nobody is signed in, so do the same here.
+    await page.route('**/auth/session', route => route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'no session' }),
+    }));
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await assertSignedOutRedirect(page, '/dashboard');
-    await assertSignedOutRedirect(page, '/settings');
+    await assertSignedOutRedirect(page, '/wrapped', '/?next=%2Fwrapped');
 
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await page.locator('#auth-phone').waitFor();

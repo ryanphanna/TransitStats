@@ -6,7 +6,7 @@ import {
     assertSucceeds,
     initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { deleteDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { getDocs, collection, query, where } from 'firebase/firestore';
 
 const PROJECT_ID = 'transit-stats-rules-test';
@@ -304,7 +304,7 @@ describe('firestore.rules: PRESTO activity is user-scoped', () => {
     });
 
     test('owner can create and read their own PRESTO activity', async () => {
-        await invite('user@example.com', { pilot: 'presto' });
+        await invite('user@example.com');
         const ownerDb = authedDb('user_1', 'user@example.com');
         const activity = doc(ownerDb, 'prestoTransactions/transaction_1');
         await assertSucceeds(setDoc(activity, {
@@ -505,14 +505,40 @@ describe('firestore.rules: account isolation and invite-only writes', () => {
     });
 
     // 5: emoji usernames must be real emoji identities
-    test('emoji usernames must be three distinct known emoji keys', async () => {
+    test('emoji usernames must be three known emoji keys (repeats allowed)', async () => {
         await invite('user@example.com');
         const db = authedDb('user_1', 'user@example.com');
         await assertFails(setDoc(doc(db, 'usernames/hello-world'), { uid: 'user_1', type: 'emoji' }));
-        await assertFails(setDoc(doc(db, 'usernames/bus-bus-taco'), { uid: 'user_1', type: 'emoji' }));
+        await assertSucceeds(setDoc(doc(db, 'usernames/bus-bus-taco'), { uid: 'user_1', type: 'emoji' }));
+        await assertSucceeds(setDoc(doc(db, 'usernames/subway-subway-subway'), { uid: 'user_1', type: 'emoji' }));
         await assertFails(setDoc(doc(db, 'usernames/bus-taco'), { uid: 'user_1', type: 'emoji' }));
         await assertFails(setDoc(doc(db, 'usernames/admin'), { uid: 'user_1', type: 'emoji' }));
         await assertSucceeds(setDoc(doc(db, 'usernames/fox-taco-owl'), { uid: 'user_1', type: 'emoji' }));
+    });
+
+    test('the longest possible emoji username is accepted; custom names keep the 20 cap', async () => {
+        await invite('user@example.com');
+        await invite('admin@example.com', { isAdmin: true });
+        const rules = readFileSync(RULES_PATH, 'utf8');
+        const listed = [...rules.match(/function emojiKeys\(\) \{\s*return \[([^\]]+)\]/)[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+        const longest = listed.reduce((a, b) => (b.length > a.length ? b : a));
+        const max = [longest, longest, longest].join('-');
+        const db = authedDb('user_1', 'user@example.com');
+        await assertSucceeds(setDoc(doc(db, `usernames/${max}`), { uid: 'user_1', type: 'emoji' }));
+        await assertSucceeds(setDoc(doc(db, 'usernames/train-lightrail-scooter'), { uid: 'user_1', type: 'emoji' }));
+        expect(rules).toContain(`username.size() <= ${max.length}`);
+        const admin = authedDb('admin_1', 'admin@example.com');
+        await assertSucceeds(setDoc(doc(admin, 'usernames/' + 'a'.repeat(20)), { uid: 'admin_1', type: 'custom' }));
+        await assertFails(setDoc(doc(admin, 'usernames/' + 'a'.repeat(21)), { uid: 'admin_1', type: 'custom' }));
+    });
+
+    test('the reservation and profile can be written together in one batch', async () => {
+        await invite('user@example.com');
+        const db = authedDb('user_1', 'user@example.com');
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'usernames/subway-subway-subway'), { uid: 'user_1', type: 'emoji' });
+        batch.set(doc(db, 'profiles/user_1'), { username: 'subway-subway-subway', emojiUsername: 'subway-subway-subway', usernameAliases: ['subway-subway-subway'], usernameType: 'emoji' }, { merge: true });
+        await assertSucceeds(batch.commit());
     });
 
     test('the rules emoji list matches js/identity.js', async () => {
@@ -523,7 +549,7 @@ describe('firestore.rules: account isolation and invite-only writes', () => {
     });
 });
 
-describe('firestore.rules: PRESTO import is pilot-only', () => {
+describe('firestore.rules: PRESTO import is open to every invited user', () => {
     beforeAll(async () => {
         testEnv = await initializeTestEnvironment({
             projectId: PROJECT_ID,
@@ -535,55 +561,100 @@ describe('firestore.rules: PRESTO import is pilot-only', () => {
 
     const row = uid => ({ userId: uid, source: 'presto', type: 'fare_payment' });
 
-    test('an invited user who is not in the pilot cannot write PRESTO activity', async () => {
+    test('any invited user (no pilot flag) can import and re-import their own rows', async () => {
         await invite('user@example.com');
         const db = authedDb('user_1', 'user@example.com');
-        await assertFails(setDoc(doc(db, 'prestoTransactions/t1'), row('user_1')));
-    });
-
-    test('a user cannot make themselves a pilot through their own profile', async () => {
-        await invite('user@example.com');
-        const db = authedDb('user_1', 'user@example.com');
-        await assertFails(setDoc(doc(db, 'profiles/user_1'), { displayName: 'U', pilot: 'presto' }));
-        await assertFails(setDoc(doc(db, 'prestoTransactions/t1'), row('user_1')));
-    });
-
-    test('a pilot (allowedUsers.pilot) can write; the wrong pilot name cannot', async () => {
-        await invite('pilot@example.com', { pilot: 'presto' });
-        await invite('other@example.com', { pilot: 'something-else' });
-        await assertSucceeds(setDoc(doc(authedDb('p1', 'pilot@example.com'), 'prestoTransactions/t1'), row('p1')));
-        await assertFails(setDoc(doc(authedDb('o1', 'other@example.com'), 'prestoTransactions/t2'), row('o1')));
-    });
-
-    test('an admin email can write PRESTO activity', async () => {
-        await invite('admin@example.com', { isAdmin: true });
-        await assertSucceeds(setDoc(doc(authedDb('a1', 'admin@example.com'), 'prestoTransactions/t1'), row('a1')));
-    });
-
-    test('an unverified pilot email cannot write', async () => {
-        await invite('pilot@example.com', { pilot: 'presto' });
-        const db = testEnv.authenticatedContext('p1', { email: 'pilot@example.com', email_verified: false }).firestore();
-        await assertFails(setDoc(doc(db, 'prestoTransactions/t1'), row('p1')));
-    });
-
-    test('phone accounts follow the server-managed profile flag', async () => {
-        await testEnv.withSecurityRulesDisabled(async (context) => {
-            await setDoc(doc(context.firestore(), 'profiles/phone_pilot'), { pilot: 'presto' });
-            await setDoc(doc(context.firestore(), 'profiles/phone_admin'), { isAdmin: true });
-            await setDoc(doc(context.firestore(), 'profiles/phone_plain'), { displayName: 'x' });
-        });
-        await assertSucceeds(setDoc(doc(phoneDb('phone_pilot'), 'prestoTransactions/t1'), row('phone_pilot')));
-        await assertSucceeds(setDoc(doc(phoneDb('phone_admin'), 'prestoTransactions/t2'), row('phone_admin')));
-        await assertFails(setDoc(doc(phoneDb('phone_plain'), 'prestoTransactions/t3'), row('phone_plain')));
-        await assertFails(setDoc(doc(phoneDb('no_profile'), 'prestoTransactions/t4'), row('no_profile')));
-    });
-
-    test('anyone can still delete their own PRESTO rows, and a pilot can re-import (update)', async () => {
-        await invite('pilot@example.com', { pilot: 'presto' });
-        const db = authedDb('p1', 'pilot@example.com');
         const ref = doc(db, 'prestoTransactions/t1');
-        await assertSucceeds(setDoc(ref, row('p1')));
-        await assertSucceeds(setDoc(ref, { ...row('p1'), amountCents: -330 }, { merge: true }));
+        await assertSucceeds(setDoc(ref, row('user_1')));
+        await assertSucceeds(setDoc(ref, { ...row('user_1'), amountCents: -330 }, { merge: true }));
+        await assertSucceeds(getDoc(ref));
         await assertSucceeds(deleteDoc(ref));
+    });
+
+    test('phone (custom token) accounts can import their own rows', async () => {
+        await assertSucceeds(setDoc(doc(phoneDb('phone_1'), 'prestoTransactions/t1'), row('phone_1')));
+    });
+
+    test('an uninvited or unverified account cannot import', async () => {
+        await assertFails(setDoc(doc(authedDb('stranger', 'stranger@example.com'), 'prestoTransactions/t1'), row('stranger')));
+        await invite('user@example.com');
+        const unverified = testEnv.authenticatedContext('user_1', { email: 'user@example.com', email_verified: false }).firestore();
+        await assertFails(setDoc(doc(unverified, 'prestoTransactions/t2'), row('user_1')));
+    });
+
+    test('rows must belong to the caller, and ownership cannot be changed', async () => {
+        await invite('user@example.com');
+        const db = authedDb('user_1', 'user@example.com');
+        await assertFails(setDoc(doc(db, 'prestoTransactions/t1'), row('victim')));
+        await assertSucceeds(setDoc(doc(db, 'prestoTransactions/t2'), row('user_1')));
+        await assertFails(updateDoc(doc(db, 'prestoTransactions/t2'), { userId: 'victim' }));
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), 'prestoTransactions/theirs'), row('victim'));
+        });
+        await assertFails(getDoc(doc(db, 'prestoTransactions/theirs')));
+        await assertFails(updateDoc(doc(db, 'prestoTransactions/theirs'), { amountCents: 1 }));
+        await assertFails(deleteDoc(doc(db, 'prestoTransactions/theirs')));
+    });
+});
+
+describe('firestore.rules: text-provisioned accounts (smsInviteProvisioned)', () => {
+    beforeAll(async () => {
+        testEnv = await initializeTestEnvironment({
+            projectId: PROJECT_ID,
+            firestore: { rules: readFileSync(RULES_PATH, 'utf8') },
+        });
+    });
+    beforeEach(async () => { if (testEnv) await testEnv.clearFirestore(); });
+    afterAll(async () => { if (testEnv) await testEnv.cleanup(); });
+
+    // A phone-code session for an account created from a text: the custom
+    // token carries the account's (still unverified) email and our claim.
+    const provisioned = (uid, email, overrides = {}) => testEnv.authenticatedContext(uid, {
+        email,
+        email_verified: false,
+        smsInviteProvisioned: true,
+        firebase: { sign_in_provider: 'custom' },
+        ...overrides,
+    }).firestore();
+
+    test('a provisioned account on the invite list can write its own data', async () => {
+        await invite('new@example.com');
+        const db = provisioned('uid_1', 'new@example.com');
+        await assertSucceeds(setDoc(doc(db, 'trips/t1'), { userId: 'uid_1' }));
+        await assertSucceeds(setDoc(doc(db, 'profiles/uid_1'), { displayName: 'U', isPublic: false }));
+        await assertSucceeds(setDoc(doc(db, 'prestoTransactions/p1'), { userId: 'uid_1' }));
+    });
+
+    test('the claim alone is not enough: the email must still be on the invite list', async () => {
+        await assertFails(setDoc(doc(provisioned('uid_1', 'stranger@example.com'), 'trips/t1'), { userId: 'uid_1' }));
+    });
+
+    test('an unverified account WITHOUT the claim (e.g. a squatter) is still refused', async () => {
+        await invite('new@example.com');
+        const squatter = provisioned('uid_2', 'new@example.com', { smsInviteProvisioned: false });
+        await assertFails(setDoc(doc(squatter, 'trips/t1'), { userId: 'uid_2' }));
+        const noClaim = testEnv.authenticatedContext('uid_3', { email: 'new@example.com', email_verified: false }).firestore();
+        await assertFails(setDoc(doc(noClaim, 'trips/t2'), { userId: 'uid_3' }));
+    });
+
+    test('the claim only counts for phone-code (custom token) sessions', async () => {
+        await invite('new@example.com');
+        const password = testEnv.authenticatedContext('uid_4', {
+            email: 'new@example.com', email_verified: false, smsInviteProvisioned: true,
+            firebase: { sign_in_provider: 'password' },
+        }).firestore();
+        await assertFails(setDoc(doc(password, 'trips/t1'), { userId: 'uid_4' }));
+    });
+
+    test('it grants no admin powers and no access to other users', async () => {
+        await invite('new@example.com', { isAdmin: true });
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), 'profiles/victim'), { displayName: 'V', isPublic: false });
+            await setDoc(doc(context.firestore(), 'trips/vt'), { userId: 'victim' });
+        });
+        const db = provisioned('uid_1', 'new@example.com');
+        await assertFails(updateDoc(doc(db, 'profiles/victim'), { isPremium: true }));
+        await assertFails(getDoc(doc(db, 'profiles/victim')));
+        await assertFails(getDoc(doc(db, 'trips/vt')));
     });
 });

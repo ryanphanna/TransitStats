@@ -18,29 +18,21 @@ service cloud.firestore {
     //  - Phone accounts: signed in with a custom token (no email), which only
     //    our functions mint, and only for a phone number registered by an
     //    invited user.
+    //  - Text-provisioned accounts: see the smsInviteProvisioned branch below.
     function isInvited() {
       return request.auth != null && (
         (request.auth.token.email_verified == true &&
          exists(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())))
         ||
         (!('email' in request.auth.token) && request.auth.token.firebase.sign_in_provider == 'custom')
-      );
-    }
-
-    // PRESTO import is limited to admins and the 'presto' pilot. The flag lives
-    // where clients can't write it: allowedUsers (email accounts) or the
-    // server-managed profile field (phone accounts), mirroring checkWhitelist.
-    function canImportPresto() {
-      return isAdmin() || (request.auth != null && (
-        (request.auth.token.email_verified == true &&
-         exists(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())) &&
-         get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())).data.pilot == 'presto')
         ||
-        (!('email' in request.auth.token) &&
-         exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
-         (get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.pilot == 'presto' ||
-          get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.isAdmin == true))
-      ));
+        // Accounts we created from a text (email not yet verified) signing in
+        // with a phone code. The claim can only be set by the Admin SDK, so an
+        // unverified account someone registered for the same address lacks it.
+        (request.auth.token.get('smsInviteProvisioned', false) == true &&
+         request.auth.token.firebase.sign_in_provider == 'custom' &&
+         exists(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())))
+      );
     }
 
     // Fields a signed-in user may set on their own profile. Everything else
@@ -52,8 +44,8 @@ service cloud.firestore {
               'betaFeatures', 'createdAt', 'updatedAt'];
     }
 
-    // Public emoji identities are three distinct keys from js/identity.js
-    // joined with '-' (a test keeps this list in sync with that file).
+    // Public emoji identities are three keys from js/identity.js joined with '-'
+    // (repeats allowed; a test keeps this list in sync with that file).
     function emojiKeys() {
       return ['bus', 'train', 'subway', 'streetcar', 'lightrail', 'rocket', 'bike', 'scooter', 'walk', 'ferry', 'station', 'map', 'ticket', 'stop', 'bridge', 'cablecar', 'helicopter', 'airplane', 'sailing', 'taxi', 'truck', 'anchor', 'fuel', 'traffic', 'auto', 'monorail', 'bullettrain', 'tram', 'minibus', 'motorcycle', 'scooter2', 'busstop', 'motorway', 'tracks', 'v_traffic', 'construction', 'rowboat', 'speedboat', 'ship2', 'departure', 'arrival', 'aerialtram', 'mountainrail', 'panda', 'fox', 'koala', 'lion', 'tiger', 'frog', 'octopus', 'butterfly', 'owl', 'dino', 'whale', 'crab', 'bee', 'cat', 'dog', 'taco', 'pizza', 'burger', 'ramen', 'sushi', 'icecream', 'donut', 'coffee', 'beer', 'apple', 'cookie', 'cake', 'bread', 'pretzel', 'avocado', 'soccer', 'basketball', 'baseball', 'tennis', 'volleyball', 'football', 'pool', 'pingpong', 'skate', 'surf', 'cycle', 'climb', 'game', 'guitar', 'camera', 'tree', 'cactus', 'flower', 'moon', 'sun', 'cloud', 'fire', 'star', 'mountain', 'ocean', 'crystal', 'robot', 'alien', 'ghost', 'heart', 'gift', 'crown', 'gem', 'key', 'lock'];
     }
@@ -61,8 +53,7 @@ service cloud.firestore {
     function isEmojiUsername(username) {
       let p = username.split('-');
       return p.size() == 3
-        && p[0] in emojiKeys() && p[1] in emojiKeys() && p[2] in emojiKeys()
-        && p[0] != p[1] && p[0] != p[2] && p[1] != p[2];
+        && p[0] in emojiKeys() && p[1] in emojiKeys() && p[2] in emojiKeys();
     }
 
     // Profiles - users can read/write their own profile. Never publicly readable,
@@ -103,8 +94,8 @@ service cloud.firestore {
     // PRESTO pilot activity stays separate from canonical trip history.
     match /prestoTransactions/{transactionId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if isInvited() && canImportPresto() && request.resource.data.userId == request.auth.uid;
-      allow update: if isInvited() && canImportPresto() && resource.data.userId == request.auth.uid
+      allow create: if isInvited() && request.resource.data.userId == request.auth.uid;
+      allow update: if isInvited() && resource.data.userId == request.auth.uid
                     && request.resource.data.userId == request.auth.uid;
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
@@ -192,13 +183,14 @@ service cloud.firestore {
       allow create: if isInvited()
         && request.resource.data.uid == request.auth.uid
         && username.size() >= 1
-        && username.size() <= 20
         && (
           (request.resource.data.type == 'custom'
+            && username.size() <= 20
             && isAdmin()
             && username.matches('^[a-z0-9-]+$'))
           ||
           (request.resource.data.type == 'emoji'
+            && username.size() <= 38 // 3 longest keys + 2 dashes (a test checks this)
             && isEmojiUsername(username))
         );
       allow update, delete: if false; // Usernames are permanent for now

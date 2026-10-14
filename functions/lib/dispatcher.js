@@ -26,15 +26,55 @@ const {
   clearPendingState,
   setPendingState,
   getLastTripAgency,
+  storeVerificationCode,
   db,
   FieldValue,
 } = require('./db');
 const { sendSmsReply, getTwilioPhoneNumber } = require('./twilio');
 const { parseWithGemini, constructStopInput } = require('./gemini');
 const { parseMultiLineTripFormat, parseSingleLineTripFormat, parseCasualTripFormat, parseEndTripFormat } = require('./parsing');
-const { isValidRoute, normalizeDirection, getRouteDisplay, getStopDisplay, normalizeAgency } = require('./utils');
+const { isValidRoute, normalizeDirection, getRouteDisplay, getStopDisplay, normalizeAgency, generateVerificationCode } = require('./utils');
 const { getConfiguredPrimaryAgency } = require('./primary-agency');
 const handlers = require('./handlers');
+const { createInviteHandlers } = require('./sms-invite');
+const { getAuth } = require('firebase-admin/auth');
+
+let inviteHandlers = null;
+function getInviteHandlers() {
+  if (!inviteHandlers) {
+    inviteHandlers = createInviteHandlers({
+      db, adminAuth: getAuth(), sendSmsReply, shouldRespondToUnknown, FieldValue, logger,
+      storeVerificationCode, setPendingState, generateVerificationCode,
+    });
+  }
+  return inviteHandlers;
+}
+
+// The opt-out / opt-in keywords configured in the Twilio console (Advanced
+// Opt-Out). END is deliberately not one of them: it finishes a trip.
+const OPT_OUT_KEYWORDS = /^(STOP|STOPALL)$/;
+const OPT_IN_KEYWORDS = /^(START|STARTUP|UNSTOP)$/;
+
+/** Keep our own opt-out list in step with Twilio's STOP / START handling. */
+async function syncOptOutKeyword(phoneNumber, upperBody) {
+  try {
+    if (OPT_IN_KEYWORDS.test(upperBody)) {
+      await db.collection('smsOptOuts').doc(phoneNumber).delete();
+    } else if (OPT_OUT_KEYWORDS.test(upperBody.trim())) {
+      await getInviteHandlers().markOptedOut(phoneNumber, 'inbound-keyword');
+    }
+  } catch (error) {
+    logger.warn('Could not sync SMS opt-out', { error: error.message });
+  }
+}
+
+/** Number with no linked account texted us. */
+async function handleUnknownNumber(phoneNumber, upperBody, trace) {
+  // Opt-out / opt-in keywords were already recorded by syncOptOutKeyword; they
+  // get no reply.
+  if (OPT_OUT_KEYWORDS.test(upperBody) || OPT_IN_KEYWORDS.test(upperBody)) return;
+  await getInviteHandlers().handleUnknownSender(phoneNumber, trace);
+}
 
 /** Commands that are allowed to fall through pending-state handlers to normal dispatch. */
 const PENDING_PASSTHROUGH = new Set(['STATUS', 'STATS', 'FORGOT', 'INFO', 'COMMANDS', 'HELP', '?']);
@@ -105,6 +145,14 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
     }
   }
 
+  // Opt-in / opt-out keywords update our own list for everyone, linked or not.
+  await syncOptOutKeyword(phoneNumber, upperBody);
+
+  // A bare STOP / STOPALL is an opt-out and nothing else: no trip action and no
+  // reply to a number that just asked us to stop. ("STOP <stop>" still ends a
+  // trip, since Twilio only matches whole-message keywords.)
+  if (OPT_OUT_KEYWORDS.test(upperBody.trim())) return '';
+
   // 3. Contextual/Pending State Logic
   const pendingState = await getPendingState(phoneNumber);
   if (pendingState) {
@@ -116,10 +164,7 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
   if (isMms) {
     const user = await getUserByPhone(phoneNumber);
     if (!user) {
-      if (await shouldRespondToUnknown(phoneNumber)) {
-        await setPendingState(phoneNumber, { type: 'awaiting_email' });
-        await sendSmsReply(phoneNumber, 'TransitStats tracks your transit rides and shows you stats over time. What\'s your email to get started? (No account yet? Sign up at transitstats.fyi first.)');
-      }
+      await handleUnknownNumber(phoneNumber, upperBody, trace);
       return '';
     }
     await handlers.handleMmsTrip(phoneNumber, user, mediaUrl, receivedAt, trace);
@@ -133,10 +178,7 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
   // 5. User Authentication
   const user = await getUserByPhone(phoneNumber);
   if (!user) {
-    if (await shouldRespondToUnknown(phoneNumber)) {
-      await setPendingState(phoneNumber, { type: 'awaiting_email' });
-      await sendSmsReply(phoneNumber, 'Welcome to TransitStats! What\'s your email address? (No account yet? Sign up at transitstats.fyi first.)');
-    }
+    await handleUnknownNumber(phoneNumber, upperBody, trace);
     return '';
   }
 
