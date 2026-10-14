@@ -32,6 +32,7 @@ const UNDO_FILE = value('--undo');
 const UNDO_DIR = value('--undo-dir') || path.join(__dirname, 'undo');
 
 // Load firebase-admin from functions/ so the app registry is shared with functions/lib/db/core.js.
+const canonicalOf = label => require('../functions/lib/agency-aliases').canonicalAgency(label);
 const fromFunctions = id => require(require.resolve(id, { paths: [path.join(__dirname, '..', 'functions')] }));
 
 async function main() {
@@ -65,6 +66,7 @@ async function main() {
   const flips = [];
   let atlasFlips = 0;
   const stopsToAdd = new Map(); // id -> record
+  const stopLabels = new Map(); // id -> Set of agency labels that use this stop
   const skipped = { unresolved: [], errors: 0 };
   for (const trip of candidates) {
     const [start, end] = await Promise.all([
@@ -79,21 +81,43 @@ async function main() {
     }
     let usesAtlas = false;
     for (const found of [start.stop, end.stop]) {
-      if (found?.source === 'atlas' && String(found.id).startsWith('atlas_')) { stopsToAdd.set(found.id, found); usesAtlas = true; }
+      if (found?.source === 'atlas' && String(found.id).startsWith('atlas_')) {
+        stopsToAdd.set(found.id, found);
+        // Every label that shares this stop is recorded, not just the last one seen.
+        if (!stopLabels.has(found.id)) stopLabels.set(found.id, new Set());
+        stopLabels.get(found.id).add(trip.agency);
+        usesAtlas = true;
+      }
     }
     if (usesAtlas) atlasFlips += 1;
     flips.push({ id: trip.id, userId: trip.userId, agency: trip.agency, prior: trip.stop_matched === undefined ? null : trip.stop_matched });
   }
 
-  // Skip stop docs that already exist.
-  for (const id of [...stopsToAdd.keys()]) {
-    if ((await db.collection('stops').doc(id).get()).exists) stopsToAdd.delete(id);
+  // A stop doc that already exists (by id, or the same code under another label of the agency) is
+  // not created again: it only gets the missing agency labels unioned in.
+  const toUnion = new Map(); // existing doc id -> Set of labels to add
+  const libraryByCode = new Map();
+  for (const doc of (await db.collection('stops').get()).docs) {
+    const code = doc.data().code;
+    if (code) libraryByCode.set(String(code), [...(libraryByCode.get(String(code)) || []), { id: doc.id, agencies: doc.data().agencies || [] }]);
+  }
+  for (const [id, record] of [...stopsToAdd.entries()]) {
+    const exact = (await db.collection('stops').doc(id).get()).exists ? [{ id, agencies: [] }] : [];
+    const sameCode = (libraryByCode.get(String(record.code)) || []).filter(d => d.agencies.some(a => a === record.agency
+      || canonicalOf(a) === canonicalOf(record.agency)));
+    const existing = exact[0] || sameCode[0];
+    if (existing) {
+      stopsToAdd.delete(id);
+      toUnion.set(existing.id, new Set([...(toUnion.get(existing.id) || []), ...stopLabels.get(id)]));
+    } else {
+      record.agencies = [...stopLabels.get(id)];
+    }
   }
 
   const byAgency = {};
   for (const f of flips) byAgency[f.agency] = (byAgency[f.agency] || 0) + 1;
   console.log(`Unmatched trips considered: ${candidates.length}`);
-  console.log(`Stops to add: ${stopsToAdd.size}`);
+  console.log(`Stops to add: ${stopsToAdd.size}   Existing stops needing an agency label unioned: ${toUnion.size}`);
   for (const s of stopsToAdd.values()) console.log(`  + ${s.id}  ${s.agency}  ${s.code}  ${s.name}`);
   console.log(`Trips to flip to matched: ${flips.length}  ${JSON.stringify(byAgency)}  (${atlasFlips} depend on an Atlas stop, ${flips.length - atlasFlips} resolve from the existing library)`);
   console.log(`Left alone: ${skipped.unresolved.length} unresolved, ${skipped.errors} lookup errors`);
@@ -102,30 +126,44 @@ async function main() {
 
   fs.mkdirSync(UNDO_DIR, { recursive: true });
   const undoPath = path.join(UNDO_DIR, `backfill-atlas-stops-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
-  fs.writeFileSync(undoPath, JSON.stringify({
-    createdAt: new Date().toISOString(),
-    createdStopIds: [...stopsToAdd.keys()],
-    flippedTrips: flips.map(({ id, prior }) => ({ id, priorStopMatched: prior })),
-  }, null, 2));
+  // The undo file lists only what this run actually created; it is rewritten as each stop is
+  // created so an interrupted run still leaves an accurate record.
+  const undo = { createdAt: new Date().toISOString(), createdStopIds: [], unionedLabels: [], flippedTrips: flips.map(({ id, prior }) => ({ id, priorStopMatched: prior })) };
+  const saveUndo = () => fs.writeFileSync(undoPath, JSON.stringify(undo, null, 2));
+  saveUndo();
   console.log(`Undo file written: ${undoPath}`);
 
+  let created = 0;
   for (const stop of stopsToAdd.values()) {
     const { id, stopCode, stopName, ...data } = stop;
-    // create() fails if the doc appeared meanwhile, so an existing stop is never overwritten.
-    await db.collection('stops').doc(id).create({ ...data, createdAt: new Date(), updatedAt: new Date() });
+    try {
+      await db.collection('stops').doc(id).create({ ...data, createdAt: new Date(), updatedAt: new Date() });
+      undo.createdStopIds.push(id);
+      created += 1;
+      saveUndo();
+    } catch (error) {
+      // Appeared since the dry run: treat it as existing and only union this agency's labels.
+      if (!(error.code === 6 || /already exists|ALREADY_EXISTS/i.test(error.message || ''))) throw error;
+      toUnion.set(id, new Set([...(toUnion.get(id) || []), ...stop.agencies]));
+    }
+  }
+  for (const [id, labels] of toUnion) {
+    await db.collection('stops').doc(id).update({ agencies: FieldValue.arrayUnion(...labels), updatedAt: new Date() });
+    undo.unionedLabels.push({ id, labels: [...labels] });
+    saveUndo();
   }
   for (let i = 0; i < flips.length; i += 400) {
     const batch = db.batch();
     for (const f of flips.slice(i, i + 400)) batch.update(db.collection('trips').doc(f.id), { stop_matched: true });
     await batch.commit();
   }
-  console.log(`Applied: ${stopsToAdd.size} stops added, ${flips.length} trips flipped.`);
+  console.log(`Applied: ${created} stops created, ${toUnion.size} existing stops given agency labels, ${flips.length} trips flipped.`);
 }
 
 async function undo({ db, FieldValue }) {
   const plan = JSON.parse(fs.readFileSync(UNDO_FILE, 'utf8'));
   console.log(`${APPLY ? '[APPLY]' : '[DRY RUN]'} Undo of ${UNDO_FILE}`);
-  console.log(`Stops to delete: ${plan.createdStopIds.length}; trips to restore: ${plan.flippedTrips.length}`);
+  console.log(`Stops to delete: ${plan.createdStopIds.length}; trips to restore: ${plan.flippedTrips.length}; label unions to remove: ${(plan.unionedLabels || []).length}`);
   if (!APPLY) return console.log('Dry run only. Re-run with --apply to undo.');
   for (let i = 0; i < plan.flippedTrips.length; i += 400) {
     const batch = db.batch();
@@ -136,6 +174,7 @@ async function undo({ db, FieldValue }) {
     }
     await batch.commit();
   }
+  for (const { id, labels } of plan.unionedLabels || []) await db.collection('stops').doc(id).update({ agencies: FieldValue.arrayRemove(...labels) });
   for (const id of plan.createdStopIds) await db.collection('stops').doc(id).delete();
   console.log('Undo applied.');
 }
