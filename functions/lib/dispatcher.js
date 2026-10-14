@@ -70,13 +70,10 @@ async function syncOptOutKeyword(phoneNumber, upperBody) {
 
 /** Number with no linked account texted us. */
 async function handleUnknownNumber(phoneNumber, upperBody, trace) {
-  const invites = getInviteHandlers();
-  if (OPT_OUT_KEYWORDS.test(upperBody)) {
-    await invites.markOptedOut(phoneNumber, 'inbound-keyword');
-    return;
-  }
-  if (OPT_IN_KEYWORDS.test(upperBody)) return;   // cleared in syncOptOutKeyword
-  await invites.handleUnknownSender(phoneNumber, trace);
+  // Opt-out / opt-in keywords were already recorded by syncOptOutKeyword; they
+  // get no reply.
+  if (OPT_OUT_KEYWORDS.test(upperBody) || OPT_IN_KEYWORDS.test(upperBody)) return;
+  await getInviteHandlers().handleUnknownSender(phoneNumber, trace);
 }
 
 /** Commands that are allowed to fall through pending-state handlers to normal dispatch. */
