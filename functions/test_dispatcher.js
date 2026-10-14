@@ -314,6 +314,42 @@ test('dispatcher: STARTUP and START also clear the opt-out', async () => {
   assert.deepEqual(calls.optOutDeletes, ['+14165550005']);
 });
 
+test('dispatcher: a bare STOP/STOPALL from a linked rider is bookkeeping only (no trip action, no reply)', async () => {
+  for (const body of ['STOP', ' stop ', 'StopAll']) {
+    const { dispatch, calls } = buildHarness({
+      user: { userId: 'u1' },
+      parseEndTripResult: { isEnd: true, stop: null, notes: null },
+    });
+    await dispatch('+14165550006', body, `SM_BARE_${body.trim()}`);
+    assert.equal(calls.handleEndTrip, 0, `${body} must not end a trip`);
+    assert.equal(calls.sendSmsReply.length, 0, `${body} must not get a reply`);
+    assert.equal(calls.optOuts.length, 1);
+  }
+});
+
+test('dispatcher: bare STOP while a stop choice is pending does not answer the prompt or reply', async () => {
+  const { dispatch, calls } = buildHarness({
+    user: { userId: 'u1' },
+    pendingState: {
+      type: 'mms_stop_needed',
+      routeCandidates: [{ route: '510', agency: 'TTC' }],
+      defaultAgency: 'TTC',
+      receivedAt: 1710000000123,
+    },
+  });
+  await dispatch('+14165550006', 'STOP', 'SM_STOP_PENDING');
+  assert.equal(calls.sendSmsReply.length, 0);
+  assert.equal(calls.clearPendingState, 0);
+  assert.equal(calls.handleEndTrip, 0);
+});
+
+test('dispatcher: "STOP <stop>" still ends a trip', async () => {
+  const { dispatch, calls } = buildHarness({ user: { userId: 'u1' }, parseEndTripResult: null });
+  await dispatch('+14165550006', 'STOP Union Station', 'SM_STOP_STOP');
+  assert.equal(calls.handleEndTrip, 1);
+  assert.equal(calls.optOuts.length, 0);
+});
+
 test('dispatcher: mms_stop_needed single route uses stop reply and preserves receivedAt', async () => {
   const { dispatch, calls } = buildHarness({
     user: { userId: 'user_mms_followup' },

@@ -60,7 +60,7 @@ async function syncOptOutKeyword(phoneNumber, upperBody) {
   try {
     if (OPT_IN_KEYWORDS.test(upperBody)) {
       await db.collection('smsOptOuts').doc(phoneNumber).delete();
-    } else if (OPT_OUT_KEYWORDS.test(upperBody)) {
+    } else if (OPT_OUT_KEYWORDS.test(upperBody.trim())) {
       await getInviteHandlers().markOptedOut(phoneNumber, 'inbound-keyword');
     }
   } catch (error) {
@@ -147,6 +147,11 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
 
   // Opt-in / opt-out keywords update our own list for everyone, linked or not.
   await syncOptOutKeyword(phoneNumber, upperBody);
+
+  // A bare STOP / STOPALL is an opt-out and nothing else: no trip action and no
+  // reply to a number that just asked us to stop. ("STOP <stop>" still ends a
+  // trip, since Twilio only matches whole-message keywords.)
+  if (OPT_OUT_KEYWORDS.test(upperBody.trim())) return '';
 
   // 3. Contextual/Pending State Logic
   const pendingState = await getPendingState(phoneNumber);
