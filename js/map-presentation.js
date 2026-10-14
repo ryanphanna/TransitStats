@@ -1,7 +1,7 @@
 import { Utils } from './utils.js';
 
 // At 14, one stop is readable without opening labels over the city overview.
-export const STOP_POPUP_MIN_ZOOM = 14;
+const STOP_POPUP_MIN_ZOOM = 14;
 
 const MAP_PIN_COLOR = '#066b4b';
 const MAP_PIN_MIN_COLOR = '#78b99d';
@@ -286,7 +286,7 @@ export function installPopupZoomGuard(map) {
     });
 }
 
-export function getDenseViewport(points = []) {
+function getDenseViewport(points = []) {
     const valid = points
         .map(point => ({
             lat: Number(point.lat),

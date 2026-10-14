@@ -24,7 +24,7 @@ function buildMapPointKey(trip, side, resolution, location, fallbackLabel) {
 const MAP_POINTS_CACHE_PREFIX = 'transitstats-map-points:';
 const MAP_POINTS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export function getMapMarkerLabel(trip = {}, side = 'boarding', resolution = null) {
+function getMapMarkerLabel(trip = {}, side = 'boarding', resolution = null) {
     return getTripStopLabel(trip, side, resolution);
 }
 

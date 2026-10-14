@@ -21,7 +21,7 @@ function loadStopSupplements() {
 // Some user agencies share physical stops with an Atlas agency. Keep the
 // trip's agency on the returned stop while loading every verified GTFS source
 // needed to resolve that trip endpoint.
-export const ATLAS_STOP_SOURCE_SLUGS = {
+const ATLAS_STOP_SOURCE_SLUGS = {
     Amtrak: ['sdmts', 'lacmta'],
     'Flagship Cruises & Events': ['sdmts'],
     'GTAA Terminal Link': ['ttc'],

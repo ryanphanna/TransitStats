@@ -75,7 +75,7 @@ async function verifyWithRetry(user) {
 // Firebase keeps a signed-in user in localStorage or IndexedDB. Returns false
 // only when we can positively see there is none (or storage doesn't exist at
 // all); any error or uncertainty returns true so the grace period still applies.
-export async function hasPersistedFirebaseUser() {
+async function hasPersistedFirebaseUser() {
     try {
         for (let i = 0; i < localStorage.length; i += 1) {
             if (localStorage.key(i)?.startsWith('firebase:authUser:')) return true;

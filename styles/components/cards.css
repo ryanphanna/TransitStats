@@ -14,13 +14,4 @@
   border-color: var(--border-outer);
 }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.card-header h3 { margin: 0; font-size: 1rem; font-weight: 700; color: var(--text-secondary); }
-
 

@@ -7,7 +7,7 @@ import { drawTicket, TICKET_FONTS, TICKET_RECT } from './wrapped/ticket.js';
 
 export { TICKET_RECT };
 
-export const WRAPPED_CARD = Object.freeze({
+const WRAPPED_CARD = Object.freeze({
     width: 1080,
     height: 1920,
 });

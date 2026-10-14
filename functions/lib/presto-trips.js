@@ -70,4 +70,4 @@ function buildPrestoTrips(records = []) {
     return trips;
 }
 
-module.exports = { GO_MAX_TRIP_GAP_MS, isGoTransitRecord, buildPrestoTrips };
+module.exports = { GO_MAX_TRIP_GAP_MS, buildPrestoTrips };

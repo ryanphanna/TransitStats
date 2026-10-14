@@ -17,135 +17,23 @@ input:-webkit-autofill { animation-name: onAutofillStart; }
 
 
 /* --- Active Trip Banner --- */
-.active-trip-banner {
-  background: var(--accent);
-  color: white;
-  padding: 16px 24px;
-  border-radius: var(--radius);
-  margin-bottom: 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3);
-  animation: slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
 
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-20px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.banner-content { display: flex; align-items: center; gap: 16px; }
-.banner-icon { font-size: 24px; }
-.banner-info { display: flex; flex-direction: column; }
-.banner-info strong { font-size: 1.1rem; }
-.banner-info span { font-size: 0.85rem; opacity: 0.9; }
-
 /* --- Stats --- */
-.stats-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.stat-box {
-  background: var(--bg-muted);
-  padding: 20px 16px;
-  border-radius: var(--radius);
-  text-align: center;
-  transition: all 0.3s ease;
-  border: 1px solid transparent;
-}
-.stat-box:hover {
-  background: var(--bg-card-hover);
-  border-color: var(--accent-soft);
-  box-shadow: var(--shadow-sm);
-  transform: scale(1.05);
-}
-
-.stat-box strong { display: block; font-size: 1.75rem; font-weight: 900; color: var(--accent); letter-spacing: -0.02em; }
-.stat-box span { font-size: 0.65rem; font-weight: 800; color: var(--text-muted); }
-
-.streak-box {
-  background: var(--accent-soft);
-  color: var(--text-primary);
-  padding: 24px;
-  border-radius: var(--radius-lg);
-  margin-top: 16px;
-  position: relative;
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-  border: 1px solid var(--accent-light);
-}
-.streak-box::before {
-  display: none;
-}
 @keyframes rot {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
 
-.streak-title {
-  font-size: 0.75rem; 
-  font-weight: 800; 
-  margin-bottom: 20px; 
-  color: var(--text-primary);
-  opacity: 1;
-  text-align: center;
-}
-.streak-data { display: flex; justify-content: space-around; align-items: center; position: relative; z-index: 1; }
-.streak-item { text-align: center; flex: 1; }
-.streak-item strong { display: block; font-size: 2.5rem; font-weight: 900; line-height: 1; margin-bottom: 4px; }
-.streak-item span { font-size: 0.65rem; color: var(--text-secondary); opacity: 1; font-weight: 700; }
-
-.divider-v { width: 1px; height: 30px; background: var(--border); }
-
 
 
 /* --- Advanced Analytics --- */
-.insight-row {
-  background: var(--bg-muted);
-  padding: 16px;
-  border-radius: var(--radius);
-}
-
-.insight-title {
-  font-weight: 800;
-  font-size: 0.85rem;
-  margin-bottom: 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.insight-title .badge {
-  background: var(--accent);
-  color: white;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.7rem;
-}
-
-.insight-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-.insight-item {
-  text-align: center;
-}
-.insight-item strong { display: block; font-size: 1.1rem; font-weight: 900; }
-.insight-item span { font-size: 0.65rem; font-weight: 700; color: var(--text-muted); }
-.insight-item.success strong { color: var(--success); }
-.insight-item.muted { opacity: 0.6; }
 
 /* --- Peak Times Chart --- */
-.chart-compact {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
 
 
 
@@ -155,36 +43,10 @@ input:-webkit-autofill { animation-name: onAutofillStart; }
 
 
 /* --- Activity Grid (GitHub Style) --- */
-.activity-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 3px;
-    margin-top: 12px;
-    padding-bottom: 2rem;
-    position: relative;
-    justify-content: flex-start;
-}
 
 
 
 
 /* Heat Colors (TTC Indigo Theme) */
 
-.grid-legend {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.65rem;
-    color: var(--text-muted);
-    justify-content: flex-end;
-    margin-top: 8px;
-}
-
-.legend-square {
-    width: 8px;
-    height: 8px;
-    border-radius: 1px;
-}
-
-/* Layout adjustments */
-.sparkline-container { display: none; } /* Hide old sparkline */
+/* Layout adjustments */ /* Hide old sparkline */

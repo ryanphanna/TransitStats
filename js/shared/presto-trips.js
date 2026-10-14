@@ -5,7 +5,7 @@
 // Longest plausible gap between a GO tap-on and its tap-off.
 export const GO_MAX_TRIP_GAP_MS = 4 * 60 * 60 * 1000;
 
-export function isGoTransitRecord(record) {
+function isGoTransitRecord(record) {
     const agency = String(record?.agency || record?.agencySource || '').trim().toLowerCase();
     return agency === 'go' || agency === 'go transit';
 }
