@@ -1,4 +1,5 @@
 import { auth, authPersistenceReady, db } from './firebase.js';
+import { getFunctionUrl } from './shared/function-urls.js';
 
 /**
  * TransitStats V2 Authentication Module
@@ -12,7 +13,7 @@ const SHARED_SESSION_REFRESH_MS = 45 * 60 * 1000;
 const SHARED_SESSION_MIN_INTERVAL_MS = 30 * 1000;
 
 export const Auth = {
-    phoneApiUrl: 'https://us-central1-transitstats-21ba4.cloudfunctions.net/api',
+    phoneApiUrl: getFunctionUrl('api', import.meta.env, 'VITE_API_URL'),
     sharedSessionUrl: '/auth/session',
     _restorePromise: null,
     // True only when the last cookie check got a definite "no session" answer
