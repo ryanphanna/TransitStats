@@ -73,6 +73,11 @@ export const Auth = {
                 pilot: (profile.exists() && profile.data().pilot) || null,
             };
         } catch (err) {
+            // Rules deny the read when the email isn't verified or invited. That is
+            // an answer, not a network failure, so don't retry it.
+            if (err?.code === 'permission-denied') {
+                return { allowed: false, error: 'Access denied. This app is invite-only.' };
+            }
             console.error('Whitelist check failed, retrying:', err);
             // Retry once before giving up — guards against transient network errors
             // on page load signing out valid users.
@@ -91,6 +96,9 @@ export const Auth = {
                     pilot: (profile.exists() && profile.data().pilot) || null,
                 };
             } catch (retryErr) {
+                if (retryErr?.code === 'permission-denied') {
+                    return { allowed: false, error: 'Access denied. This app is invite-only.' };
+                }
                 console.error('Whitelist check failed after retry:', retryErr);
                 return { allowed: false, retryable: true, error: 'Verification failed. Try again.' };
             }
