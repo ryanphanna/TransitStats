@@ -160,6 +160,106 @@ test('regular OTP requests enforce the rolling daily limit', async () => {
   assert.equal(sentMessages.length, 0);
 });
 
+function otpReq(phone, forwardedFor) {
+  return { body: { phoneNumber: phone }, headers: forwardedFor ? { 'x-forwarded-for': forwardedFor } : {} };
+}
+
+function registeredPhones(count) {
+  const seed = {};
+  const phones = [];
+  for (let i = 0; i < count; i += 1) {
+    const phone = `+1519276${String(1000 + i)}`;
+    phones.push(phone);
+    seed[`phoneNumbers/${phone}`] = { userId: `user-${i}` };
+    seed[`profiles/user-${i}`] = { isAdmin: false };
+  }
+  return { seed, phones };
+}
+
+test('OTP requests are limited per source IP across different phone numbers', async () => {
+  const { seed, phones } = registeredPhones(11);
+  const { handlers, sentMessages } = createOtpHarness(seed);
+
+  const results = [];
+  for (const phone of phones) {
+    const response = new FakeResponse();
+    await handlers.handleRequestOtp(otpReq(phone, '203.0.113.9'), response, 'trace');
+    results.push(response.statusCode);
+  }
+
+  assert.deepEqual(results.slice(0, 10), Array(10).fill(200));
+  assert.equal(results[10], 429);
+  assert.equal(sentMessages.length, 10);
+});
+
+test('per-IP limit keys on the last X-Forwarded-For entry, not a spoofed first one', async () => {
+  const { seed, phones } = registeredPhones(11);
+  const { handlers, sentMessages } = createOtpHarness(seed);
+
+  const results = [];
+  for (const [i, phone] of phones.entries()) {
+    const response = new FakeResponse();
+    await handlers.handleRequestOtp(otpReq(phone, `198.51.100.${i}, 203.0.113.9`), response, 'trace');
+    results.push(response.statusCode);
+  }
+
+  assert.equal(results[10], 429);
+  assert.equal(sentMessages.length, 10);
+});
+
+test('a different IP is not affected by another IP hitting its limit', async () => {
+  const { seed, phones } = registeredPhones(11);
+  const { handlers } = createOtpHarness(seed);
+
+  for (const phone of phones.slice(0, 10)) {
+    await handlers.handleRequestOtp(otpReq(phone, '203.0.113.9'), new FakeResponse(), 'trace');
+  }
+  const response = new FakeResponse();
+  await handlers.handleRequestOtp(otpReq(phones[10], '203.0.113.10'), response, 'trace');
+  assert.equal(response.statusCode, 200);
+});
+
+test('global daily send cap blocks further sends and logs an error', async () => {
+  const phone = '+15192769853';
+  const day = new Date().toISOString().slice(0, 10);
+  const db = createFakeDb({
+    [`phoneNumbers/${phone}`]: { userId: 'user-1' },
+    'profiles/user-1': { isAdmin: false },
+    [`phoneLoginGlobalLimits/${day}`]: { count: 200 },
+  });
+  const logged = [];
+  const sentMessages = [];
+  const handlers = createOtpHandlers({
+    db,
+    adminAuth: {},
+    async sendSmsReply(to, message) { sentMessages.push({ to, message }); return true; },
+    async verifyTurnstile() { return true; },
+    logger: { warn() {}, info() {}, error: (message) => logged.push(message) },
+  });
+
+  const response = new FakeResponse();
+  await handlers.handleRequestOtp(otpReq(phone, '203.0.113.9'), response, 'trace');
+
+  assert.equal(response.statusCode, 429);
+  assert.equal(sentMessages.length, 0);
+  assert.ok(logged.some(message => /global daily send cap/.test(message)));
+});
+
+test('admin OTP requests bypass the IP and global caps', async () => {
+  const phone = '+15192769853';
+  const { handlers, sentMessages } = createOtpHarness({
+    [`phoneNumbers/${phone}`]: { userId: 'admin-1' },
+    'profiles/admin-1': { isAdmin: true },
+  });
+
+  for (let i = 0; i < 12; i += 1) {
+    const response = new FakeResponse();
+    await handlers.handleRequestOtp(otpReq(phone, '203.0.113.9'), response, 'trace');
+    assert.equal(response.statusCode, 200);
+  }
+  assert.equal(sentMessages.length, 12);
+});
+
 test('OTP verification returns a custom token for a valid code', async () => {
   const phone = '+15192769853';
   const { db, handlers } = createOtpHarness({
