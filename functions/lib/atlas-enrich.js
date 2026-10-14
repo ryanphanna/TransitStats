@@ -15,20 +15,9 @@
 
 const { FieldValue } = require('firebase-admin/firestore');
 
-const ATLAS_R2_BASE = process.env.ATLAS_R2_BASE || 'https://pub-85dc05d357954b6399c9a44018a3221e.r2.dev';
+const { resolveAtlasAgency } = require('../atlas-agency');
 
-// TransitStats agency name -> Atlas slug. Extend as new agencies are ridden;
-// slugs must match Atlas public/data/index.json.
-const AGENCY_SLUGS = {
-  'TTC': 'ttc',
-  'OC Transpo': 'octranspo',
-  'GO Transit': 'go',
-  'MiWay': 'miway',
-  'YRT': 'yrt',
-  'Brampton Transit': 'brampton',
-  'Durham Transit': 'drt',
-  'HSR': 'hamilton',
-};
+const ATLAS_R2_BASE = process.env.ATLAS_R2_BASE || 'https://data.transitatlas.fyi';
 
 // Per-instance cache: the meta file is ~1 MB and refreshed weekly upstream.
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -95,7 +84,14 @@ function buildStopEnrichment(stop, metaFile) {
  */
 async function enrichStopDoc(db, stopId, stop) {
   const agency = stop.agency || (stop.agencies || [])[0];
-  const slug = AGENCY_SLUGS[agency];
+  // Slugs come from Atlas's live agency directory, the same lookup the other
+  // Atlas functions use, so new agencies need no edit here.
+  let slug = null;
+  try {
+    slug = agency ? await resolveAtlasAgency(agency) : null;
+  } catch (_) {
+    return 'meta-unavailable';
+  }
   if (!slug) return 'no-slug';
   if (!stop.code) return 'no-code';
 
@@ -126,4 +122,4 @@ async function enrichStopDoc(db, stopId, stop) {
   return 'enriched';
 }
 
-module.exports = { buildStopEnrichment, enrichStopDoc, fetchStopsMeta, AGENCY_SLUGS };
+module.exports = { buildStopEnrichment, enrichStopDoc, fetchStopsMeta };
