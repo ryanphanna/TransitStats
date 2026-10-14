@@ -1,0 +1,11 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Nothing in Storage is readable or writable from a browser or app. The
+    // prediction models (models/) are read only by Cloud Functions, which use
+    // the Admin SDK and are not subject to these rules.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
