@@ -429,6 +429,14 @@ describe('firestore.rules: account isolation and invite-only writes', () => {
         await assertSucceeds(updateDoc(doc(db, 'profiles/user_1'), { mapStopMode: 'exiting', isPublic: true }));
     });
 
+    test('profile update cannot repoint userId at someone else', async () => {
+        await invite('user@example.com');
+        await seedProfile('user_1', { ...base, userId: 'user_1' });
+        const db = authedDb('user_1', 'user@example.com');
+        await assertFails(updateDoc(doc(db, 'profiles/user_1'), { userId: 'victim' }));
+        await assertSucceeds(updateDoc(doc(db, 'profiles/user_1'), { userId: 'user_1', isPublic: true }));
+    });
+
     test('a profile cannot be created for another uid', async () => {
         await invite('user@example.com');
         await assertFails(setDoc(doc(authedDb('user_1', 'user@example.com'), 'profiles/user_2'), base));

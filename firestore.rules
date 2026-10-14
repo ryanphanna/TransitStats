@@ -65,7 +65,8 @@ service cloud.firestore {
       allow update: if isAdmin() || (
         ownsDoc(userId) &&
         isInvited() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(clientProfileFields())
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(clientProfileFields()) &&
+        (!('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid)
       );
       allow delete: if ownsDoc(userId) || isAdmin();
     }
