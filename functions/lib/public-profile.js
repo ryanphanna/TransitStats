@@ -15,6 +15,7 @@ const { getMapStopMode } = require('./profile-fields');
 const { resolveAtlasAgency } = require('../atlas-agency');
 const { buildHeatmapBands } = require('./public-profile-heatmap');
 const { unmatchedImportedRides } = require('./ride-merge');
+const { buildPrestoTrips } = require('./presto-trips');
 
 const ACTIVE_TRIP_WINDOW_MS = 6 * 60 * 60 * 1000;
 const ATLAS_R2_BASE = process.env.ATLAS_R2_BASE || 'https://data.transitatlas.fyi';
@@ -108,39 +109,6 @@ function uniquePrestoStopCandidates(record, stops) {
   }
 
   return [...candidates.values()];
-}
-
-function isGoTransitRecord(record) {
-  const agency = String(record?.agency || record?.agencySource || '').trim().toLowerCase();
-  return agency === 'go' || agency === 'go transit';
-}
-
-// PRESTO's export lists every tap as its own row. GO is the only tap-in/
-// tap-out agency: each GO trip produces two consecutive `fare_payment` rows
-// (boarding, then exit). Everything else taps once per trip. Pairing GO's
-// rows, in timestamp order, turns those two rows back into one trip instead
-// of double-counting it. A trailing unpaired GO row (a missed tap-out) stays
-// a boarding-only trip rather than being dropped.
-function buildPrestoTrips(records) {
-  const trips = [];
-  const goRecords = [];
-
-  for (const record of records) {
-    if (isGoTransitRecord(record)) {
-      goRecords.push(record);
-    } else {
-      trips.push({ agency: record.agency, startRecord: record, endRecord: null });
-    }
-  }
-
-  goRecords.sort((a, b) => (Number(a.occurredAtSortKey) || 0) - (Number(b.occurredAtSortKey) || 0));
-  for (let index = 0; index < goRecords.length; index += 2) {
-    const startRecord = goRecords[index];
-    const endRecord = goRecords[index + 1] || null;
-    trips.push({ agency: startRecord.agency, startRecord, endRecord });
-  }
-
-  return trips;
 }
 
 const AGENCY_COUNTRIES = new Map([

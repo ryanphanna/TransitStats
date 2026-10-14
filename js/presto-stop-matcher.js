@@ -1,5 +1,6 @@
 import { normalizeStopLibraryLabel, stopBelongsToAgency } from './stop-library-match.js';
 import { importedRideTime } from './shared/ride-merge.js';
+import { buildPrestoTrips } from './shared/presto-trips.js';
 
 function validLocation(stop) {
     const lat = Number(stop?.lat);
@@ -119,41 +120,7 @@ export function preparePrestoStops({ atlasStops = [], firestoreStops = [] } = {}
     ];
 }
 
-function isGoTransitRecord(record) {
-    const agency = String(record?.agency || record?.agencySource || '').trim().toLowerCase();
-    return agency === 'go' || agency === 'go transit';
-}
-
-/**
- * PRESTO's export lists every tap as its own row. GO is the only tap-in/
- * tap-out agency in the network: each GO trip produces two consecutive
- * `fare_payment` rows (boarding, then exit). Everything else taps once per
- * trip. Pairing GO's rows, in timestamp order, turns those two rows back
- * into one trip instead of double-counting it. A trailing unpaired GO row
- * (a missed tap-out) stays a boarding-only trip rather than being dropped.
- */
-export function buildPrestoTrips(records = []) {
-    const trips = [];
-    const goRecords = [];
-
-    for (const record of records) {
-        if (record?.type !== 'fare_payment') continue;
-        if (isGoTransitRecord(record)) {
-            goRecords.push(record);
-        } else {
-            trips.push({ source: 'presto', agency: record.agency, startRecord: record, endRecord: null });
-        }
-    }
-
-    goRecords.sort((a, b) => (Number(a.occurredAtSortKey) || 0) - (Number(b.occurredAtSortKey) || 0));
-    for (let index = 0; index < goRecords.length; index += 2) {
-        const startRecord = goRecords[index];
-        const endRecord = goRecords[index + 1] || null;
-        trips.push({ source: 'presto', agency: startRecord.agency, startRecord, endRecord });
-    }
-
-    return trips;
-}
+export { buildPrestoTrips };
 
 /**
  * A lightweight `{ agency, startTime }` projection of PRESTO trips, shaped to

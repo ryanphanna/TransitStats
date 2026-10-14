@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **GO trips from a PRESTO import stay correct after a missed tap-off.** Rows were paired two at a time, so one missing tap-off scrambled every later GO trip on the map; they're now paired by time gap and fare.
 - **Rides you logged AND imported from PRESTO are no longer counted twice** in your dashboard totals, map and public profile. A logged trip and an imported ride of the same agency within 30 minutes count as one.
 - **Imported PRESTO rides now land on the right day.** Their times were read as UTC instead of Toronto time, which could shift late-evening rides to the next day.
 - **Opening the import page without access no longer signs you out of TransitStats.** You now see a short "not set up for importing" note with a link back to your dashboard.

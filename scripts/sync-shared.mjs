@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const SHARED_MODULES = ['ride-merge'];
+export const SHARED_MODULES = ['ride-merge', 'presto-trips'];
 
 export function toCommonJs(source, name) {
     const exported = [...source.matchAll(/^export (?:const|function) (\w+)/gm)].map(match => match[1]);
