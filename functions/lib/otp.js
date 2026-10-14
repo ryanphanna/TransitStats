@@ -1,9 +1,29 @@
-const { randomInt } = require('crypto');
+const { createHash, randomInt } = require('crypto');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 const OTP_DAILY_LIMIT = 5;
 const OTP_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+// Per-phone limits don't stop one client cycling through many registered
+// numbers, so also cap sends per source IP and per day across everyone.
+const OTP_IP_HOURLY_LIMIT = 10;
+const OTP_IP_WINDOW_MS = 60 * 60 * 1000;
+const OTP_GLOBAL_DAILY_LIMIT = 200;
+
+// Cloud Functions sits behind Google's frontend, which appends the real peer
+// address as the LAST X-Forwarded-For entry. Earlier entries are whatever the
+// client sent and can be spoofed, so never use the first one (or req.ip, which
+// follows the first entry when proxies are trusted).
+function getTrustedClientIp(req) {
+  const forwarded = req?.headers?.['x-forwarded-for'];
+  const header = Array.isArray(forwarded) ? forwarded.join(',') : String(forwarded || '');
+  const entries = header.split(',').map(entry => entry.trim()).filter(Boolean);
+  return entries.length ? entries[entries.length - 1] : (req?.socket?.remoteAddress || 'unknown');
+}
+
+function ipLimitKey(ip) {
+  return createHash('sha256').update(ip).digest('hex').slice(0, 32);
+}
 
 function normalizePhoneNumber(phone) {
   const cleaned = (phone || '').trim().replace(/[^\d]/g, '');
@@ -53,6 +73,12 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
       const expiresAt = Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000));
       let secondsRemaining = 0;
       let dailyLimitReached = false;
+      let ipLimitReached = false;
+      let globalLimitReached = false;
+      const clientIp = getTrustedClientIp(req);
+      const ipRef = db.collection('phoneLoginIpLimits').doc(ipLimitKey(clientIp));
+      const globalDay = new Date().toISOString().slice(0, 10);
+      const globalRef = db.collection('phoneLoginGlobalLimits').doc(globalDay);
       const reservedSentAt = Date.now() + Math.random();
 
       await db.runTransaction(async transaction => {
@@ -65,6 +91,8 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
 
         if (!isAdmin) {
           const existingLimit = await transaction.get(limitRef);
+          const existingIpLimit = await transaction.get(ipRef);
+          const existingGlobal = await transaction.get(globalRef);
           const sentAt = existingLimit.exists ? existingLimit.data().sentAt : [];
           const recentSentAt = Array.isArray(sentAt)
             ? sentAt.filter(value => Number(value) > Date.now() - OTP_LIMIT_WINDOW_MS)
@@ -74,6 +102,26 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
             return;
           }
 
+          const ipSentAt = existingIpLimit.exists ? existingIpLimit.data().sentAt : [];
+          const recentIpSentAt = Array.isArray(ipSentAt)
+            ? ipSentAt.filter(value => Number(value) > Date.now() - OTP_IP_WINDOW_MS)
+            : [];
+          if (recentIpSentAt.length >= OTP_IP_HOURLY_LIMIT) {
+            ipLimitReached = true;
+            return;
+          }
+
+          const globalCount = existingGlobal.exists ? Number(existingGlobal.data().count || 0) : 0;
+          if (globalCount >= OTP_GLOBAL_DAILY_LIMIT) {
+            globalLimitReached = true;
+            return;
+          }
+
+          transaction.set(ipRef, {
+            sentAt: [...recentIpSentAt, reservedSentAt],
+            updatedAt: Timestamp.now(),
+          });
+          transaction.set(globalRef, { count: globalCount + 1, updatedAt: Timestamp.now() });
           transaction.set(limitRef, {
             sentAt: [...recentSentAt, reservedSentAt],
             updatedAt: Timestamp.now(),
@@ -98,12 +146,26 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
         return;
       }
 
+      if (ipLimitReached) {
+        logger.warn('OTP Request blocked: per-IP hourly limit reached', { phoneNumber, traceId }, traceId);
+        res.status(429).json({ error: 'Too many text requests. Try again later.' });
+        return;
+      }
+
+      if (globalLimitReached) {
+        logger.error('OTP Request blocked: global daily send cap reached', { cap: OTP_GLOBAL_DAILY_LIMIT, traceId }, traceId);
+        res.status(429).json({ error: 'Text sign-in is temporarily unavailable. Try again tomorrow.' });
+        return;
+      }
+
       const message = `Your TransitStats login verification code is: ${code}.\n\nThis code expires in 10 minutes.\n\n@transitstats.fyi #${code}`;
       const smsSent = await sendSmsReply(phoneNumber, message);
       if (!smsSent) {
         await verificationRef.delete();
         if (!isAdmin) {
           await limitRef.update({ sentAt: FieldValue.arrayRemove(reservedSentAt) }).catch(() => {});
+          await ipRef.update({ sentAt: FieldValue.arrayRemove(reservedSentAt) }).catch(() => {});
+          await globalRef.update({ count: FieldValue.increment(-1) }).catch(() => {});
         }
         logger.error('OTP Request failed: Twilio send failed', { phoneNumber, traceId }, traceId);
         res.status(500).json({ error: 'Failed to send SMS verification code. Please try again.' });
