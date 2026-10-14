@@ -1,0 +1,57 @@
+name: Seed prediction models
+
+# One-time (or repeatable) upload of the model files to the private Cloud Storage path the
+# functions read. Use it before the first retrain so predictions don't drop to the rule-based
+# fallback after deploy. Run it from the branch that contains scripts/upload-models.js:
+#   gh workflow run seed-models.yml --ref <branch> -f dry_run=true
+on:
+  workflow_dispatch:
+    inputs:
+      models_ref:
+        description: Git ref that still has the model files tracked in functions/lib
+        default: b564d49
+        required: true
+      dry_run:
+        description: List what would be uploaded and check the bucket exists, without uploading
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout scripts (this ref)
+        uses: actions/checkout@v6
+
+      - name: Checkout model files
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.models_ref }}
+          path: models-src
+          sparse-checkout: functions/lib
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install functions dependencies
+        run: npm ci --prefix functions
+
+      - name: Upload models
+        env:
+          FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          ML_MODEL_BUCKET: transitstats-21ba4.firebasestorage.app
+        run: |
+          set -euo pipefail
+          printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          if [ "$DRY_RUN" = "true" ]; then
+            node functions/scripts/upload-models.js --dir models-src/functions/lib --dry-run --check-bucket
+          else
+            node functions/scripts/upload-models.js --dir models-src/functions/lib
+          fi
+          rm -f "$RUNNER_TEMP/sa.json"

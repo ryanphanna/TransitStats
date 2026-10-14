@@ -109,3 +109,11 @@ test('loads the version named by the pointer, never a mix', async () => {
     Object.defineProperty(storage, 'getStorage', { value: original, configurable: true });
   }
 });
+
+test('upload script: fails loudly when the bucket does not exist', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'models-up4-'));
+  writeFixtureModels(dir);
+  const bucket = { name: 'nope', exists: async () => [false], upload: async () => { throw new Error('should not upload'); } };
+  await assert.rejects(() => uploadModels({ dir, bucket, bucketLabel: 'nope', log: () => {} }), /does not exist.*Firebase Storage/);
+  await assert.rejects(() => uploadModels({ dir, bucket, bucketLabel: 'nope', dryRun: true, log: () => {} }), /does not exist/);
+});

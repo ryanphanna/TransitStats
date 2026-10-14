@@ -34,9 +34,16 @@ jobs:
         #
         # The 403 error on firestore.googleapis.com during "firebase deploy --only functions"
         # is almost always caused by missing datastore.user (or broader firebase.admin) on the SA.
+        env:
+          ML_ALLOWED_USER_IDS: ${{ secrets.ML_ALLOWED_USER_IDS }}
         run: |
           set -uo pipefail
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}' > /tmp/sa.json
+          # Users who get ML predictions. Kept out of the repo; empty or unset means ML is off
+          # (the deploy still succeeds and predictions use the rule-based engine).
+          if [ -n "${ML_ALLOWED_USER_IDS:-}" ]; then
+            printf 'ML_ALLOWED_USER_IDS=%s\n' "$ML_ALLOWED_USER_IDS" > functions/.env.transitstats-21ba4
+          fi
           npm install -g firebase-tools
           for attempt in 1 2 3; do
             echo "Deploying Functions (attempt $attempt/3)"

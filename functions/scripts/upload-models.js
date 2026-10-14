@@ -8,6 +8,7 @@
  * --bucket  bucket name (default: ML_MODEL_BUCKET, else transitstats-21ba4.firebasestorage.app)
  * Files go to models/<version>/ and models/latest.json (the pointer) is written last, so the
  * functions never load a half-uploaded set.
+ * --check-bucket  with --dry-run, also connect and fail if the bucket doesn't exist (needs credentials)
  * Needs Admin credentials (GOOGLE_APPLICATION_CREDENTIALS) with write access to the bucket.
  * Every file must exist, so a half-finished upload can't leave the functions on a mixed model set.
  */
@@ -21,6 +22,7 @@ function parseArgs(argv) {
     if (argv[i] === '--dry-run') args.dryRun = true;
     else if (argv[i] === '--dir') args.dir = path.resolve(argv[++i]);
     else if (argv[i] === '--bucket') args.bucket = argv[++i];
+    else if (argv[i] === '--check-bucket') args.checkBucket = true;
   }
   return args;
 }
@@ -34,6 +36,10 @@ async function uploadModels({ dir, bucket, bucketLabel = '', dryRun = false, ver
   const missing = MODEL_FILE_NAMES.filter(name => !fs.existsSync(path.join(dir, name)));
   if (missing.length) throw new Error(`Missing model files in ${dir}: ${missing.join(', ')}`);
 
+  if (bucket && typeof bucket.exists === 'function') {
+    const [exists] = await bucket.exists();
+    if (!exists) throw new Error(`Bucket ${bucketLabel || bucket.name} does not exist. Is Firebase Storage enabled for the project?`);
+  }
   log(`${dryRun ? '[dry-run] ' : ''}target gs://${bucketLabel || bucket?.name}/${PREFIX}${version}/`);
   for (const name of MODEL_FILE_NAMES) {
     const size = fs.statSync(path.join(dir, name)).size;
@@ -57,7 +63,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const name = args.bucket || bucketName();
   let bucket = null;
-  if (!args.dryRun) {
+  if (!args.dryRun || args.checkBucket) {
     const { initializeApp, applicationDefault } = require('firebase-admin/app');
     const { getStorage } = require('firebase-admin/storage');
     initializeApp({
