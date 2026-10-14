@@ -29,6 +29,7 @@ function buildHarness({
     handleTripLogArgs: [],
     unknownSender: [],
     optOuts: [],
+    optOutDeletes: [],
   };
 
   const handlers = {
@@ -81,11 +82,11 @@ function buildHarness({
     clearPendingState: async () => { calls.clearPendingState++; },
     setPendingState: async (_phoneNumber, state) => { calls.setPendingState.push(state); },
     db: {
-      collection: () => ({
+      collection: (name) => ({
         add: async () => {},
-        doc: () => ({
+        doc: (id) => ({
           update: async () => {},
-          delete: async () => {},
+          delete: async () => { if (name === 'smsOptOuts') calls.optOutDeletes.push(id); },
         }),
       }),
     },
@@ -291,6 +292,26 @@ test('dispatcher: STOP from an unlinked number records an opt-out and sends noth
   assert.deepEqual(calls.optOuts, [['+14165550002', 'inbound-keyword']]);
   assert.equal(calls.unknownSender.length, 0);
   assert.equal(calls.sendSmsReply.length, 0);
+});
+
+test('dispatcher: START / UNSTOP from a linked number clears the opt-out and carries on', async () => {
+  const { dispatch, calls } = buildHarness({ user: { userId: 'u1' } });
+  await dispatch('+14165550003', 'UNSTOP', 'SM_LINKED_UNSTOP');
+  assert.deepEqual(calls.optOutDeletes, ['+14165550003']);
+});
+
+test('dispatcher: STOP / STOPALL from a linked number record an opt-out; other words do not', async () => {
+  const { dispatch, calls } = buildHarness({ user: { userId: 'u1' } });
+  await dispatch('+14165550004', 'stop', 'SM_LINKED_STOP');
+  await dispatch('+14165550004', 'STOPALL', 'SM_LINKED_STOPALL');
+  await dispatch('+14165550004', 'unsubscribe', 'SM_LINKED_UNSUB');
+  assert.deepEqual(calls.optOuts, [['+14165550004', 'inbound-keyword'], ['+14165550004', 'inbound-keyword']]);
+});
+
+test('dispatcher: STARTUP and START also clear the opt-out', async () => {
+  const { dispatch, calls } = buildHarness({ user: { userId: 'u1' } });
+  await dispatch('+14165550005', 'startup', 'SM_STARTUP');
+  assert.deepEqual(calls.optOutDeletes, ['+14165550005']);
 });
 
 test('dispatcher: mms_stop_needed single route uses stop reply and preserves receivedAt', async () => {

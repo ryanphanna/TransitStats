@@ -50,10 +50,23 @@ function getInviteHandlers() {
   return inviteHandlers;
 }
 
-// Twilio's standard opt-out / opt-in keywords. (END is deliberately not here:
-// in this app END finishes a trip.)
-const OPT_OUT_KEYWORDS = /^(STOP|STOPALL|UNSUBSCRIBE|CANCEL|QUIT)$/;
-const OPT_IN_KEYWORDS = /^(START|UNSTOP)$/;
+// The opt-out / opt-in keywords configured in the Twilio console (Advanced
+// Opt-Out). END is deliberately not one of them: it finishes a trip.
+const OPT_OUT_KEYWORDS = /^(STOP|STOPALL)$/;
+const OPT_IN_KEYWORDS = /^(START|STARTUP|UNSTOP)$/;
+
+/** Keep our own opt-out list in step with Twilio's STOP / START handling. */
+async function syncOptOutKeyword(phoneNumber, upperBody) {
+  try {
+    if (OPT_IN_KEYWORDS.test(upperBody)) {
+      await db.collection('smsOptOuts').doc(phoneNumber).delete();
+    } else if (OPT_OUT_KEYWORDS.test(upperBody)) {
+      await getInviteHandlers().markOptedOut(phoneNumber, 'inbound-keyword');
+    }
+  } catch (error) {
+    logger.warn('Could not sync SMS opt-out', { error: error.message });
+  }
+}
 
 /** Number with no linked account texted us. */
 async function handleUnknownNumber(phoneNumber, upperBody, trace) {
@@ -62,10 +75,7 @@ async function handleUnknownNumber(phoneNumber, upperBody, trace) {
     await invites.markOptedOut(phoneNumber, 'inbound-keyword');
     return;
   }
-  if (OPT_IN_KEYWORDS.test(upperBody)) {
-    await db.collection('smsOptOuts').doc(phoneNumber).delete().catch(() => {});
-    return;
-  }
+  if (OPT_IN_KEYWORDS.test(upperBody)) return;   // cleared in syncOptOutKeyword
   await invites.handleUnknownSender(phoneNumber, trace);
 }
 
@@ -137,6 +147,9 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
       return '';
     }
   }
+
+  // Opt-in / opt-out keywords update our own list for everyone, linked or not.
+  await syncOptOutKeyword(phoneNumber, upperBody);
 
   // 3. Contextual/Pending State Logic
   const pendingState = await getPendingState(phoneNumber);
