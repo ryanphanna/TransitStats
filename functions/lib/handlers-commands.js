@@ -12,6 +12,7 @@ const {
   storeVerificationCode,
   getVerificationData,
   isEmailAllowed,
+  getAuthUidByEmail,
   getUserByPhone,
   getUserProfile,
   isEmailAdmin,
@@ -267,11 +268,9 @@ async function handleRegister(phoneNumber, email, traceId = null) {
     return;
   }
 
-  const profilesSnapshot = await db.collection('profiles')
-    .where('email', '==', email.toLowerCase())
-    .limit(1).get();
-
-  if (profilesSnapshot.empty) {
+  // Resolve the account through Firebase Auth. The profile `email` field is not
+  // trustworthy (clients could write it), so it must never pick the account.
+  if (!(await getAuthUidByEmail(email))) {
     await sendSmsReply(phoneNumber, `No account found for ${email}. Sign up at transitstats.fyi, then text REGISTER again.`);
     return;
   }
@@ -304,40 +303,59 @@ async function handleRegister(phoneNumber, email, traceId = null) {
  * Handle verification code input
  */
 async function handleVerificationCode(phoneNumber, code, traceId = null) {
-  const verificationData = await getVerificationData(phoneNumber);
+  const verificationRef = db.collection('smsVerification').doc(phoneNumber);
 
-  if (!verificationData) {
+  // Check, count and consume the code in ONE transaction, so parallel guesses
+  // can't each see the same attempts value and exceed the 3-attempt limit, and
+  // one correct code can't be used twice.
+  const result = await db.runTransaction(async transaction => {
+    const snapshot = await transaction.get(verificationRef);
+    if (!snapshot.exists) return { status: 'missing' };
+    const data = snapshot.data();
+    // An expired code is dropped, but a lockout must run out on its own.
+    const isLocked = data.lockedUntil?.toDate && data.lockedUntil.toDate() > new Date();
+    if (!isLocked && data.expiresAt?.toDate && data.expiresAt.toDate() < new Date()) {
+      transaction.delete(verificationRef);
+      return { status: 'missing' };
+    }
+    if (data.attempts >= 3) {
+      transaction.update(verificationRef, {
+        lockedUntil: Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000)),
+      });
+      return { status: 'locked' };
+    }
+    if (code !== data.code) {
+      transaction.update(verificationRef, { attempts: FieldValue.increment(1) });
+      return { status: 'invalid' };
+    }
+    transaction.delete(verificationRef);
+    return { status: 'ok', email: data.email };
+  });
+
+  if (result.status === 'missing') {
     await sendSmsReply(phoneNumber, 'No pending registration.');
     return;
   }
 
-  if (verificationData.attempts >= 3) {
-    await db.collection('smsVerification').doc(phoneNumber).update({
-      lockedUntil: Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000)),
-    });
+  if (result.status === 'locked') {
     await clearPendingState(phoneNumber);
     await sendSmsReply(phoneNumber, 'Too many failed attempts. Try again in 10 minutes.');
     return;
   }
 
-  if (code !== verificationData.code) {
-    await db.collection('smsVerification').doc(phoneNumber).update({
-      attempts: FieldValue.increment(1),
-    });
+  if (result.status === 'invalid') {
     await sendSmsReply(phoneNumber, 'Invalid code.');
     return;
   }
 
-  const profilesSnapshot = await db.collection('profiles')
-    .where('email', '==', verificationData.email)
-    .limit(1).get();
+  const verificationData = { email: result.email };
 
-  if (profilesSnapshot.empty) {
+  const userId = await getAuthUidByEmail(verificationData.email);
+
+  if (!userId) {
     await sendSmsReply(phoneNumber, 'Account not found.');
     return;
   }
-
-  const userId = profilesSnapshot.docs[0].id;
 
   await db.collection('phoneNumbers').doc(phoneNumber).set({
     userId,
@@ -345,7 +363,6 @@ async function handleVerificationCode(phoneNumber, code, traceId = null) {
     registeredAt: FieldValue.serverTimestamp(),
   });
 
-  await db.collection('smsVerification').doc(phoneNumber).delete();
   await clearPendingState(phoneNumber);
 
   await sendSmsReply(phoneNumber, `Phone linked! Text "[route] [stop]" to log trips.`);

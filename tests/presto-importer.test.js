@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 // module for its parsing/summary functions doesn't require a real project.
 vi.mock('../js/firebase.js', () => ({ db: {}, serverTimestamp: () => null }));
 
-import { classifyType, parseAmountCents, parseCsv, parseDate, summarize, toRecord } from '../js/presto-importer.js';
+import { assertDatesReadable, classifyType, markRefundedFares, parseAmountCents, parseCsv, parseDate, summarize, toRecord } from '../js/presto-importer.js';
 
 describe('parseCsv', () => {
     it('parses a PRESTO Transit Usage Report into row objects', () => {
@@ -140,5 +140,99 @@ describe('summarize', () => {
             toRecord({ Date: 'garbage', TransitAgency: 'TTC', Location: '14579', Type: 'Epurse Load', Amount: 'garbage' }, 4, 'f.csv'),
         ];
         expect(summarize(records).invalidRows).toBe(0);
+    });
+});
+
+describe('file format handling', () => {
+    const header = 'Date,TransitAgency,Location,Type,Amount';
+    const row = '1/1/2026 8:00:00 AM,Toronto Transit Commission,BAY STATION,Fare Payment,$-3.30';
+
+    it('accepts a UTF-8 byte order mark before the header', () => {
+        const rows = parseCsv(`﻿${header}\n${row}\n`);
+        expect(rows).toHaveLength(1);
+        expect(rows[0].Date).toBe('1/1/2026 8:00:00 AM');
+    });
+
+    it('tolerates padding around header names and Windows line endings', () => {
+        const rows = parseCsv(` Date , TransitAgency,Location,Type ,Amount\r\n${row}\r\n`);
+        expect(rows).toHaveLength(1);
+    });
+
+    it('gives a specific message for the PDF report', () => {
+        expect(() => parseCsv('%PDF-1.7\n...binary...')).toThrow(/Export CSV/);
+        expect(() => parseCsv('%PDF-1.7\n...binary...')).toThrow(/PDF version/);
+    });
+
+    it('still rejects an unrelated CSV with the generic message', () => {
+        expect(() => parseCsv('a,b\n1,2\n')).toThrow(/does not look like a PRESTO/);
+    });
+
+    it('explains an unreadable date format instead of flagging every row', () => {
+        const records = parseCsv(`${header}\n2026-01-01 08:00,Toronto Transit Commission,BAY,Fare Payment,$-3.30\n`)
+            .map((r, i) => toRecord(r, i + 2, 'f.csv'));
+        expect(() => assertDatesReadable(records)).toThrow(/2026-01-01 08:00/);
+        expect(() => assertDatesReadable(records)).toThrow(/4\/1\/2026 2:01:25 PM/);
+    });
+
+    it('does not complain when at least one ride date parses', () => {
+        const records = parseCsv(`${header}\n${row}\ngarbage,Toronto Transit Commission,BAY,Fare Payment,$-3.30\n`)
+            .map((r, i) => toRecord(r, i + 2, 'f.csv'));
+        expect(() => assertDatesReadable(records)).not.toThrow();
+    });
+});
+
+describe('refunds and skipped row types', () => {
+    const mk = (Date, Type, Amount, TransitAgency = 'Toronto Transit Commission') =>
+        ({ Date, TransitAgency, Location: 'BAY STATION', Type, Amount });
+    const records = rows => rows.map((row, i) => toRecord(row, i + 2, 'f.csv'));
+
+    it('classifies refund rows', () => {
+        expect(classifyType('Refund')).toBe('refund');
+        expect(classifyType('Fare Refund')).toBe('refund');
+    });
+
+    it('cancels a fare that an equal later refund reverses', () => {
+        const marked = markRefundedFares(records([
+            mk('1/1/2026 8:00:00 AM', 'Fare Payment', '$-3.30'),
+            mk('1/1/2026 9:00:00 AM', 'Fare Payment', '$-3.30'),
+            mk('1/2/2026 9:00:00 AM', 'Refund', '$3.30'),
+        ]));
+        // Closest earlier matching fare is cancelled; the first stays.
+        expect(marked.map(r => Boolean(r.refunded))).toEqual([false, true, false]);
+        const summary = summarize(marked);
+        expect(summary.farePayments).toBe(1);
+        expect(summary.fareChargedCents).toBe(330);
+        expect(summary.refundedFares).toBe(1);
+        expect(summary.refundedCents).toBe(330);
+    });
+
+    it('leaves a refund alone when no fare matches (other amount, agency or order)', () => {
+        const marked = markRefundedFares(records([
+            mk('1/1/2026 8:00:00 AM', 'Fare Payment', '$-3.30'),
+            mk('1/2/2026 9:00:00 AM', 'Refund', '$5.00'),
+            mk('1/2/2026 9:00:00 AM', 'Refund', '$3.30', 'GO Transit'),
+            mk('12/31/2025 9:00:00 AM', 'Refund', '$3.30'),
+        ]));
+        expect(marked.some(r => r.refunded)).toBe(false);
+    });
+
+    it('one refund cancels at most one fare', () => {
+        const marked = markRefundedFares(records([
+            mk('1/1/2026 8:00:00 AM', 'Fare Payment', '$-3.30'),
+            mk('1/1/2026 8:05:00 AM', 'Fare Payment', '$-3.30'),
+            mk('1/1/2026 9:00:00 AM', 'Refund', '$3.30'),
+        ]));
+        expect(marked.filter(r => r.refunded)).toHaveLength(1);
+    });
+
+    it('counts skipped row types by the label PRESTO used', () => {
+        const summary = summarize(records([
+            mk('1/1/2026 8:00:00 AM', 'Fare Payment', '$-3.30'),
+            mk('1/1/2026 9:00:00 AM', 'Refund', '$1.00'),
+            mk('1/1/2026 9:00:00 AM', 'Refund', '$1.00'),
+            mk('1/1/2026 9:00:00 AM', 'Autoload', '$20.00'),
+            mk('1/1/2026 9:00:00 AM', 'Epurse Load', '$20.00'),
+        ]));
+        expect(summary.skipped).toEqual({ Refund: 2, Autoload: 1 });
     });
 });

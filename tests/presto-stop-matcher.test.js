@@ -122,7 +122,8 @@ describe('projectPrestoTripsForStats', () => {
         ]);
 
         expect(projected.agency).toBe('TTC');
-        expect(projected.startTime).toEqual(new Date(sortKey));
+        // 8:00 Toronto wall clock (EST, UTC-5) is 13:00 UTC.
+        expect(projected.startTime).toEqual(new Date(Date.UTC(2026, 0, 2, 13, 0)));
     });
 
     it('drops trips with no resolvable date instead of defaulting to epoch', () => {

@@ -1,3 +1,5 @@
+import { mergeImportedRides } from './shared/ride-merge.js';
+
 const AGENCY_COUNTRIES = new Map([
     ...['TTC', 'GO', 'GO Transit', 'MiWay', 'YRT', 'Brampton Transit', 'Durham Transit', 'HSR', 'GRT', 'Grand River Transit', 'OC Transpo', 'STM', 'TransLink', 'Oakville Transit', 'GTAA Terminal Link', 'Flagship Cruises & Events', 'Exo', 'CDPQ Infra', 'Niagara Region Transit'].map(agency => [agency.toLowerCase(), 'Canada']),
     ...['NYC MTA', 'New York City Transit', 'LA Metro', 'LADOT', 'Los Angeles Department of Transportation', 'Big Blue Bus', 'BART', 'Muni', 'Caltrain', 'VTA', 'AC Transit', 'SamTrans', 'MTS', 'Amtrak', 'Golden Gate Transit', 'SMART', 'Santa Rosa CityBus', 'CDTA', 'NFTA Metro', 'TriMet', 'C-Tran', 'Sound Transit', 'King County Metro', 'Utah Transit Authority', 'Sacramento Regional Transit', 'GCRTA'].map(agency => [agency.toLowerCase(), 'United States']),
@@ -111,36 +113,8 @@ export const Stats = {
      * Imported rides carry only a start time and agency, so they add
      * trips/days/streaks but no hours, routes, or stops.
      */
-    mergeImportedRides(loggedTrips, importedRides, windowMs = 30 * 60 * 1000) {
-        const logged = loggedTrips || [];
-        const imported = (importedRides || [])
-            .map(ride => ({ ride, time: this.getTripDate(ride)?.getTime() }))
-            .filter(item => Number.isFinite(item.time));
-
-        // Pair logged trips with imported rides closest-first, one-to-one.
-        const pairs = [];
-        logged.forEach((trip, loggedIndex) => {
-            const time = this.getTripDate(trip)?.getTime();
-            if (!Number.isFinite(time)) return;
-            imported.forEach((item, importedIndex) => {
-                const gap = Math.abs(item.time - time);
-                if (gap <= windowMs) pairs.push({ gap, loggedIndex, importedIndex });
-            });
-        });
-        pairs.sort((x, y) => x.gap - y.gap);
-
-        const usedLogged = new Set();
-        const matchedImported = new Set();
-        pairs.forEach(({ loggedIndex, importedIndex }) => {
-            if (usedLogged.has(loggedIndex) || matchedImported.has(importedIndex)) return;
-            usedLogged.add(loggedIndex);
-            matchedImported.add(importedIndex);
-        });
-
-        const extra = imported
-            .filter((_, index) => !matchedImported.has(index))
-            .map(item => item.ride);
-        return [...logged, ...extra];
+    mergeImportedRides(loggedTrips, importedRides, windowMs) {
+        return mergeImportedRides(loggedTrips, importedRides, windowMs);
     },
 
     /**

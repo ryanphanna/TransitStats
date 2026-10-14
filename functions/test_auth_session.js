@@ -55,7 +55,7 @@ function makeRes() {
 }
 
 const okAuth = {
-  verifyIdToken: async () => ({ uid: 'u1', email: 'a@example.com' }),
+  verifyIdToken: async () => ({ uid: 'u1', email: 'a@example.com', email_verified: true }),
   createSessionCookie: async () => 'minted-cookie',
 };
 
@@ -108,5 +108,17 @@ test('GET hitting a transient failure keeps the cookie', async () => {
   const res = makeRes();
   await handler(makeReq({ method: 'GET', host: 'transitstats.fyi', headers: { Cookie: 'transitstats_session=ok' } }), res);
   assert.equal(res.statusCode, 401);
+  assert.equal(res.headers['Set-Cookie'], undefined);
+});
+
+test('POST with an unverified email is refused even if the address is allowed', async () => {
+  const adminAuth = {
+    ...okAuth,
+    verifyIdToken: async () => ({ uid: 'u1', email: 'a@example.com', email_verified: false }),
+  };
+  const handler = loadHandler({ adminAuth, db: makeDb() });
+  const res = makeRes();
+  await handler(makeReq({ method: 'POST', host: 'transitstats.fyi', headers: { Authorization: 'Bearer tok' } }), res);
+  assert.equal(res.statusCode, 403);
   assert.equal(res.headers['Set-Cookie'], undefined);
 });

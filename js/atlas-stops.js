@@ -1,5 +1,7 @@
+import { getFunctionUrl } from './shared/function-urls.js';
+
 const ATLAS_STOPS_PROXY = import.meta.env.VITE_ATLAS_STOPS_URL
-    || (import.meta.env.DEV ? '/atlas-dev/stops' : 'https://us-central1-transitstats-21ba4.cloudfunctions.net/atlasStops');
+    || (import.meta.env.DEV ? '/atlas-dev/stops' : getFunctionUrl('atlasStops', import.meta.env));
 const STOP_CACHE_DB = 'transitstats-map-cache';
 const STOP_CACHE_STORE = 'agency-stops';
 const STOP_CACHE_TTL_MS = 6 * 60 * 60 * 1000;

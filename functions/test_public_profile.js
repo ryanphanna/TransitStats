@@ -247,6 +247,38 @@ test('publicProfile pairs GO tap-in/tap-out rows into one trip with boarding and
   assert.deepEqual(res.body.points.map(point => point.type).sort(), ['end', 'start']);
 });
 
+test('publicProfile does not double count a PRESTO ride the user also logged as a trip', async () => {
+  const loggedStart = new Date('2026-01-02T13:05:00Z'); // 8:05 Toronto
+  const handler = loadPublicProfile({
+    docs: { usernames: { 'train-taco-panda': { exists: true, data: () => ({ uid: 'u1' }) } } },
+    profile: { isPublic: true, displayName: 'Test', username: 'train-taco-panda', emojiUsername: 'subway-subway-subway' },
+    tripsSnap: {
+      size: 1,
+      forEach: (fn) => fn({ data: () => ({
+        userId: 'u1',
+        agency: 'TTC',
+        startTime: { toDate: () => loggedStart },
+        endTime: { toDate: () => new Date('2026-01-02T13:25:00Z') },
+        duration: 20,
+      }) }),
+    },
+    prestoTransactionsSnap: {
+      size: 2,
+      docs: [
+        // Same ride as the logged trip (8:00 Toronto wall clock, same agency).
+        { data: () => ({ type: 'fare_payment', agency: 'TTC', locationLabel: 'A', occurredAtSortKey: Date.UTC(2026, 0, 2, 8, 0) }) },
+        // A different ride that only PRESTO knows about.
+        { data: () => ({ type: 'fare_payment', agency: 'TTC', locationLabel: 'B', occurredAtSortKey: Date.UTC(2026, 0, 2, 18, 0) }) },
+      ],
+    },
+    stopsSnap: { size: 0, docs: [] },
+  });
+  const res = mockRes();
+  await handler({ method: 'GET', query: { user: 'train-taco-panda' } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.totalTrips, 2);
+});
+
 test('publicProfile returns 500 and does not leak internal error detail on unexpected failure', async () => {
   const handler = loadPublicProfile({
     dbModule: { db: { collection: () => { throw new Error('db down'); } } },

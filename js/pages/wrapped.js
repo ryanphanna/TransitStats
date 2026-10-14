@@ -264,8 +264,9 @@ function rebuildTrips() {
 async function init() {
     let user = null;
     if (!DEMO) {
-        const auth = await requireAuth();
+        const auth = await requireAuth({ returnToPage: true });
         user = auth.user;
+        setStatus('Loading your trips…');
         await Profile.load(user);
         initHeader({ isAdmin: auth.isAdmin, currentPage: 'wrapped' });
     }
@@ -283,14 +284,20 @@ async function init() {
         return;
     }
 
-    TripController.listen(user.uid, onTrips);
+    TripController.listen(user.uid, onTrips, err => {
+        console.error('Wrapped trips failed to load:', err);
+        setStatus('Your trips could not be loaded. Check your connection and refresh to try again.');
+    });
     if (INCLUDE_PRESTO_TRIPS) {
         db.collection('prestoTransactions').where('userId', '==', user.uid).onSnapshot(
             snap => {
                 prestoRides = projectPrestoTripsForStats(buildPrestoTrips(snap.docs.map(doc => doc.data())));
                 rebuildTrips();
             },
-            err => console.error('PRESTO rides failed to load:', err),
+            err => {
+                console.error('PRESTO rides failed to load:', err);
+                setStatus('Your PRESTO rides could not be loaded. Refresh to try again.');
+            },
         );
     }
     await Trips.loadStopsLibrary();

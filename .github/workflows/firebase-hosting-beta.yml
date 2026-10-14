@@ -17,7 +17,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci && npm run build && cd functions && npm ci --omit=optional && cd ..
+      - run: npm ci && npm run build
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -27,6 +27,9 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
           VITE_BUILD_SHA: ${{ github.sha }}
       - run: npm install -g firebase-tools
+      # Beta shares the PRODUCTION Firebase project and database. It must only
+      # ever deploy hosting: deploying functions here would push them live to
+      # production users.
       - name: Deploy beta hosting
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
@@ -38,7 +41,7 @@ jobs:
           VITE_BUILD_SHA: ${{ github.sha }}
         run: |
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}' > /tmp/sa.json
-          GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json firebase deploy --only hosting:beta,functions --project transitstats-21ba4
+          GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json firebase deploy --only hosting:beta --project transitstats-21ba4
       - name: Verify deployed build
         env:
           EXPECTED_BUILD: ${{ github.sha }}

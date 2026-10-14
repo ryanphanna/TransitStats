@@ -1,4 +1,5 @@
 import { auth, authPersistenceReady, db } from './firebase.js';
+import { getFunctionUrl } from './shared/function-urls.js';
 
 /**
  * TransitStats V2 Authentication Module
@@ -12,9 +13,13 @@ const SHARED_SESSION_REFRESH_MS = 45 * 60 * 1000;
 const SHARED_SESSION_MIN_INTERVAL_MS = 30 * 1000;
 
 export const Auth = {
-    phoneApiUrl: 'https://us-central1-transitstats-21ba4.cloudfunctions.net/api',
+    phoneApiUrl: getFunctionUrl('api', import.meta.env, 'VITE_API_URL'),
     sharedSessionUrl: '/auth/session',
     _restorePromise: null,
+    // True only when the last cookie check got a definite "no session" answer
+    // (401/403/404 or no token). Network errors and 5xx leave it false so the
+    // auth guard keeps waiting instead of treating a flake as a sign-out.
+    lastRestoreFoundNoSession: false,
     _keepAliveBound: false,
     _keepAliveTimer: null,
     _lastKeepAliveSyncAt: 0,
@@ -268,11 +273,18 @@ export const Auth = {
         if (auth.currentUser) return auth.currentUser;
         if (!this._restorePromise) {
             this._restorePromise = (async () => {
+                this.lastRestoreFoundNoSession = false;
                 try {
                     const response = await fetch(this.sharedSessionUrl, { credentials: 'include' });
-                    if (!response.ok) return null;
+                    if (!response.ok) {
+                        this.lastRestoreFoundNoSession = [401, 403, 404].includes(response.status);
+                        return null;
+                    }
                     const data = await response.json();
-                    if (!data.token) return null;
+                    if (!data.token) {
+                        this.lastRestoreFoundNoSession = true;
+                        return null;
+                    }
                     await auth.signInWithCustomToken(data.token);
                     return auth.currentUser;
                 } catch (error) {
