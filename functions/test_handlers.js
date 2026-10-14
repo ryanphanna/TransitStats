@@ -120,6 +120,11 @@ function loadHandlers(overrides = {}) {
     },
     ...overrides.dbModule,
   };
+  // lookupStopCheck (the read-only agency guess) follows whatever lookupStop the test supplies.
+  dbModule.lookupStopCheck = overrides.dbModule?.lookupStopCheck || (async (...args) => {
+    const stop = await dbModule.lookupStop(...args);
+    return stop ? { status: 'found', stop } : { status: 'notFound', stop: null };
+  });
 
   const twilio = {
     sendSmsReply: async (phone, message) => { calls.sendSmsReply.push({ phone, message }); },
@@ -1475,4 +1480,23 @@ test('the owner in the app can end any of their trips, including ones a phone st
     await handlers.handleEndTrip('web:u1', { userId: 'u1', email: 'o@example.com', loginConfirmed: true }, 'Union', null, null);
   } finally { restore(); }
   assert.equal(calls.docUpdates.length, 1);
+});
+
+test('guessing between the default and last agency uses the read-only library check and skips Atlas', async () => {
+  const checks = [];
+  const { handlers, restore } = loadHandlers({
+    dbModule: {
+      getLastTripAgency: async () => 'GO Transit',
+      lookupStop: async () => null,
+      lookupStopCheck: async (code, name, agency, route, direction, options) => {
+        checks.push({ agency, options });
+        return { status: 'notFound', stop: null };
+      },
+    },
+  });
+  try {
+    await handlers.handleTripLog('+14165550001', { userId: 'u1', email: 'o@example.com' }, '88888', '510', null, 'TTC', {});
+  } finally { restore(); }
+  assert.ok(checks.length >= 2);
+  assert.ok(checks.every(c => c.options?.atlas === false), 'agency guessing must skip Atlas');
 });

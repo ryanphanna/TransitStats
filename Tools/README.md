@@ -21,6 +21,7 @@ Keep reusable scripts here. Do not create a second top-level scripts folder unle
 - `bulk-mark-duplicate-groups.js`
 - `clear-route-review-flags.js`
 - `retro-verify.js`
+- `backfill-atlas-stops.js` — dry-run-first repair: add missing Atlas stops and mark fully-resolved trips matched (undo file on `--apply`)
 - `audit-unresolved.js`
 
 ## Prediction and Intelligence

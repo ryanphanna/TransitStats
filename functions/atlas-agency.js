@@ -5,10 +5,16 @@ const ATLAS_R2_BASE = process.env.ATLAS_R2_BASE || 'https://data.transitatlas.fy
 const RIDER_LABEL_ALIASES = {
   hsr: 'hamilton',
   smart: 'smart-ca',
+  // "PRT" otherwise matches West Virginia University's PRT (wvu-prt) by name.
+  prt: 'port-authority-pa',
+  'port authority of allegheny county': 'port-authority-pa',
 };
 
 let directoryCache = null;
+let directoryFailure = null; // { at, error }: a failed fetch is remembered briefly so SMS handling is not slowed by retries
 const DIRECTORY_TTL_MS = 24 * 60 * 60 * 1000;
+const DIRECTORY_FAILURE_TTL_MS = 60 * 1000;
+const DIRECTORY_TIMEOUT_MS = 4000;
 
 function normalize(value) {
   return String(value || '')
@@ -25,15 +31,23 @@ async function getAgencyDirectory() {
     return directoryCache.agencies;
   }
 
-  const response = await fetch(`${ATLAS_R2_BASE}/atlas/agencies.json`, {
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!response.ok) throw new Error(`Atlas agency directory unavailable (${response.status})`);
+  if (directoryFailure && Date.now() - directoryFailure.at < DIRECTORY_FAILURE_TTL_MS) throw directoryFailure.error;
 
-  const data = await response.json();
-  const agencies = Array.isArray(data.agencies) ? data.agencies : [];
-  directoryCache = { fetchedAt: Date.now(), agencies };
-  return agencies;
+  try {
+    const response = await fetch(`${ATLAS_R2_BASE}/atlas/agencies.json`, {
+      signal: AbortSignal.timeout(DIRECTORY_TIMEOUT_MS),
+    });
+    if (!response.ok) throw new Error(`Atlas agency directory unavailable (${response.status})`);
+
+    const data = await response.json();
+    const agencies = Array.isArray(data.agencies) ? data.agencies : [];
+    directoryCache = { fetchedAt: Date.now(), agencies };
+    directoryFailure = null;
+    return agencies;
+  } catch (error) {
+    directoryFailure = { at: Date.now(), error };
+    throw error;
+  }
 }
 
 function chooseMatch(agencies, requested) {
@@ -79,4 +93,9 @@ async function resolveAtlasAgency(value) {
   return chooseMatch(agencies, value);
 }
 
-module.exports = { resolveAtlasAgency };
+function resetAgencyCachesForTests() {
+  directoryCache = null;
+  directoryFailure = null;
+}
+
+module.exports = { resolveAtlasAgency, chooseMatch, resetAgencyCachesForTests };
