@@ -5,8 +5,7 @@
  * Uses weights trained via ml/train_routes.py and ml/train_endstop.py.
  */
 
-const model = require('./model_v4.json');
-const endStopModel = require('./model_v4_endstop.json');
+const ModelStore = require('./model-store');
 const { getStopFeature, scopedRouteKey, normalizeDirectionForMl, displayScopedRouteLabel, displayScopedStopLabel, getGapFeatures, loadPolicies } = require('./ml_utils');
 const logger = require('./logger');
 const TopologyConstraints = require('./topology-constraints');
@@ -37,6 +36,8 @@ const PredictionEngineV4 = {
    */
   guessTopRoutes: function (context, topN = 5) {
     if (!context || !context.time) return [];
+    const model = ModelStore.current()?.routeV4;
+    if (!model) return [];
 
     const date = context.time instanceof Date ? context.time : new Date(context.time);
     const hour = date.getHours();
@@ -99,6 +100,8 @@ const PredictionEngineV4 = {
    * @param {Object} context - { route, startStopName, direction, time, lastEndStopName, lastRoute, minutesSinceLastTrip, agency, stopsLibrary }
    */
   guessTopEndStops: function (context, topN = 3) {
+    const endStopModel = ModelStore.current()?.endStopV4;
+    if (!endStopModel) return [];
     if (!context || !context.time || !context.startStopName) return [];
 
     const date = context.time instanceof Date ? context.time : new Date(context.time);

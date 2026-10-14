@@ -29,6 +29,7 @@ const { NetworkEngine } = require('./network.js');
 const { HabitEngine } = require('./habit');
 const { PredictionEngineV4 } = require('./predict_v4.js');
 const { PredictionEngineV5 } = require('./predict_v5.js');
+const ModelStore = require('./model-store');
 const logger = require('./logger');
 const finalization = require('./finalization');
 const { checkMlTasks } = require('./ml-tasks');
@@ -45,10 +46,6 @@ const {
 } = require('./gemini');
 const { parseStopInput } = require('./parsing');
 const { getEligibility, artifactSupportsAgency } = require('./intelligence-eligibility');
-const routeV4Meta = require('./model_v4_meta.json');
-const routeV5Meta = require('./model_v5_meta.json');
-const endStopV4Meta = require('./model_v4_endstop_meta.json');
-const endStopV5Meta = require('./model_v5_endstop_meta.json');
 const {
   correctPredictionByGtfs,
   agencySuffix,
@@ -252,6 +249,9 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       || history.find(trip => trip.agency)?.agency
       || resolvedAgency
       || null;
+    // Models are private and only trained on allowlisted users; everyone else gets rule-based predictions.
+    const mlModels = ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
+    const { routeV4Meta, routeV5Meta, endStopV4Meta, endStopV5Meta } = mlModels || {};
     const now = new Date();
     const eligibility = getEligibility(history, resolvedAgency);
     const mlRouteReady = eligibility.routeEligible &&
@@ -468,6 +468,9 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
       || history.find(trip => trip.agency)?.agency
       || newTrip.agency
       || null;
+    // Models are private and only trained on allowlisted users; everyone else gets rule-based predictions.
+    const mlModels = ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
+    const { routeV4Meta, routeV5Meta, endStopV4Meta, endStopV5Meta } = mlModels || {};
     const now = new Date();
     const confirmEligibility = getEligibility(history, newTrip.agency);
     const confirmMlRouteReady = confirmEligibility.routeEligible &&

@@ -19,10 +19,15 @@ from firebase_admin import credentials, firestore
 
 # --- Config ---
 PROJECT_ID = os.environ.get("TRANSITSTATS_PROJECT_ID", "transitstats-21ba4")
-KEY_PATH = os.path.expanduser(
+KEY_PATH = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") or os.path.expanduser(
     "~/Desktop/Dev/Credentials/Firebase for Transit Stats.json"
 )
 OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "trips.csv")
+
+# Comma-separated Firebase user IDs whose trips may be used for training. Required (set it from
+# a secret, never in the repo): the trained models contain real stop and route names, so they
+# must only ever learn from the people who agreed to it.
+TRAIN_USER_IDS = [u.strip() for u in os.environ.get("TRAIN_USER_IDS", "").split(",") if u.strip()]
 
 COLUMNS = [
     "trip_id",
@@ -86,6 +91,13 @@ def has_blocking_correction(trip):
     return any(field in high_impact for field in corrected_fields)
 
 
+def stream_allowed_trips(db):
+    """Yield trip docs for allowlisted users only (Firestore 'in' queries take up to 30 values)."""
+    for i in range(0, len(TRAIN_USER_IDS), 30):
+        chunk = TRAIN_USER_IDS[i:i + 30]
+        yield from db.collection("trips").where("userId", "in", chunk).stream()
+
+
 def main():
     if not os.path.exists(KEY_PATH):
         print(f"ERROR: Service account key not found at {KEY_PATH}")
@@ -95,8 +107,12 @@ def main():
     app = firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID})
     db = firestore.client(app=app)
 
-    print("Fetching trips from Firestore...")
-    docs = db.collection("trips").stream()
+    if not TRAIN_USER_IDS:
+        print("ERROR: TRAIN_USER_IDS is empty. Refusing to export trips for all users.")
+        sys.exit(1)
+
+    print(f"Fetching trips from Firestore for {len(TRAIN_USER_IDS)} allowlisted user(s)...")
+    docs = stream_allowed_trips(db)
 
     rows = []
     skipped = 0

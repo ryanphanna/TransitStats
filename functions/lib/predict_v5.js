@@ -5,9 +5,7 @@
  * Uses models trained via ml/train_routes.py and ml/train_endstop.py.
  */
 
-const path = require('path');
-const meta = require('./model_v5_meta.json');
-const endStopMeta = require('./model_v5_endstop_meta.json');
+const ModelStore = require('./model-store');
 const { getStopFeature, scopedRouteKey, normalizeDirectionForMl, displayScopedRouteLabel, displayScopedStopLabel, getGapFeatures, loadPolicies } = require('./ml_utils');
 const logger = require('./logger');
 const TopologyConstraints = require('./topology-constraints');
@@ -22,28 +20,11 @@ try {
 
 loadPolicies();
 
-let _session = null;
-let _endStopSession = null;
-
 let _topology = null;
 try {
   _topology = require('./topology.json');
 } catch (e) {
   // topology filter disabled
-}
-
-async function getSession() {
-  if (_session) return _session;
-  const ort = require('onnxruntime-node');
-  _session = await ort.InferenceSession.create(path.join(__dirname, 'model_v5.onnx'));
-  return _session;
-}
-
-async function getEndStopSession() {
-  if (_endStopSession) return _endStopSession;
-  const ort = require('onnxruntime-node');
-  _endStopSession = await ort.InferenceSession.create(path.join(__dirname, 'model_v5_endstop.onnx'));
-  return _endStopSession;
 }
 
 const PredictionEngineV5 = {
@@ -55,6 +36,8 @@ const PredictionEngineV5 = {
    */
   guessTopRoutes: async function (context, topN = 5) {
     if (!context || !context.time) return [];
+    const meta = ModelStore.current()?.routeV5Meta;
+    if (!meta) return [];
 
     const date = context.time instanceof Date ? context.time : new Date(context.time);
     const hour = date.getHours();
@@ -97,7 +80,7 @@ const PredictionEngineV5 = {
 
     try {
       const ort = require('onnxruntime-node');
-      const session = await getSession();
+      const session = await ModelStore.getOnnxSession('route');
       const tensor = new ort.Tensor('float32', x, [1, meta.feature_names.length]);
       const results = await session.run({ float_input: tensor });
       const probs = results.probabilities.data;
@@ -118,6 +101,8 @@ const PredictionEngineV5 = {
    */
   guessTopEndStops: async function (context, topN = 3) {
     if (!context || !context.time || !context.startStopName) return [];
+    const endStopMeta = ModelStore.current()?.endStopV5Meta;
+    if (!endStopMeta) return [];
 
     const date = context.time instanceof Date ? context.time : new Date(context.time);
     const hour  = date.getHours();
@@ -160,7 +145,7 @@ const PredictionEngineV5 = {
 
     try {
       const ort = require('onnxruntime-node');
-      const session = await getEndStopSession();
+      const session = await ModelStore.getOnnxSession('endStop');
       const tensor = new ort.Tensor('float32', x, [1, endStopMeta.feature_names.length]);
       const results = await session.run({ float_input: tensor });
       const probs = Array.from(results.probabilities.data);
