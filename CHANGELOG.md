@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Picking a public identity someone already has now says so.** You see "That one's taken. Try another combination." next to the picker, and can change an emoji and save again.
 - **Saving a public identity works again.**
 - **PRESTO import is now available to everyone.** Every signed-in user can import their PRESTO history from the import page and settings, and new accounts with no rides see the import prompt.
 - **No more all-caps labels.** Removed the last uppercase styling (e.g. "Recent activity", the route heatmap heading), and a test now blocks it coming back.

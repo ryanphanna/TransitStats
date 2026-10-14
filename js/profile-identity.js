@@ -4,6 +4,20 @@ import { Identity } from './identity.js';
 import { UsernameGenerator } from './username-generator.js';
 import { getEmojiUsername } from './profile-fields.js';
 
+export const IDENTITY_TAKEN_MESSAGE = "That one's taken. Try another combination.";
+const IDENTITY_HELP_DEFAULT = 'Choose carefully — this identity can’t be changed later.';
+
+// Shown next to the picker as well as in the toast, so the reason stays
+// visible while the person picks again.
+function setIdentityNote(message) {
+    const help = document.getElementById('settings-identity-help');
+    if (!help) return;
+    help.textContent = message || IDENTITY_HELP_DEFAULT;
+    help.classList.toggle('settings-identity-taken', Boolean(message));
+    if (message) help.setAttribute('role', 'alert');
+    else help.removeAttribute('role');
+}
+
 export function updateUsernameDisplay(profile) {
     const display = document.getElementById('settings-username-display');
     if (display) display.textContent = `@${Identity.toSlug(profile.currentTriplet)}`;
@@ -50,6 +64,7 @@ export function initializeIdentityPicker(profile) {
         if (slot) slot.textContent = Identity.LIBRARY[item.dataset.key];
         popover.classList.add('hidden');
         updateUsernameDisplay(profile);
+        setIdentityNote(null);
     });
 }
 
@@ -68,7 +83,9 @@ export async function reserveUsername(profile, username) {
             [...new Set([username, legacyUsername])].map(candidate => db.collection('usernames').doc(candidate).get()),
         );
         if (usernameDocs.some(existing => existing.exists())) {
-            UI.showNotification('That public identity is already in use. Choose another.');
+            // Keep the picker as it is so they can change a slot and save again.
+            UI.showNotification(IDENTITY_TAKEN_MESSAGE);
+            setIdentityNote(IDENTITY_TAKEN_MESSAGE);
             return;
         }
 
