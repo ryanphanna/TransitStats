@@ -123,6 +123,8 @@ export const Trips = {
         // A load error must never be mistaken for "no rides yet" — the CTA
         // stays hidden whenever the trip listener is broken.
         const isEmpty = trips.length === 0 && this._prestoTrips.length === 0;
-        setAtlasCardEmptyState(isEmpty && !this.loadError);
+        // /import is limited to admins and the PRESTO pilot, so only they get the CTA.
+        const canImport = window.isAdmin === true || window.userPilot === 'presto';
+        setAtlasCardEmptyState(isEmpty && !this.loadError && canImport);
     },
 };
