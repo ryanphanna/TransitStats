@@ -38,6 +38,7 @@ const { getConfiguredPrimaryAgency } = require('./primary-agency');
 const handlers = require('./handlers');
 const { createInviteHandlers } = require('./sms-invite');
 const { getAuth } = require('firebase-admin/auth');
+const { UNLOCK_PROMPT_TEXT, UNLOCK_UNAVAILABLE_TEXT, isPhoneConfirmed } = require('./phone-confirmation');
 
 let inviteHandlers = null;
 function getInviteHandlers() {
@@ -74,6 +75,24 @@ async function handleUnknownNumber(phoneNumber, upperBody, trace) {
   // get no reply.
   if (OPT_OUT_KEYWORDS.test(upperBody) || OPT_IN_KEYWORDS.test(upperBody)) return;
   await getInviteHandlers().handleUnknownSender(phoneNumber, trace);
+}
+
+// Commands that read or change existing data. An unconfirmed number (see
+// phone-confirmation.js) never reaches these; it may only log trips.
+const DATA_COMMANDS = /^(NOTES|ASK|SETTINGS|STATUS|STATS|FORGOT|DISCARD|UNLINK)\b/i;
+
+/**
+ * An unconfirmed number asked for something beyond logging a trip: email the
+ * code now (under the usual per-number limit) and tell them how to unlock.
+ */
+async function promptUnlock(phoneNumber, link) {
+  if (!link.email) {
+    await sendSmsReply(phoneNumber, UNLOCK_UNAVAILABLE_TEXT);
+    return;
+  }
+  if (!(await shouldRespondToUnknown(phoneNumber))) return;
+  await getInviteHandlers().startPhoneConfirmation(phoneNumber, link.email);
+  await sendSmsReply(phoneNumber, UNLOCK_PROMPT_TEXT);
 }
 
 /** Commands that are allowed to fall through pending-state handlers to normal dispatch. */
@@ -167,6 +186,10 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
       await handleUnknownNumber(phoneNumber, upperBody, trace);
       return '';
     }
+    if (!isPhoneConfirmed(user)) {
+      await promptUnlock(phoneNumber, user);
+      return '';
+    }
     await handlers.handleMmsTrip(phoneNumber, user, mediaUrl, receivedAt, trace);
     return '';
   }
@@ -179,6 +202,17 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
   const user = await getUserByPhone(phoneNumber);
   if (!user) {
     await handleUnknownNumber(phoneNumber, upperBody, trace);
+    return '';
+  }
+
+  // 5.5 Unconfirmed number: trip logging only, nothing that reads or changes
+  // existing data (including the AI and fallback paths).
+  if (!isPhoneConfirmed(user)) {
+    if (!DATA_COMMANDS.test(body.trim())) {
+      const prefixed = body.match(/^START\s+(.{1,160})$/i);
+      if (await handleTripFlow(phoneNumber, user, prefixed ? prefixed[1] : body, receivedAt, trace)) return '';
+    }
+    await promptUnlock(phoneNumber, user);
     return '';
   }
 
@@ -484,6 +518,10 @@ async function handlePendingState(phoneNumber, body, upperBody, state, traceId =
   };
 
   if (stateHandlers[state.type]) {
+    // An unconfirmed number may only answer a trip prompt with a choice; DISCARD,
+    // FORGOT and the rest change data and are left to the main gate.
+    const link = await getUserByPhone(phoneNumber);
+    if (link && !isPhoneConfirmed(link) && !/^(\d+|SKIP|START)$/.test(upperBody.trim())) return false;
     return stateHandlers[state.type]();
   }
 

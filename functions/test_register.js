@@ -109,6 +109,8 @@ test('verification links the phone to the Auth uid, ignoring any profile with a 
   assert.equal(calls.profileQueries.length, 0);
   assert.equal(calls.phoneSets.length, 1);
   assert.equal(calls.phoneSets[0].value.userId, 'auth-uid');
+  // Replying with the emailed code is what confirms a number.
+  assert.equal(calls.phoneSets[0].value.loginConfirmed, true);
 });
 
 test('verification does not link when the Auth account is gone or unverified', async () => {

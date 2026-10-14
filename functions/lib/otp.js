@@ -1,7 +1,7 @@
 const { createHash, randomInt } = require('crypto');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
-const PHONE_LOGIN_UNCONFIRMED = 'Sign in once with the link we emailed you, then you can use text codes too.';
+const { OTP_UNCONFIRMED_TEXT: PHONE_LOGIN_UNCONFIRMED, isPhoneConfirmed } = require('./phone-confirmation');
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 const OTP_DAILY_LIMIT = 5;
 const OTP_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -47,7 +47,7 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
       // Ineligible numbers go through the same limits, store a decoy record whose
       // empty code can never match, send nothing, and get the same answer.
       const phoneDoc = await db.collection('phoneNumbers').doc(phoneNumber).get();
-      const eligible = phoneDoc.exists && phoneDoc.data()?.loginConfirmed !== false;
+      const eligible = phoneDoc.exists && isPhoneConfirmed(phoneDoc.data());
       if (!eligible) {
         logger.warn('OTP Request skipped: number not registered or not confirmed', { phoneNumber, traceId }, traceId);
       }
@@ -216,7 +216,7 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
         res.status(400).json({ error: 'Registration record not found for this phone number.' });
         return;
       }
-      if (phoneDoc.data()?.loginConfirmed === false) {
+      if (!isPhoneConfirmed(phoneDoc.data())) {
         res.status(400).json({ error: PHONE_LOGIN_UNCONFIRMED });
         return;
       }

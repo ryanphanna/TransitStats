@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **A number added by invite now has to be confirmed before it can see or change your data.** It can log trips right away. The first time it asks for anything else (stats, history, discard, settings), it emails a code to the account to reply with. Signing in on the website no longer counts as confirming a phone.
 - **Wrapped now fits the window without scrolling on laptops.** It uses the same page background as the rest of the app, the top bar no longer covers the printer and ticket, and the stub and ticket scale together to the window height (phones still stack and scroll). The downloaded image is unchanged.
 - **Signed-out visitors on the local dev server go straight to login.** The dashboard used to sit on its loading skeleton for a minute because the session check got an HTML page instead of an answer.
 - **Google Analytics can now actually load.** The site's security policy was blocking it, so no visits were being counted. Only the Google Analytics addresses were allowed.

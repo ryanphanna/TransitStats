@@ -361,6 +361,8 @@ async function handleVerificationCode(phoneNumber, code, traceId = null) {
     userId,
     email: verificationData.email,
     registeredAt: FieldValue.serverTimestamp(),
+    // The code went to the account's own email, so this number is proven.
+    loginConfirmed: true,
   });
 
   await clearPendingState(phoneNumber);

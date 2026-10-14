@@ -123,7 +123,7 @@ test('POST with an unverified email is refused even if the address is allowed', 
   assert.equal(res.headers['Set-Cookie'], undefined);
 });
 
-test('a verified-email sign-in confirms text-provisioned phone links; a phone-only session cannot', async () => {
+test('a web sign-in never confirms any phone link, whatever the token', async () => {
   const updates = [];
   const db = {
     collection: (name) => ({
@@ -144,7 +144,8 @@ test('a verified-email sign-in confirms text-provisioned phone links; a phone-on
   const res = makeRes();
   await verified(makeReq({ method: 'POST', host: 'transitstats.fyi', headers: { Authorization: 'Bearer tok' } }), res);
   assert.equal(res.statusCode, 204);
-  assert.deepEqual(updates, [{ loginConfirmed: true }]);
+  // Signing in on the web proves nothing about a phone number.
+  assert.deepEqual(updates, []);
 
   updates.length = 0;
   const phoneOnly = loadHandler({
