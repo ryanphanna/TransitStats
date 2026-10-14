@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Saving a public identity works again.**
 - **Opening Wrapped while signed out now goes to the login page instead of loading forever**, and signing in brings you back to Wrapped. A failed trip load now shows an error instead of spinning.
 - **Signed-out visitors are sent to login right away on every page.** The 60-second wait is now kept only when a saved session might still be restoring, so a visitor who was never signed in no longer waits.
 - **PRESTO import preview now shows what it skipped and cancels refunded fares.** Row types it doesn't import (e.g. "3 Refund, 2 Autoload") are listed, and a fare that a matching refund reverses is left out instead of counting as a ride.

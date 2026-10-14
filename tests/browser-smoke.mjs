@@ -30,10 +30,11 @@ async function startServerIfNeeded() {
     throw new Error(`Vite did not become ready at ${baseUrl}`);
 }
 
-async function assertSignedOutRedirect(page, path) {
+async function assertSignedOutRedirect(page, path, expected = '/') {
     await page.goto(`${baseUrl}${path}`, { waitUntil: 'domcontentloaded' });
-    await page.waitForURL(`${baseUrl}/`, { timeout: 20_000 });
-    assert.equal(new URL(page.url()).pathname, '/');
+    await page.waitForURL(`${baseUrl}${expected}`, { timeout: 20_000 });
+    const url = new URL(page.url());
+    assert.equal(url.pathname + url.search, expected);
 }
 
 await startServerIfNeeded();
@@ -42,7 +43,7 @@ try {
     const page = await browser.newPage();
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await assertSignedOutRedirect(page, '/dashboard');
-    await assertSignedOutRedirect(page, '/settings');
+    await assertSignedOutRedirect(page, '/wrapped', '/?next=%2Fwrapped');
 
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await page.locator('#auth-phone').waitFor();
