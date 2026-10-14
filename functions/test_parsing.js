@@ -213,3 +213,30 @@ test('heuristic: motion sentence rejected', () => {
 test('heuristic: stop too long rejected', () => {
   assert.equal(isHeuristicLogValid('A'.repeat(61), '510'), false);
 });
+
+test('multi-line: a third line that is not a known agency is never stored as the agency', () => {
+  for (const junk of ['Downtown', 'Union Station', 'Somewhere']) {
+    const result = parseMultiLineTripFormat(`506\nCollege\n${junk}`, DEFAULT_AGENCY);
+    assert.equal(result.agency, DEFAULT_AGENCY, junk);
+    assert.equal(result.agencyExplicit, false, junk);
+    assert.equal(result.direction, null, junk);
+  }
+});
+
+test('multi-line: typos and cut-off words on line 3 are read as the direction', () => {
+  const cases = { Northa: 'Northbound', Sout: 'Southbound', Nort: 'Northbound', Sotuh: 'Southbound', Eastb: 'Eastbound', Wset: 'Westbound' };
+  for (const [typed, expected] of Object.entries(cases)) {
+    const result = parseMultiLineTripFormat(`506\nCollege\n${typed}`, DEFAULT_AGENCY);
+    assert.equal(result.direction, expected, typed);
+    assert.equal(result.agencyExplicit, false, typed);
+  }
+});
+
+test('multi-line: agency aliases on line 3 or 4 resolve to the canonical agency', () => {
+  assert.equal(parseMultiLineTripFormat('47\nLansdowne\nGO', DEFAULT_AGENCY).agency, 'GO Transit');
+  const four = parseMultiLineTripFormat('47\nLansdowne\nNorth\nMFTA', DEFAULT_AGENCY);
+  assert.equal(four.agency, 'NFTA Metro');
+  assert.equal(four.direction, 'Northbound');
+  const junkFour = parseMultiLineTripFormat('47\nLansdowne\nNorth\nDowntown', DEFAULT_AGENCY);
+  assert.equal(junkFour.agency, DEFAULT_AGENCY);
+});

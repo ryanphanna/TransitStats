@@ -1,7 +1,7 @@
 /**
  * Message parsing logic for transit trip tracking
  */
-const { KNOWN_AGENCIES } = require('./constants');
+const { KNOWN_AGENCIES, AGENCY_CANONICAL } = require('./constants');
 const { toTitleCase, normalizeDirection, normalizeRoute, normalizeAgency } = require('./utils');
 
 const CANONICAL_DIRECTIONS = new Set([
@@ -10,6 +10,55 @@ const CANONICAL_DIRECTIONS = new Set([
   'Up Valley', 'Down Valley',
   'Up Mountain', 'Down Mountain',
 ]);
+
+const KNOWN_AGENCY_NAMES = new Map([
+  ...KNOWN_AGENCIES.map((name) => [name.toLowerCase(), normalizeAgency(name)]),
+  ...Object.entries(AGENCY_CANONICAL),
+]);
+
+/** The canonical agency for a line only when it is a known agency name or alias; otherwise null. */
+function resolveKnownAgency(text) {
+  const key = String(text || '').trim().toLowerCase();
+  return key ? KNOWN_AGENCY_NAMES.get(key) || null : null;
+}
+
+// Long direction words that a hurried text ("Northa", "Sout") is probably a slip for.
+const LOOSE_DIRECTION_WORDS = [
+  ['northbound', 'Northbound'], ['southbound', 'Southbound'], ['eastbound', 'Eastbound'], ['westbound', 'Westbound'],
+  ['north', 'Northbound'], ['south', 'Southbound'], ['east', 'Eastbound'], ['west', 'Westbound'],
+  ['inbound', 'Inbound'], ['outbound', 'Outbound'], ['clockwise', 'Clockwise'],
+];
+
+// Optimal-string-alignment distance (one typo, including a swapped pair, costs 1).
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 0; j <= b.length; j += 1) d[0][j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+/**
+ * Direction from an exact word, or from a near miss: a cut-off word ("Sout", "Northb") or one
+ * typo ("Northa", "Sotuh"). Anything else returns null so it is never mistaken for a direction.
+ */
+function looseDirection(text) {
+  const exact = normalizeDirection(text);
+  // normalizeDirection hands unknown text back as-is, so only recognized directions count.
+  if (CANONICAL_DIRECTIONS.has(exact)) return exact;
+  const word = String(text || '').trim().toLowerCase();
+  if (!/^[a-z]{3,}$/.test(word)) return null;
+  for (const [candidate, direction] of LOOSE_DIRECTION_WORDS) {
+    if (candidate.startsWith(word)) return direction;
+    if (word.length >= 4 && editDistance(word, candidate) <= 1) return direction;
+  }
+  return null;
+}
 
 /**
  * Parse stop input to determine if it's a stop code (all digits) or stop name (contains letters)
@@ -98,9 +147,9 @@ function parseMultiLineTripFormat(body, defaultAgency) {
   if (isRouteDirectionStop) {
     direction = line2Direction;
     if (lines.length > 3) {
-      const potentialAgency = lines[3].trim();
-      if (potentialAgency) {
-        agency = normalizeAgency(potentialAgency);
+      const knownAgency = resolveKnownAgency(lines[3]);
+      if (knownAgency) {
+        agency = knownAgency;
         agencyExplicit = true;
       }
     }
@@ -108,13 +157,20 @@ function parseMultiLineTripFormat(body, defaultAgency) {
     if (CANONICAL_DIRECTIONS.has(line3Direction)) {
       direction = line3Direction;
     } else {
-      agency = normalizeAgency(lines[2]);
-      agencyExplicit = true;
+      // Only a known agency name or alias counts as an agency; a near-miss direction ("Northa")
+      // is read as the direction, and anything else is ignored rather than stored as an agency.
+      const knownAgency = resolveKnownAgency(lines[2]);
+      if (knownAgency) {
+        agency = knownAgency;
+        agencyExplicit = true;
+      } else {
+        direction = looseDirection(lines[2]);
+      }
     }
     if (lines.length > 3) {
-      const potentialAgency = lines[3].trim();
-      if (potentialAgency) {
-        agency = normalizeAgency(potentialAgency);
+      const knownAgency = resolveKnownAgency(lines[3]);
+      if (knownAgency) {
+        agency = knownAgency;
         agencyExplicit = true;
       }
     }

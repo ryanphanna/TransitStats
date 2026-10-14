@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Texted trips no longer get a made-up agency.** A third line like "Downtown" or a typo such as "Northa" used to be saved as the agency, which kept those trips out of predictions. Typos are now read as the direction, and only real agency names count as agencies.
 - **Agency names are cleaned up in one place.** "MFTA" and "NFTA" now both become NFTA Metro, and "GO" becomes GO Transit, wherever an agency is typed by text message.
 - **Icons are bundled with the app and the map library no longer blocks the first paint.** Icons used to load from a CDN at an unpinned version on every page; now only the icons the app uses ship with it.
 - **Pages show your data sooner after you navigate.** Signed-in pages no longer wait on the shared-session sync before rendering.
