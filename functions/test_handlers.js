@@ -550,6 +550,35 @@ test('handleTripLog: a firing habit changes only the reply; V3/V4/V5 still run a
   assert.doesNotMatch(reply, /Bathurst/);
 });
 
+test('handleTripLog: non-admin on a habit trip gets the unchanged reply, habit still stored', async () => {
+  const habitEngine = {
+    VERSION: '2.0.0',
+    load: async () => [{ schema: 2 }],
+    match: (habits, stop) => ({ stop, route: '510', direction: 'Westbound', endStop: 'Spadina Station', confidence: 0.8, count: 4 }),
+    rebuild: async () => [],
+  };
+  const run = async (habit) => {
+    const { handlers, calls, restore } = loadHandlers({
+      dbModule: { isEmailAdmin: async () => false },
+      habit: { HabitEngine: { ...habitEngine, match: habit ? habitEngine.match : () => null } },
+    });
+    try {
+      await handlers.handleTripLog('+14165550033', { userId: 'u33' }, '11985', '510', 'Westbound', 'TTC');
+    } finally {
+      restore();
+    }
+    return calls;
+  };
+  const withHabit = await run(true);
+  const without = await run(false);
+  assert.equal(withHabit.createTrip[0].habitPrediction.endStop, 'Spadina Station');
+  assert.equal(without.createTrip[0].habitPrediction, null);
+  const reply = withHabit.sendSmsReply[0].message;
+  assert.equal(reply, without.sendSmsReply[0].message);
+  assert.doesNotMatch(reply, /Usual trip|Spadina Station/);
+  assert.match(reply, /\n\nEND \[stop\] to finish\. FORGOT if forgot to end\.$/);
+});
+
 function habitActiveTrip(overrides = {}) {
   return {
     id: 'trip_h', userId: 'u32', route: '510', direction: 'Westbound', agency: 'TTC',

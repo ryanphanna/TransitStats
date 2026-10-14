@@ -8,7 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
-- **"Usual trip to ..." now appears when you board a trip you regularly take.** It shows when a weekday or weekend trip from that stop around that time usually ends at the same place, and keeps the END/FORGOT instructions. Offline it's right 84% of the time it shows, and overall end-stop predictions improve from 28% to 32% right (31% to 39% in the last 90 days).
+- **The "usual trip" end-stop prediction works now (admins only).** When a weekday or weekend trip from that stop around that time usually ends at the same place, admins see "Usual trip to ..." instead of the suggested list. Offline it's right 84% of the time it shows, and admin end-stop suggestions improve from 28% to 32% right (31% to 39% in the last 90 days). Other users' replies are unchanged; the habit is still recorded and graded for everyone.
 - **Wrapped now fits the window without scrolling on laptops.** It uses the same page background as the rest of the app, the top bar no longer covers the printer and ticket, and the stub and ticket scale together to the window height (phones still stack and scroll). The downloaded image is unchanged.
 - **Signed-out visitors on the local dev server go straight to login.** The dashboard used to sit on its loading skeleton for a minute because the session check got an HTML page instead of an answer.
 - **Google Analytics can now actually load.** The site's security policy was blocking it, so no visits were being counted. Only the Google Analytics addresses were allowed.

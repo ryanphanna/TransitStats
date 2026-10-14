@@ -113,6 +113,8 @@ What changed in `functions/lib/habit.js`:
 - **Stale rule:** a habit seen in the last 30 days is never marked stale. With weekday-wide slots, two routes ridden from the same stop marked each other stale. Coverage rose from 11.7% to 12.5%; the Served row is unchanged.
 - History window unchanged (200 trips at rebuild).
 - **Serving (`handlers-trip.js`):** the habit reply keeps the standard END/FORGOT line, which it used to drop, and the stored version is `habit_v2`.
+- **Serving, follow-up:** when a habit fires, V3/V4/V5 still run and are stored and graded as on any other trip, so live `predictionStats` stay complete. Admin "END 1" on a habit trip maps to the habit's end stop; V3's stored list is untouched, and a non-admin END 1 never resolves.
+- **Admin-only (Ryan's decision):** "Usual trip to X." is shown to admins only, gated like V3's list. Non-admin replies are byte-for-byte unchanged. The habit still runs, and is stored and graded, for everyone.
 
 Tuning: a sweep over the real habit.js (threshold 0) covered day grouping (exact day / weekday-weekend), bucket width (2/3/4 h), history (200/500/2000 trips), minimum trips, smoothing, half-life and threshold. Picked on the 249 rows before the last 90 days only.
 - Exact-day buckets stay too sparse at any setting: +1 to +2 points.
@@ -143,6 +145,6 @@ Decision: ship it as a correctness fix with a gain. The served row beats V3 on t
 UX (proposal, not implemented):
 - Keep the habit replacing V3's list. On the rows where both answer, the habit is more precise, and V3's list adds no extra top-3 hits.
 - Showing the habit first with V3's list after it is equivalent (+0.5 top-3) and could be adopted cheaply.
-- Non-admin users never see V3's list (`getPredictionPrompt(null)`). For them the habit is a new message, the only end-stop prediction they ever see (about 12% of trips), so the "else V3 top-3" row describes the admin view only.
-- On habit trips, `endStopPrediction`/`endStopPredictions` are null. So the admin "END 1" shortcut is unavailable on those trips, and the web Atlas stop resolver gets no end-stop hint. It reads those fields, not `habitPrediction`.
-- When the habit fires, serving skips V3/V4/V5, so live `v3-endstop` stats lose those trips. They are graded as `habit-endstop` instead. `finalization.js` grades `habitPrediction.endStop`, which is correct.
+- End-stop suggestions are admin-only. Admins see "Usual trip to X." in place of V3's list; non-admins see no end-stop hint. The "Served" row is the admin view.
+- Habit trips store V3's `endStopPrediction`/`endStopPredictions` too, so the web Atlas stop resolver keeps its end-stop hints.
+- `finalization.js` grades `habitPrediction.endStop` as `habit-endstop`, which is correct. V3/V4/V5 are graded separately; they also run on habit trips.

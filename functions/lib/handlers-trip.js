@@ -413,7 +413,8 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
   if (resolvedAgency) lookupAgencyTimezone(resolvedAgency, traceId).catch(() => {});
 
   let replyBody = `Started ${routeDisplay} from ${finalStopDisplay}${agencySuffix(resolvedAgency, defaultAgency)}.`;
-  if (habitPrediction?.endStop) {
+  // End-stop suggestions are admin-only; non-admins always get the plain END/FORGOT prompt.
+  if (isAdmin && habitPrediction?.endStop) {
     // Keep the END/FORGOT instructions the normal prompt carries.
     replyBody += `\n\nUsual trip to ${habitPrediction.endStop}.` + getPredictionPrompt(null);
   } else {
