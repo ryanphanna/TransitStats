@@ -371,11 +371,18 @@ def main():
     agencies = sorted(df['agency_id'].dropna().unique().tolist())
     # The 80/20 split only measures accuracy (the regression gate reads it). The shipped model is
     # refit on 100% of trips: holding back the newest 20% cost about 6 points top-1 (EVAL.md).
-    v4_m, v4_le = train_v4(X_train, y_train, classes, weights_train=w_train)
+    # With small class minimums an end stop can appear only in the newest 20%; XGBoost needs every
+    # encoded class in training, so the metric fit uses the training classes and skips those test rows.
+    metric_classes = sorted(y_train.unique())
+    seen = y_test.isin(metric_classes)
+    if not seen.all():
+        print(f"  [warn] {(~seen).sum()} test trips whose end stop only appears in the newest 20% skipped in metrics")
+    X_test, y_test = X_test[seen.values], y_test[seen.values]
+    v4_m, v4_le = train_v4(X_train, y_train, metric_classes, weights_train=w_train)
     v4_t1, v4_t3 = evaluate(v4_m, X_test, y_test, v4_le, "V4")
     v4_m, v4_le = train_v4(X, y, classes, weights_train=weights)
     export_v4(v4_m, v4_le, feature_names, v4_t1, v4_t3, len(df), agencies)
-    v5_m, v5_le = train_v5(X_train, y_train, classes, weights_train=w_train)
+    v5_m, v5_le = train_v5(X_train, y_train, metric_classes, weights_train=w_train)
     v5_t1, v5_t3 = evaluate(v5_m, X_test, y_test, v5_le, "V5")
     v5_m, v5_le = train_v5(X, y, classes, weights_train=weights)
     export_v5(v5_m, v5_le, feature_names, v5_t1, v5_t3, len(df), agencies)

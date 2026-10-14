@@ -243,3 +243,7 @@ V3 has 43% coverage at 66% precision.
 5. **Unseen start stops (H4):** training copies of each row without the stop one-hot gave +1 for both models. That is within noise and not shipped.
 6. **Promotion:** both models beat V3 as served with a CI above 0. Neither beats B3 on full history: V4 is -0.6, CI [-7.5, +6.2]. Serving them to users therefore isn't justified by this eval.
    - **Decision:** ship the training and serving changes as freshness and correctness fixes for the shadow models, not as a user-facing switch.
+7. **The current regression gate will reject the first retrain.** It isn't a real regression.
+   - The gate compares each run's own 80/20 top-1, which drops from about 79% to 61% on the same export once the filters are relaxed, because the holdout now keeps the rare-stop rows the old filters hid. The gate's limit is a 5-point drop.
+   - **Needs** either a one-time baseline reset or the harness-based gate proposed above.
+   - **Deploy order:** functions must deploy before the first retrain with this script. Old serving ignores `time_basis` and would feed UTC hours to a local-time model.
