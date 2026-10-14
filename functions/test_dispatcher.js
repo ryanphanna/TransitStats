@@ -15,6 +15,7 @@ function buildHarness({
   shouldRespondToUnknown = false,
   pendingState = null,
   singleLineTrip = null,
+  handlers: handlerOverrides = {},
 } = {}) {
   const calls = {
     checkIdempotency: 0,
@@ -59,6 +60,7 @@ function buildHarness({
     fillPredictions: async () => {},
     handleConfirmStart: async () => {},
     handleVerificationCode: async () => {},
+    ...handlerOverrides,
   };
 
   const dbModule = {
@@ -651,6 +653,11 @@ test('dispatcher: unlock emails are rate limited, and a link with no email canno
   assert.equal(noEmail.calls.confirmations.length, 0);
   assert.equal(noEmail.calls.handleStatus, 0);
   assert.equal(noEmail.calls.sendSmsReply.length, 1);
+
+  // The no-email reply obeys the same once-per-window limit.
+  const noEmailLimited = buildHarness({ user: { userId: 'user_1', loginConfirmed: false }, shouldRespondToUnknown: false });
+  await noEmailLimited.dispatch('+14165551234', 'STATS', 'SM_NE2');
+  assert.equal(noEmailLimited.calls.sendSmsReply.length, 0);
 });
 
 test('dispatcher: confirmed links (true or field missing) keep full access', async () => {
@@ -681,4 +688,39 @@ test('dispatcher: a code reply from an unconfirmed number reaches verification',
   });
   await dispatch('+14165551234', '123456', 'SM_CODE');
   assert.equal(calls.confirmations.length, 0);
+});
+
+test('dispatcher: web/app commands use the owner\'s authority and never start or accept the unlock exchange', async () => {
+  const api = { numMedia: 0, ownerAuthenticated: true };
+
+  // An unconfirmed link: STATS runs, no code email, no unlock reply.
+  const run = buildHarness({ user: UNCONFIRMED, shouldRespondToUnknown: true });
+  await run.dispatch('+14165551234', 'STATUS', 'api_1', api);
+  assert.equal(run.calls.handleStatus, 1);
+  assert.equal(run.calls.confirmations.length, 0);
+  assert.equal(run.calls.sendSmsReply.length, 0);
+
+  // A pending code exchange is not answered from the API.
+  let verified = 0;
+  const pending = buildHarness({
+    user: UNCONFIRMED,
+    pendingState: { type: 'awaiting_verification', email: 'owner@example.com' },
+    handlers: { handleVerificationCode: async () => { verified++; } },
+  });
+  await pending.dispatch('+14165551234', '123456', 'api_2', api);
+  assert.equal(verified, 0);
+});
+
+test('dispatcher: START and confirm_start prompts are never honoured for an unconfirmed number', async () => {
+  for (const [type, text] of [['confirm_start', 'START'], ['confirm_start', '1'], ['confirm_stop', 'START']]) {
+    let confirmed = 0;
+    const h = buildHarness({
+      user: UNCONFIRMED,
+      shouldRespondToUnknown: true,
+      pendingState: { type, activeTrip: { id: 't1' }, newTrip: {}, stopCandidates: [{}] },
+      handlers: { handleConfirmStart: async () => { confirmed++; } },
+    });
+    await h.dispatch('+14165551234', text, `SM_${type}_${text}`);
+    assert.equal(confirmed, 0, `${type} ${text}`);
+  }
 });

@@ -1,5 +1,12 @@
 function createCommandHandler({ db, apiContextStorage, dispatch, logger, generateTraceId }) {
-  return async function handleAuthenticatedCommand(req, res, { uid, email, traceId }) {
+  return async function handleAuthenticatedCommand(req, res, { uid, email, emailVerified, traceId }) {
+    // An unverified email proves nothing about who owns it.
+    if (!email || emailVerified !== true) {
+      logger.warn('API access denied: email not verified', { uid, traceId }, traceId);
+      res.status(403).json({ error: 'Access denied: User is not whitelisted' });
+      return;
+    }
+
     const allowedDoc = await db.collection('allowedUsers').doc(email.toLowerCase()).get();
     if (!allowedDoc.exists) {
       logger.warn('API access denied: User not whitelisted', { email, traceId }, traceId);
@@ -31,7 +38,11 @@ function createCommandHandler({ db, apiContextStorage, dispatch, logger, generat
     const apiContext = { isApiRequest: true, replies: [] };
     await apiContextStorage.run(apiContext, async () => {
       const mockMessageSid = `api_${generateTraceId()}_${Date.now()}`;
-      await dispatch(phoneNumber, command, mockMessageSid, { numMedia: 0 }, traceId);
+      // The owner is authenticated by their verified email, so commands run with
+      // the owner's own authority. That is independent of whether this phone link
+      // is confirmed, and the API can never unlock or confirm a phone: only a
+      // signed inbound text from the number itself can.
+      await dispatch(phoneNumber, command, mockMessageSid, { numMedia: 0, ownerAuthenticated: true }, traceId);
     });
 
     res.status(200).json({

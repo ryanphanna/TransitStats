@@ -414,11 +414,39 @@ test('authenticated command dispatch returns captured replies', async () => {
   await handler({ body: { command: '506 College' } }, response, {
     uid: 'user-1',
     email: 'test@example.com',
+    emailVerified: true,
     traceId: 'trace-1',
   });
 
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body.replies, ['Trip logged.']);
+});
+
+test('the API runs commands with the verified owner\'s authority and refuses unverified emails', async () => {
+  const seed = {
+    'allowedUsers/test@example.com': { isAdmin: false },
+    'phoneNumbers/phone-1': { userId: 'user-1', loginConfirmed: false },
+  };
+  const calls = [];
+  const build = () => createCommandHandler({
+    db: createFakeDb(seed),
+    apiContextStorage: { async run(context, callback) { await callback(); } },
+    generateTraceId: () => 'mock',
+    logger: createLogger(),
+    async dispatch(phone, command, sid, media) { calls.push({ phone, command, media }); },
+  });
+
+  const ok = new FakeResponse();
+  await build()({ body: { command: 'STATS' } }, ok, { uid: 'user-1', email: 'test@example.com', emailVerified: true, traceId: 't' });
+  assert.equal(ok.statusCode, 200);
+  assert.equal(calls[0].media.ownerAuthenticated, true);
+
+  for (const emailVerified of [false, undefined]) {
+    const refused = new FakeResponse();
+    await build()({ body: { command: 'STATS' } }, refused, { uid: 'user-1', email: 'test@example.com', emailVerified, traceId: 't' });
+    assert.equal(refused.statusCode, 403);
+  }
+  assert.equal(calls.length, 1);
 });
 
 test('decoy OTP requests do not use the global send cap but do use the per-IP limit', async () => {
