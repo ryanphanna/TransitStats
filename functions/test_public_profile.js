@@ -113,7 +113,7 @@ test('publicProfile returns 200 with aggregated stats for a public profile', asy
     { data: () => ({ duration: 10, startTime: new Date(Date.now() - 7 * 60 * 60 * 1000), startStopName: 'Start', endStopName: 'End', boardingLocation: { lat: 1, lng: 2 }, exitLocation: { lat: 3, lng: 4 } }) },
   ];
   const handler = loadPublicProfile({
-    docs: { usernames: { 'subway-subway-subway': { exists: true, data: () => ({ uid: 'u1' }) } } },
+    docs: { usernames: { 'subway-subway-subway': { exists: true, data: () => ({ uid: 'u1' }) }, r: { exists: true, data: () => ({ uid: 'u1' }) } } },
     profile: {
       isPublic: true,
       displayName: 'Alice',
@@ -287,4 +287,29 @@ test('publicProfile returns 500 and does not leak internal error detail on unexp
   await handler({ method: 'GET', query: { user: 'alice' } }, res);
   assert.equal(res.statusCode, 500);
   assert.equal(res.body.error, 'Internal error');
+});
+
+test('publicProfile never reports a username another account owns', async () => {
+  const handler = loadPublicProfile({
+    docs: { usernames: {
+      mine: { exists: true, data: () => ({ uid: 'u1' }) },
+      victim: { exists: true, data: () => ({ uid: 'u2' }) },
+    } },
+    profile: { isPublic: true, username: 'victim' },
+  });
+  const res = mockRes();
+  await handler({ method: 'GET', query: { user: 'mine' } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.canonicalUsername, 'mine');
+  assert.equal(res.body.username, 'mine');
+});
+
+test('publicProfile ignores a claimed username that is not registered', async () => {
+  const handler = loadPublicProfile({
+    docs: { usernames: { mine: { exists: true, data: () => ({ uid: 'u1' }) } } },
+    profile: { isPublic: true, username: 'nobody-owns-this' },
+  });
+  const res = mockRes();
+  await handler({ method: 'GET', query: { user: 'mine' } }, res);
+  assert.equal(res.body.canonicalUsername, 'mine');
 });

@@ -196,6 +196,16 @@ async function handlePublicProfile(req, res) {
       res.status(403).json({ error: 'This profile is private' });
       return;
     }
+    // profile.username is a user-editable field, so it may only be shown as this
+    // profile's name when the usernames registry says it belongs to this same
+    // account. Otherwise fall back to the name that resolved the request.
+    let trustedUsername = username;
+    const claimed = typeof profile.username === 'string' ? profile.username.trim().toLowerCase() : '';
+    if (claimed && claimed !== username) {
+      const claimedDoc = await db.collection('usernames').doc(claimed).get();
+      if (claimedDoc.exists && claimedDoc.data()?.uid === userId) trustedUsername = claimed;
+    }
+
     // The public profile switch is the permission boundary. Once the profile
     // is public, expose the same history as the signed-in map through the
     // aggregate-only response below. Individual trip documents remain private.
@@ -341,8 +351,8 @@ async function handlePublicProfile(req, res) {
 
     res.status(200).json({
       displayName: profile.displayName || profile.name || null,
-      username: profile.username || null,
-      canonicalUsername: profile.username || requestedUsername,
+      username: trustedUsername,
+      canonicalUsername: trustedUsername,
       emoji: profile.emoji || null,
       defaultAgency: profile.defaultAgency || null,
       mapStopMode: getMapStopMode(profile),
