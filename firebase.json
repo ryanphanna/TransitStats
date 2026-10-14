@@ -102,55 +102,6 @@
           }
         },
         {
-          "source": "/public-profile-og-v4",
-          "function": {
-            "functionId": "publicProfileOg",
-            "region": "us-central1"
-          }
-        },
-        {
-          "source": "/public-profile-og-v5",
-          "function": {
-            "functionId": "publicProfileOg",
-            "region": "us-central1"
-          }
-        },
-        {
-          "source": "/public-profile-og-v6",
-          "function": {
-            "functionId": "publicProfileOg",
-            "region": "us-central1"
-          }
-        },
-        {
-          "source": "/public-profile-og-v7",
-          "function": {
-            "functionId": "publicProfileOg",
-            "region": "us-central1"
-          }
-        },
-        {
-          "source": "/public-profile-og-v8",
-          "function": {
-            "functionId": "publicProfileOg",
-            "region": "us-central1"
-          }
-        },
-        {
-          "source": "/public-profile-og-v9",
-          "function": {
-            "functionId": "publicProfileOg",
-            "region": "us-central1"
-          }
-        },
-        {
-          "source": "/public-profile-og-v10",
-          "function": {
-            "functionId": "publicProfileOg",
-            "region": "us-central1"
-          }
-        },
-        {
           "source": "/public-profile-og-v11",
           "function": {
             "functionId": "publicProfileOg",
