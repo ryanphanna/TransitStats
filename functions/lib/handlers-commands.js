@@ -12,6 +12,7 @@ const {
   storeVerificationCode,
   getVerificationData,
   isEmailAllowed,
+  getAuthUidByEmail,
   getUserByPhone,
   getUserProfile,
   isEmailAdmin,
@@ -267,11 +268,9 @@ async function handleRegister(phoneNumber, email, traceId = null) {
     return;
   }
 
-  const profilesSnapshot = await db.collection('profiles')
-    .where('email', '==', email.toLowerCase())
-    .limit(1).get();
-
-  if (profilesSnapshot.empty) {
+  // Resolve the account through Firebase Auth. The profile `email` field is not
+  // trustworthy (clients could write it), so it must never pick the account.
+  if (!(await getAuthUidByEmail(email))) {
     await sendSmsReply(phoneNumber, `No account found for ${email}. Sign up at transitstats.fyi, then text REGISTER again.`);
     return;
   }
@@ -328,16 +327,12 @@ async function handleVerificationCode(phoneNumber, code, traceId = null) {
     return;
   }
 
-  const profilesSnapshot = await db.collection('profiles')
-    .where('email', '==', verificationData.email)
-    .limit(1).get();
+  const userId = await getAuthUidByEmail(verificationData.email);
 
-  if (profilesSnapshot.empty) {
+  if (!userId) {
     await sendSmsReply(phoneNumber, 'Account not found.');
     return;
   }
-
-  const userId = profilesSnapshot.docs[0].id;
 
   await db.collection('phoneNumbers').doc(phoneNumber).set({
     userId,
