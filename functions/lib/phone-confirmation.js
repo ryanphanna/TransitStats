@@ -8,10 +8,23 @@
 // Every reply an unconfirmed number can get, in one place.
 const UNLOCK_PROMPT_TEXT = 'We emailed you a code. Reply with it to unlock that.';
 const UNLOCK_UNAVAILABLE_TEXT = 'That isn\'t available on this number yet.';
+const UNLOCKED_TEXT = 'Unlocked. You can use every command from this number now.';
+const LINKED_NEUTRAL_TEXT = 'This number is already linked to an account.';
 const OTP_UNCONFIRMED_TEXT = 'This number isn\'t unlocked yet. Text us, then reply with the code we email you.';
+
+const { createHash } = require('crypto');
 
 function isPhoneConfirmed(link) {
   return link?.loginConfirmed !== false;
 }
 
-module.exports = { UNLOCK_PROMPT_TEXT, UNLOCK_UNAVAILABLE_TEXT, OTP_UNCONFIRMED_TEXT, isPhoneConfirmed };
+// Stored on trips started by text, so an unconfirmed number can only end a trip
+// that it started itself. A hash keeps the number out of the trip document.
+function phoneTag(phoneNumber) {
+  return createHash('sha256').update(String(phoneNumber)).digest('hex').slice(0, 32);
+}
+
+// Neutral on purpose: it must not reveal whether the owner has a trip running.
+const LOCKED_TRIP_TEXT = 'Couldn\'t do that from this number right now.';
+
+module.exports = { UNLOCKED_TEXT, LINKED_NEUTRAL_TEXT, phoneTag, LOCKED_TRIP_TEXT, UNLOCK_PROMPT_TEXT, UNLOCK_UNAVAILABLE_TEXT, OTP_UNCONFIRMED_TEXT, isPhoneConfirmed };

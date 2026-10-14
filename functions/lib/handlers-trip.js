@@ -27,6 +27,7 @@ const { PredictionEngine } = require('./predict.js');
 const { TransferEngine } = require('./transfer.js');
 const { NetworkEngine } = require('./network.js');
 const { HabitEngine } = require('./habit');
+const { isPhoneConfirmed, phoneTag, LOCKED_TRIP_TEXT } = require('./phone-confirmation');
 const { PredictionEngineV4 } = require('./predict_v4.js');
 const { PredictionEngineV5 } = require('./predict_v5.js');
 const logger = require('./logger');
@@ -120,7 +121,15 @@ async function detectProvisionalTransfer(userId, nextTrip, agency, boardingStop,
  */
 async function handleTripLog(phoneNumber, user, stopInput, route, direction, agency, options = {}, traceId = null) {
   route = normalizeRoute(route);
+  // A number the owner hasn't confirmed may only log trips: no history-based
+  // help, and nothing that touches or reveals a trip it didn't start.
+  const unconfirmed = !isPhoneConfirmed(user);
+  if (unconfirmed) options = { ...options, unconfirmed: true };
   const activeTrip = await getActiveTrip(user.userId);
+  if (unconfirmed && activeTrip) {
+    await sendSmsReply(phoneNumber, LOCKED_TRIP_TEXT);
+    return;
+  }
   const parsedStop = parseStopInput(stopInput);
   if (!parsedStop.stopCode && !parsedStop.stopName) {
     await sendSmsReply(phoneNumber, 'I could not identify the boarding stop. Send the route and stop again.');
@@ -234,7 +243,8 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
   const startStopCode = stopData ? stopData.stopCode : parsedStop.stopCode;
   let isAdmin = false;
   let defaultAgency = null;
-  try {
+  // Predictions read the owner's history, so an unconfirmed number skips them.
+  if (!unconfirmed) try {
     const [history, stopsLibrary, routesAtStop, profile, networkGraph, habits, adminStatus, experimentalIntelligence] = await Promise.all([
       getRecentCompletedTrips(user.userId, 100),
       getStopsLibrary(),
@@ -378,6 +388,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       startStopCode: stopData ? stopData.stopCode : parsedStop.stopCode,
       startStopName,
       stop_matched: stopMatched,
+      sourcePhone: phoneTag(phoneNumber),
       agency: resolvedAgency,
       sentiment: options.sentiment || null,
       tags: options.tags || [],
@@ -423,8 +434,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
   }
 
   // Add achievement note if applicable
-  const achievementNote = await getAchievementNote(user.userId);
-  replyBody += achievementNote;
+  if (!unconfirmed) replyBody += await getAchievementNote(user.userId);
 
   await sendSmsReply(phoneNumber, replyBody).catch(err => {
     console.error('sendSmsReply failed after createTrip — trip created but user not notified', err.message);
@@ -435,6 +445,11 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
  * Handle confirmation of start after active trip
  */
 async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
+  // Starting over would mark the owner's active trip incomplete.
+  if (!isPhoneConfirmed(user)) {
+    await sendSmsReply(phoneNumber, LOCKED_TRIP_TEXT);
+    return;
+  }
   const activeTrip = state.activeTrip;
   const newTrip = state.newTrip;
 
@@ -592,6 +607,14 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
  */
 async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification = null, notes = null, traceId = null) {
   const activeTrip = await getActiveTrip(user.userId);
+  const unconfirmed = !isPhoneConfirmed(user);
+
+  // An unconfirmed number can only end a trip it started itself; anything else
+  // gets the same neutral reply, so it can't tell whether a trip exists.
+  if (unconfirmed && (!activeTrip || activeTrip.sourcePhone !== phoneTag(phoneNumber))) {
+    await sendSmsReply(phoneNumber, LOCKED_TRIP_TEXT);
+    return;
+  }
 
   if (!activeTrip) {
     await sendSmsReply(phoneNumber, 'No active trip to end.');
@@ -677,6 +700,16 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
     notes: notes || null,
     stop_matched: isStopMatched(activeTrip) && (endStopData !== null),
   });
+
+  if (unconfirmed) {
+    // Just the facts of the trip this number started: no journey, anomaly or
+    // suggestion notes (they draw on the owner's history), no profile updates.
+    await sendSmsReply(
+      phoneNumber,
+      `Ended ${getRouteDisplay(activeTrip.route, activeTrip.direction)} at ${endStopDisplay} (${duration} min trip).`
+    );
+    return;
+  }
 
   // Detect previous trip for journey linking (used only for the immediate reply note).
   // The actual linking write happens in the background finalizer.

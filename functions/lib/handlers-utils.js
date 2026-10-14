@@ -24,6 +24,7 @@ const {
   isValidRoute,
 } = require('./utils');
 const { AGENCY_CITY } = require('./constants');
+const { phoneTag } = require('./phone-confirmation');
 
 /**
  * Pick the best V4/V5 route prediction that GTFS confirms actually serves this stop.
@@ -89,10 +90,11 @@ Reply 1, 2, or SKIP to use default.`
 async function resolveTripAgency(
   phoneNumber, userId, parsedStop, route, direction, agency, options, stopInput, stopDisplay
 ) {
-  const userProfile = await getUserProfile(userId);
+  // An unconfirmed number gets no help from the owner's profile or history.
+  const userProfile = options.unconfirmed ? undefined : await getUserProfile(userId);
   const configuredAgency = getConfiguredPrimaryAgency(userProfile);
   let resolvedAgency = agency || configuredAgency;
-  if (options.agencyExplicit) return { resolvedAgency, handled: false };
+  if (options.agencyExplicit || options.unconfirmed) return { resolvedAgency, handled: false };
 
   const lastAgency = await getLastTripAgency(userId);
   if (!lastAgency || lastAgency === resolvedAgency) return { resolvedAgency, handled: false };
@@ -244,6 +246,7 @@ async function maybeHandleStopDisambiguation({
         startStopName: parsedStop.stopName || null,
         startStop: null,
         stop_matched: false,
+        sourcePhone: phoneTag(phoneNumber),
         agency: resolvedAgency,
         sentiment: options.sentiment || null,
         tags: options.tags || [],
