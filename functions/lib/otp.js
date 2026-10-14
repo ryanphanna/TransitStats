@@ -2,6 +2,9 @@ const { createHash, randomInt } = require('crypto');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
 const { OTP_UNCONFIRMED_TEXT: PHONE_LOGIN_UNCONFIRMED, isPhoneConfirmed } = require('./phone-confirmation');
+// Roughly the latency of one Twilio send.
+const DECOY_DELAY_MIN_MS = 300;
+const DECOY_DELAY_SPREAD_MS = 500;
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 const OTP_DAILY_LIMIT = 5;
 const OTP_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -95,8 +98,10 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
           return;
         }
 
+        // The global cap protects Twilio spend, and a decoy sends nothing, so
+        // decoys don't count toward it (they still count toward the IP limit).
         const globalCount = existingGlobal.exists ? Number(existingGlobal.data().count || 0) : 0;
-        if (globalCount >= OTP_GLOBAL_DAILY_LIMIT) {
+        if (eligible && globalCount >= OTP_GLOBAL_DAILY_LIMIT) {
           globalLimitReached = true;
           return;
         }
@@ -105,7 +110,7 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
           sentAt: [...recentIpSentAt, reservedSentAt],
           updatedAt: Timestamp.now(),
         });
-        transaction.set(globalRef, { count: globalCount + 1, updatedAt: Timestamp.now() });
+        if (eligible) transaction.set(globalRef, { count: globalCount + 1, updatedAt: Timestamp.now() });
         transaction.set(limitRef, {
           sentAt: [...recentSentAt, reservedSentAt],
           updatedAt: Timestamp.now(),
@@ -142,6 +147,8 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
       }
 
       if (!eligible) {
+        // Take about as long as a real send, so timing doesn't give the number away.
+        await new Promise(resolve => setTimeout(resolve, DECOY_DELAY_MIN_MS + Math.random() * DECOY_DELAY_SPREAD_MS));
         res.status(200).json({ success: true });
         return;
       }

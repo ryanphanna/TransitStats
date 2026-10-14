@@ -420,3 +420,18 @@ test('authenticated command dispatch returns captured replies', async () => {
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body.replies, ['Trip logged.']);
 });
+
+test('decoy OTP requests do not use the global send cap but do use the per-IP limit', async () => {
+  const ip = '203.0.113.9';
+  const { db, handlers, sentMessages } = createOtpHarness({});
+  for (const phone of ['+15195550101', '+15195550102']) {
+    const res = new FakeResponse();
+    await handlers.handleRequestOtp({ body: { phoneNumber: phone }, headers: { 'x-forwarded-for': ip } }, res, 't');
+    assert.equal(res.statusCode, 200);
+  }
+  assert.equal(sentMessages.length, 0);
+  const day = new Date().toISOString().slice(0, 10);
+  assert.equal(db.read('phoneLoginGlobalLimits', day), null);
+  const ipKey = require('node:crypto').createHash('sha256').update(ip).digest('hex').slice(0, 32);
+  assert.equal(db.read('phoneLoginIpLimits', ipKey).sentAt.length, 2);
+});
