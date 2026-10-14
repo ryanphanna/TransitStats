@@ -1,7 +1,6 @@
 import { auth } from '../firebase.js';
 import { Auth } from '../auth.js';
 import { initPrestoImporter } from '../presto-importer.js';
-import { PRESTO_DENIED_MESSAGE, canUsePrestoImport } from '../shared/presto-access.js';
 import { normalizePhone } from '../phone-fields.js';
 import { getPhoneCooldownSeconds, persistPhoneCooldown, clearPhoneCooldown } from '../shared/phone-cooldown.js';
 
@@ -133,14 +132,6 @@ async function handleSignedInUser(user) {
     if (!verification.allowed) {
         await Auth.signOut();
         DOM.deniedMessage.textContent = verification.error || 'This account is not invited yet.';
-        DOM.heading.textContent = 'Not available';
-        showStep('deniedStep');
-        return;
-    }
-    if (!canUsePrestoImport(verification)) {
-        // A valid TransitStats user who just isn't in the import pilot: explain,
-        // but keep them signed in to the rest of the app.
-        DOM.deniedMessage.textContent = PRESTO_DENIED_MESSAGE;
         DOM.heading.textContent = 'Not available';
         showStep('deniedStep');
         return;

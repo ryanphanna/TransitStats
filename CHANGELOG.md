@@ -8,6 +8,10 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **PRESTO import is now available to everyone.** Every signed-in user can import their PRESTO history from the import page and settings, and new accounts with no rides see the import prompt.
+- **No more all-caps labels.** Removed the last uppercase styling (e.g. "Recent activity", the route heatmap heading), and a test now blocks it coming back.
+- **Negative amounts in the PRESTO import preview read "-$10.05"** instead of "$-10.05".
+- **Fixed "Failed to sync trips" when toggling "Allow others to view your shared stats page".** The switch saved but the trip update threw an error; it now updates your trips too.
 - **People you've added can start just by texting.** Text the number and you're set up: your account is created, your phone is linked, and a website sign-in link lands in your email, with no need to sign up on the site first. Numbers that aren't on the list get a short "invite-only" reply (once an hour at most), and everyone gets a one-time welcome text when their number is added. Replying STOP is respected.
 - **Opening Wrapped while signed out now goes to the login page instead of loading forever**, and signing in brings you back to Wrapped. A failed trip load now shows an error instead of spinning.
 - **Signed-out visitors are sent to login right away on every page.** The 60-second wait is now kept only when a saved session might still be restoring, so a visitor who was never signed in no longer waits.
