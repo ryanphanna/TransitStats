@@ -6,6 +6,7 @@ import {
 import { createMapSurface, DEFAULT_MAP_CENTER, DEFAULT_MAP_OVERVIEW_ZOOM } from './map-surface.js';
 import { refreshIcons } from './shared/icons.js';
 import { initHeader } from './shared/header.js';
+import { getPublicProfileUrl } from './shared/function-urls.js';
 import {
     formatAtlasNumber,
     getAtlasPageTitle,
@@ -143,7 +144,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Trips are never publicly readable from Firestore (see firestore.rules) —
         // this endpoint reads them server-side with the Admin SDK and returns only
         // aggregate/anonymized fields (totals + lat/lng points, no route/stop/userId).
-        const res = await fetch(`https://us-central1-transitstats-21ba4.cloudfunctions.net/publicProfile?user=${encodeURIComponent(normalizedUsername)}`, {
+        const res = await fetch(`${getPublicProfileUrl()}?user=${encodeURIComponent(normalizedUsername)}`, {
             cache: 'default',
         });
         const errorData = res.ok ? null : await res.json().catch(() => ({}));
