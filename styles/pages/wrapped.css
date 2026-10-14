@@ -118,6 +118,7 @@
 
 .wrapped-preview {
   display: block;
+  margin: 0 auto;
   width: min(100%, 260px);
   height: auto;
   border-radius: 18px;

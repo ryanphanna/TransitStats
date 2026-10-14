@@ -80,4 +80,27 @@ describe('Stats calendar-month Wrapped helpers', () => {
         });
         expect(wrapped.bestStreak).toBeGreaterThanOrEqual(2);
     });
+
+    it('assigns a trip that crosses midnight to the month it started in', () => {
+        const crossing = [{
+            startTime: new Date(2026, 7, 31, 23, 50),
+            endTime: new Date(2026, 8, 1, 0, 10),
+            route: '501',
+            duration: 20,
+        }];
+        expect(Stats.computeWrapped(crossing, 2026, 7).trips).toBe(1);
+        expect(Stats.computeWrapped(crossing, 2026, 8).trips).toBe(0);
+    });
+
+    it('returns an empty summary for a month with no trips', () => {
+        const wrapped = Stats.computeWrapped(trips, 2026, 0);
+        expect(wrapped).toMatchObject({
+            trips: 0, hours: 0, routes: 0, stops: 0, daysRidden: 0, bestStreak: 0,
+            topRoute: null, favoriteStop: null, busiestDay: null, peak: null,
+        });
+    });
+
+    it('sums hours from trip durations in minutes', () => {
+        expect(Stats.computeWrapped(trips, 2026, 8).hours).toBe(0.8);
+    });
 });

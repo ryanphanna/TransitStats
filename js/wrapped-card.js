@@ -64,7 +64,7 @@ export function drawWrappedCard(ctx, { displayName = 'Traveler', wrapped } = {})
     ctx.fillStyle = 'rgba(238, 248, 244, 0.7)';
     ctx.font = '700 34px Inter, system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('TRANSIT WRAPPED', 72, 120);
+    ctx.fillText('Transit Wrapped', 72, 120);
 
     ctx.fillStyle = '#ffffff';
     ctx.font = '800 92px Inter, system-ui, sans-serif';
@@ -81,7 +81,7 @@ export function drawWrappedCard(ctx, { displayName = 'Traveler', wrapped } = {})
 
     ctx.fillStyle = 'rgba(238, 248, 244, 0.8)';
     ctx.font = '700 42px Inter, system-ui, sans-serif';
-    ctx.fillText('trips', 72, 580);
+    ctx.fillText(wrapped?.trips === 1 ? 'trip' : 'trips', 72, 580);
 
     const tileW = 440;
     const tileH = 150;
@@ -93,7 +93,7 @@ export function drawWrappedCard(ctx, { displayName = 'Traveler', wrapped } = {})
     const tiles = [
         { value: formatCount(wrapped?.hours ?? 0), label: 'hours riding' },
         { value: formatCount(wrapped?.daysRidden ?? 0), label: 'days ridden' },
-        { value: formatCount(wrapped?.routes ?? 0), label: 'routes' },
+        { value: formatCount(wrapped?.routes ?? 0), label: wrapped?.routes === 1 ? 'route' : 'routes' },
         { value: formatCount(wrapped?.bestStreak ?? 0), label: 'best streak (days)' },
     ];
 
@@ -107,29 +107,29 @@ export function drawWrappedCard(ctx, { displayName = 'Traveler', wrapped } = {})
 
     // Highlights panel
     ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-    roundRect(ctx, 72, row, W - 144, 420, 36);
+    roundRect(ctx, 72, row, W - 144, 470, 36);
     ctx.fill();
 
     const lines = [
         ['Top route', wrapped?.topRoute ? `${wrapped.topRoute.name} · ${wrapped.topRoute.count}×` : '—'],
         ['Favorite stop', wrapped?.favoriteStop ? wrapped.favoriteStop.name : '—'],
         ['Busiest day', wrapped?.busiestDay
-            ? `${wrapped.busiestDay.label} · ${wrapped.busiestDay.count} trips`
+            ? `${wrapped.busiestDay.label} · ${wrapped.busiestDay.count} ${wrapped.busiestDay.count === 1 ? 'trip' : 'trips'}`
             : '—'],
         ['Peak time', wrapped?.peak ? wrapped.peak.name : '—'],
     ];
 
-    let lineY = row + 78;
+    let lineY = row + 86;
     lines.forEach(([label, value]) => {
         ctx.fillStyle = 'rgba(238, 248, 244, 0.65)';
         ctx.font = '600 28px Inter, system-ui, sans-serif';
-        ctx.fillText(label.toUpperCase(), 108, lineY);
+        ctx.fillText(label, 108, lineY);
 
         ctx.fillStyle = '#ffffff';
         ctx.font = '700 40px Inter, system-ui, sans-serif';
         const clipped = String(value).length > 34 ? `${String(value).slice(0, 33)}…` : String(value);
         ctx.fillText(clipped, 108, lineY + 48);
-        lineY += 96;
+        lineY += 104;
     });
 
     ctx.fillStyle = 'rgba(238, 248, 244, 0.55)';

@@ -72,7 +72,7 @@ function renderFacts(wrapped) {
         : '—');
     fillFact('fact-stop', wrapped.favoriteStop?.name || '—');
     fillFact('fact-busiest', wrapped.busiestDay
-        ? `${wrapped.busiestDay.label} · ${wrapped.busiestDay.count} trips`
+        ? `${wrapped.busiestDay.label} · ${wrapped.busiestDay.count} ${wrapped.busiestDay.count === 1 ? 'trip' : 'trips'}`
         : '—');
     fillFact('fact-peak', wrapped.peak?.name || '—');
 }
@@ -198,6 +198,8 @@ async function init() {
     TripController.listen(user.uid, onTrips);
     await Trips.loadStopsLibrary();
     onTrips(TripController.allTrips);
+    // The card is drawn on a canvas, which doesn't wait for web fonts.
+    document.fonts?.load('800 64px Inter').then(() => currentWrapped && refresh());
 }
 
 init().catch(error => {

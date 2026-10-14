@@ -55,7 +55,7 @@ export const Stats = {
     /**
      * Compute all dashboard metrics from a list of trips.
      */
-    computeMetrics(trips, filterDays = null) {
+    computeMetrics(trips) {
         if (!trips || trips.length === 0) {
             return {
                 trips: 0,
@@ -67,9 +67,7 @@ export const Stats = {
             };
         }
 
-        const filtered = filterDays 
-            ? this.filterRecent(trips, filterDays) 
-            : trips;
+        const filtered = trips;
 
         const routeCounts = {};
         const stopCounts = {};
@@ -106,7 +104,7 @@ export const Stats = {
         };
     },
 
-/**
+    /**
      * Keep trips whose local start date falls in a calendar month.
      * monthIndex is 0–11 (JavaScript Date month).
      */
