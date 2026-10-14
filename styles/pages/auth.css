@@ -29,7 +29,7 @@
 .auth-brand-mark { width: 34px; height: 34px; display: grid; place-items: center; color: #fff; background: var(--accent-gradient); border-radius: 11px; }
 .auth-brand-mark svg { width: 19px; height: 19px; stroke-width: 2.5; }
 .auth-copy { margin: clamp(60px, 10vh, 120px) 0 58px; }
-.auth-eyebrow, .auth-form-eyebrow { margin: 0 0 14px; color: var(--text-muted); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.13em; text-transform: uppercase; }
+.auth-eyebrow, .auth-form-eyebrow { margin: 0 0 14px; color: var(--text-muted); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.13em; }
 .auth-title { max-width: 560px; margin: 0; color: var(--text-primary); font-size: clamp(3.1rem, 5.3vw, 5.7rem); font-weight: 850; letter-spacing: -0.075em; line-height: 0.93; }
 .auth-title em { color: var(--text-muted); font-style: normal; }
 .auth-subtitle { max-width: 485px; margin: 26px 0 0; color: var(--text-secondary); font-size: 1.05rem; line-height: 1.65; }

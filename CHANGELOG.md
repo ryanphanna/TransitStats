@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **No more all-caps labels.** Removed the last uppercase styling (e.g. "Recent activity", the route heatmap heading), and a test now blocks it coming back.
 - **Negative amounts in the PRESTO import preview read "-$10.05"** instead of "$-10.05".
 - **Fixed "Failed to sync trips" when toggling "Allow others to view your shared stats page".** The switch saved but the trip update threw an error; it now updates your trips too.
 - **Opening Wrapped while signed out now goes to the login page instead of loading forever**, and signing in brings you back to Wrapped. A failed trip load now shows an error instead of spinning.
