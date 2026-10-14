@@ -48,10 +48,10 @@ jobs:
         run: |
           set -euo pipefail
           printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
+          trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
           if [ "$DRY_RUN" = "true" ]; then
             node functions/scripts/upload-models.js --dir models-src/functions/lib --dry-run --check-bucket
           else
             node functions/scripts/upload-models.js --dir models-src/functions/lib
           fi
-          rm -f "$RUNNER_TEMP/sa.json"

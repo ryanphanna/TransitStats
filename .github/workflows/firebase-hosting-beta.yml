@@ -39,9 +39,11 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
           VITE_BUILD_SHA: ${{ github.sha }}
+          FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
         run: |
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}' > /tmp/sa.json
-          GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json firebase deploy --only hosting:beta --project transitstats-21ba4
+          printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
+          trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
+          GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json" firebase deploy --only hosting:beta --project transitstats-21ba4
       - name: Verify deployed build
         env:
           EXPECTED_BUILD: ${{ github.sha }}

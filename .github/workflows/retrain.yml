@@ -28,23 +28,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r ml/requirements.txt
 
-      - name: Write service account key
+      - name: Save current model metrics
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
         run: |
-          mkdir -p "$HOME/Desktop/Dev/Credentials"
-          echo "$FIREBASE_KEY" > "$HOME/Desktop/Dev/Credentials/Firebase for Transit Stats.json"
-          cp "$HOME/Desktop/Dev/Credentials/Firebase for Transit Stats.json" "${{ github.workspace }}/../service-account.json"
-
-      - name: Save current model metrics
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/../service-account.json
-        run: |
+          printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
+          trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
           mkdir -p /tmp/transitstats-model-baseline
           python3 - <<'EOF'
           import json, os, firebase_admin
           from firebase_admin import credentials, storage
-          key = os.path.expanduser("~/Desktop/Dev/Credentials/Firebase for Transit Stats.json")
+          key = os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
           firebase_admin.initialize_app(credentials.Certificate(key), {"projectId": "transitstats-21ba4"})
           bucket = storage.bucket(os.environ.get("ML_MODEL_BUCKET") or "transitstats-21ba4.firebasestorage.app")
           pointer = bucket.blob("models/latest.json")
@@ -61,7 +56,12 @@ jobs:
           TRANSITSTATS_PROJECT_ID: transitstats-21ba4
           # Only these users' trips are ever used for training (set as a repository secret).
           TRAIN_USER_IDS: ${{ secrets.TRAIN_USER_IDS }}
-        run: GRPC_DNS_RESOLVER=native python3 ml/export_trips.py
+          FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
+        run: |
+          printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
+          trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          GRPC_DNS_RESOLVER=native python3 ml/export_trips.py
 
       - name: Retrain end-stop models (V4 + V5)
         run: GRPC_DNS_RESOLVER=native python3 ml/train_endstop.py
@@ -81,9 +81,13 @@ jobs:
         run: npm ci --prefix functions
 
       - name: Upload models to private storage
-        run: node functions/scripts/upload-models.js --dir ml
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/../service-account.json
+          FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
+        run: |
+          printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
+          trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          node functions/scripts/upload-models.js --dir ml
 
       - name: Append retrain results to MODEL_LOG
         run: |

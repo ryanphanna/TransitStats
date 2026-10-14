@@ -19,7 +19,7 @@ from firebase_admin import credentials, firestore
 
 # --- Config ---
 PROJECT_ID = os.environ.get("TRANSITSTATS_PROJECT_ID", "transitstats-21ba4")
-KEY_PATH = os.path.expanduser(
+KEY_PATH = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") or os.path.expanduser(
     "~/Desktop/Dev/Credentials/Firebase for Transit Stats.json"
 )
 OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "trips.csv")
