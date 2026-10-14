@@ -251,7 +251,7 @@ async function handleRegister(phoneNumber, email, traceId = null) {
 
   const allowed = await isEmailAllowed(email);
   if (!allowed) {
-    await sendSmsReply(phoneNumber, 'Invite-only. Sign up at transitstats.fyi for access info.');
+    await sendSmsReply(phoneNumber, 'We couldn\'t find an account for that email. Try the one you signed in with, or visit transitstats.fyi.');
     return;
   }
 

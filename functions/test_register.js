@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const Module = require('node:module');
 const { FieldValue: realFieldValue } = require('firebase-admin/firestore');
 
-function load({ authUid = 'auth-uid', verification = null, link = null } = {}) {
+function load({ authUid = 'auth-uid', verification = null, link = null, allowed = true } = {}) {
   const path = require.resolve('./lib/handlers-commands');
   delete require.cache[path];
   const calls = { sms: [], phoneUpdates: [], phoneSets: [], profileQueries: [], authLookups: [] };
@@ -22,7 +22,7 @@ function load({ authUid = 'auth-uid', verification = null, link = null } = {}) {
     clearPendingState: async () => {},
     storeVerificationCode: async () => {},
     getVerificationData: async () => verification,
-    isEmailAllowed: async () => true,
+    isEmailAllowed: async () => allowed,
     isEmailAdmin: async () => false,
     getUserByPhone: async () => link,
     getUserProfile: async () => null,
@@ -185,4 +185,11 @@ test('REGISTER from an unconfirmed number does not reveal the owner\'s email', a
   const confirmed = load({ link: { userId: 'u', email: 'owner@example.com' } });
   await confirmed.mod.handleRegister('+15195550143', 'me@example.com');
   assert.match(confirmed.calls.sms.join(' '), /owner@example\.com/);
+});
+
+test('REGISTER with an email we can\'t match gets the approved wording, with no invite language', async () => {
+  const { mod, calls } = load({ allowed: false });
+  await mod.handleRegister('+15195550143', 'nobody@example.com');
+  assert.equal(calls.sms.at(-1), 'We couldn\'t find an account for that email. Try the one you signed in with, or visit transitstats.fyi.');
+  assert.doesNotMatch(calls.sms.at(-1), /invite/i);
 });

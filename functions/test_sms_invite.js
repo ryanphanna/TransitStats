@@ -163,13 +163,13 @@ test('an unverified account we provisioned earlier is accepted', async () => {
   assert.equal(link.loginConfirmed, false);
 });
 
-test('not invited: replies invite-only, with no "sign up on the website" line, and creates nothing', async () => {
+test('not invited: replies with the not-linked text, with no invite or "sign up" wording, and creates nothing', async () => {
   const { db, adminAuth, sms, handlers } = build({ seed: invited });
   await handlers.handleUnknownSender('+14165559999');
 
   assert.deepEqual(sms, [{ to: '+14165559999', message: NOT_INVITED_TEXT }]);
-  assert.match(NOT_INVITED_TEXT, /^TransitStats is invite-only\./);
-  assert.doesNotMatch(NOT_INVITED_TEXT, /sign up|transitstats\.fyi/i);
+  assert.match(NOT_INVITED_TEXT, /^This number isn't linked to a TransitStats account yet\. Text REGISTER and your account email to link it\.$/);
+  assert.doesNotMatch(NOT_INVITED_TEXT, /invite|sign up/i);
   assert.equal(adminAuth.calls.created.length, 0);
   assert.equal(db.data.has('phoneNumbers/+14165559999'), false);
 });
