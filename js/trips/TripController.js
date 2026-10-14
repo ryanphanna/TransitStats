@@ -1,14 +1,14 @@
-import { db, deleteField } from '../firebase.js';
+import { db } from '../firebase.js';
 
 /**
- * TripController - Manages the trip data stream and atomic updates.
+ * TripController - Manages the trip data stream.
  */
 export const TripController = {
     allTrips: [],
     activeTrip: null,
     unsubscribe: null,
 
-    listen(userId, onUpdate) {
+    listen(userId, onUpdate, onError) {
         if (!userId) return;
         if (this.unsubscribe) this.unsubscribe();
 
@@ -38,33 +38,7 @@ export const TripController = {
                 if (onUpdate) onUpdate(this.allTrips, this.activeTrip);
             }, err => {
                 console.error("TripController Error:", err);
+                if (onError) onError(err);
             });
     },
-
-    async update(id, data) {
-        return db.collection('trips').doc(id).update({
-            ...data,
-            updatedAt: new Date()
-        });
-    },
-
-    async delete(id) {
-        return db.collection('trips').doc(id).delete();
-    },
-
-    async confirmTrip(id) {
-        return db.collection('trips').doc(id).update({
-            needs_review: deleteField(),
-            manually_verified: true,
-            updatedAt: new Date()
-        });
-    },
-
-    async breakJourneyLink(tripAId, tripBId) {
-        const del = deleteField();
-        const batch = db.batch();
-        batch.update(db.collection('trips').doc(tripAId), { journeyId: del });
-        batch.update(db.collection('trips').doc(tripBId), { journeyId: del });
-        return batch.commit();
-    }
 };

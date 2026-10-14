@@ -121,6 +121,10 @@ async function fingerprint(record) {
     return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
+function isRecordUsable(record) {
+    return Number.isFinite(record.occurredAtSortKey) && record.amountCents !== null;
+}
+
 function summarize(records) {
     const farePayments = records.filter(record => record.type === 'fare_payment');
     // Epurse loads fund the reloadable balance that fares are paid from, so
@@ -151,7 +155,10 @@ function summarize(records) {
         first: dates[0]?.occurredAtLocal || null,
         last: dates.at(-1)?.occurredAtLocal || null,
         agencies,
-        invalidRows: records.filter(record => !Number.isFinite(record.occurredAtSortKey) || record.amountCents === null).length,
+        // Only fare payments are ever persisted (see the import handler below),
+        // so an invalid Period Pass Load or Epurse Load row would be discarded
+        // either way — it must not block importable fare payments.
+        invalidRows: farePayments.filter(record => !isRecordUsable(record)).length,
     };
 }
 
@@ -254,7 +261,7 @@ export function initPrestoImporter({ user }) {
                 locationLine,
             ].join('\n');
             show(preview, true);
-            show(actions, summary.invalidRows === 0 && pendingRecords.length > 0);
+            show(actions, summary.farePayments - summary.invalidRows > 0);
             status(statusElement, 'Preview only. Nothing has been saved.', 'success');
         } catch (error) {
             pendingRecords = [];
@@ -271,8 +278,9 @@ export function initPrestoImporter({ user }) {
             // Card loads (pass purchases, balance top-ups) aren't rides, and
             // nothing reads them back out of storage once imported — the
             // preview above already summarized them from the file in memory.
-            // Only fare payments are worth persisting.
-            const fareRecords = pendingRecords.filter(record => record.type === 'fare_payment');
+            // Only fare payments are worth persisting. Invalid rows (bad date
+            // or amount) are skipped rather than written with null fields.
+            const fareRecords = pendingRecords.filter(record => record.type === 'fare_payment' && isRecordUsable(record));
             const records = await Promise.all(fareRecords.map(async record => ({
                 ...record,
                 fingerprint: await fingerprint(record),
@@ -302,11 +310,12 @@ export function initPrestoImporter({ user }) {
             status(statusElement, `${pendingRecords.length} rows processed; ${imported.size} fare payments now stored. Stop matching will continue later, and re-imports will not create duplicates.`, 'success');
             show(actions, false);
         } catch (error) {
-            status(statusElement, error.message || 'Could not import PRESTO activity.');
+            console.error('PRESTO import failed:', error);
+            status(statusElement, "Something went wrong partway through the import. It's safe to try again — already-imported rows won't be duplicated.");
         } finally {
             importButton.disabled = false;
         }
     });
 }
 
-export { classifyType, parseAmountCents, parseCsv, parseDate, summarize, toRecord };
+export { classifyType, isRecordUsable, parseAmountCents, parseCsv, parseDate, summarize, toRecord };
