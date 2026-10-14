@@ -8,10 +8,10 @@ const assert = require('node:assert/strict');
 const Module = require('node:module');
 const { FieldValue: realFieldValue } = require('firebase-admin/firestore');
 
-function load({ authUid = 'auth-uid', verification = null } = {}) {
+function load({ authUid = 'auth-uid', verification = null, link = null } = {}) {
   const path = require.resolve('./lib/handlers-commands');
   delete require.cache[path];
-  const calls = { sms: [], phoneSets: [], profileQueries: [], authLookups: [] };
+  const calls = { sms: [], phoneUpdates: [], phoneSets: [], profileQueries: [], authLookups: [] };
   const store = { verification: verification && { expiresAt: { toDate: () => new Date(Date.now() + 60000) }, ...verification } };
 
   const dbModule = {
@@ -24,7 +24,7 @@ function load({ authUid = 'auth-uid', verification = null } = {}) {
     getVerificationData: async () => verification,
     isEmailAllowed: async () => true,
     isEmailAdmin: async () => false,
-    getUserByPhone: async () => null,
+    getUserByPhone: async () => link,
     getUserProfile: async () => null,
     getAuthUidByEmail: async (email) => { calls.authLookups.push(email); return authUid; },
     FieldValue: realFieldValue,
@@ -51,6 +51,7 @@ function load({ authUid = 'auth-uid', verification = null } = {}) {
         doc: (id) => ({
           set: async (value) => { if (name === 'phoneNumbers') calls.phoneSets.push({ id, value }); },
           update: async (value) => {
+            if (name === 'phoneNumbers') calls.phoneUpdates.push({ id, value });
             if (name !== 'smsVerification' || !store.verification) return;
             for (const [key, change] of Object.entries(value)) {
               store.verification[key] = change?.constructor?.name === 'NumericIncrementTransform'
@@ -153,4 +154,35 @@ test('help text never advertises a bare STOP line as a way to end a trip (STOP i
   assert.match(help, /END \[?|END\n/);
   assert.doesNotMatch(help, /^STOP$/m);
   assert.doesNotMatch(help, /\bSTOP\b to end|END or STOP|END\/STOP/i);
+});
+
+test('a code reply confirms an existing invite link in place, even when its email is unverified', async () => {
+  const { mod, calls } = load({
+    authUid: null, // an invite account's email isn't verified yet, so Auth lookup says no
+    link: { userId: 'invite-uid', email: 'rider@example.com', loginConfirmed: false },
+    verification: { code: '123456', attempts: 0, email: 'rider@example.com' },
+  });
+  await mod.handleVerificationCode('+15195550143', '123456');
+  assert.deepEqual(calls.phoneSets, []);
+  assert.deepEqual(calls.phoneUpdates, [{ id: '+15195550143', value: { loginConfirmed: true } }]);
+});
+
+test('a code for a different email never confirms an existing link', async () => {
+  const { mod, calls } = load({
+    link: { userId: 'invite-uid', email: 'rider@example.com', loginConfirmed: false },
+    verification: { code: '123456', attempts: 0, email: 'someone-else@example.com' },
+  });
+  await mod.handleVerificationCode('+15195550143', '123456');
+  assert.deepEqual(calls.phoneUpdates, []);
+  assert.deepEqual(calls.phoneSets, []);
+});
+
+test('REGISTER from an unconfirmed number does not reveal the owner\'s email', async () => {
+  const unconfirmed = load({ link: { userId: 'u', email: 'owner@example.com', loginConfirmed: false } });
+  await unconfirmed.mod.handleRegister('+15195550143', 'me@example.com');
+  assert.doesNotMatch(unconfirmed.calls.sms.join(' '), /owner@example\.com/);
+
+  const confirmed = load({ link: { userId: 'u', email: 'owner@example.com' } });
+  await confirmed.mod.handleRegister('+15195550143', 'me@example.com');
+  assert.match(confirmed.calls.sms.join(' '), /owner@example\.com/);
 });
