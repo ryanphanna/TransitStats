@@ -16,6 +16,7 @@ const { getConfiguredPrimaryAgency } = require('./primary-agency');
 const { NetworkEngine } = require('./network.js');
 const { PredictionEngineV4 } = require('./predict_v4.js');
 const { PredictionEngineV5 } = require('./predict_v5.js');
+const ModelStore = require('./model-store');
 const {
   parseStopSignImage,
 } = require('./gemini');
@@ -25,10 +26,6 @@ const {
 } = require('./handlers-utils');
 const { handleTripLog } = require('./handlers-trip');
 const { isModelReady } = require('./intelligence-eligibility');
-const routeV4Meta = require('./model_v4_meta.json');
-const routeV5Meta = require('./model_v5_meta.json');
-const endStopV4Meta = require('./model_v4_endstop_meta.json');
-const endStopV5Meta = require('./model_v5_endstop_meta.json');
 
 /**
  * Run V4/V5 predictions for a trip that was created during stop disambiguation
@@ -47,6 +44,9 @@ async function fillPredictions(user, tripId, stopName, route, direction, agency,
       NetworkEngine.load(db, user.userId, agency, route),
     ]);
 
+    // Models are private and only trained on allowlisted users; everyone else gets rule-based predictions.
+    const mlModels = ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
+    const { routeV4Meta, routeV5Meta, endStopV4Meta, endStopV5Meta } = mlModels || {};
     const now = new Date();
     const routeReady = isModelReady(history, agency, routeV4Meta, routeV5Meta);
     const endStopReady = isModelReady(history, agency, endStopV4Meta, endStopV5Meta, 'endStop');

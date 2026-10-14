@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Prediction models are no longer published in the public repository.** The trained models contained real stop and route names, so they now live in private storage, are trained only on approved users, and only those users get ML predictions; everyone else gets the rule-based predictions.
 - **Wrapped now fits the window without scrolling on laptops.** It uses the same page background as the rest of the app, the top bar no longer covers the printer and ticket, and the stub and ticket scale together to the window height (phones still stack and scroll). The downloaded image is unchanged.
 - **Signed-out visitors on the local dev server go straight to login.** The dashboard used to sit on its loading skeleton for a minute because the session check got an HTML page instead of an answer.
 - **Google Analytics can now actually load.** The site's security policy was blocking it, so no visits were being counted. Only the Google Analytics addresses were allowed.
