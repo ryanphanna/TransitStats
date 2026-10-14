@@ -4,6 +4,33 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TransitStats — Public Profile</title>
+    <!-- Google Analytics 4: anonymous product-usage measurement only. Skipped for internal sessions
+         (localhost, ?ts_internal=1, or the ts.internal-test flag). Keep identical across pages (tests/ga-internal.test.js). -->
+    <script>
+        (function () {
+            var ID = 'G-Z8L60LPC8G', internal = false, flagged = false;
+            try {
+                var h = location.hostname, q = new URLSearchParams(location.search);
+                flagged = q.get('ts_internal') === '1';
+                if (flagged) localStorage.setItem('ts.internal-test', '1');
+                internal = h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1' || flagged || localStorage.getItem('ts.internal-test') === '1';
+                if (q.has('ts_internal')) {
+                    q.delete('ts_internal');
+                    var s = q.toString();
+                    history.replaceState(history.state, '', location.pathname + (s ? '?' + s : '') + location.hash);
+                }
+            } catch (e) { internal = internal || flagged; }
+            if (internal) { window['ga-disable-' + ID] = true; return; }
+            window.dataLayer = window.dataLayer || [];
+            window.gtag = function () { dataLayer.push(arguments); };
+            gtag('js', new Date());
+            gtag('config', ID);
+            var el = document.createElement('script');
+            el.async = true;
+            el.src = 'https://www.googletagmanager.com/gtag/js?id=' + ID;
+            document.head.appendChild(el);
+        })();
+    </script>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
