@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Closed a privacy leak in Rocket.** Anyone could read other people's Rocket GPS trails. Sessions are now readable only by their owner.
 - Updated web and Functions dependencies to clear the active Dependabot security alerts.
 - SMS stop selection now drops explicitly opposite-direction platforms when a neutral station match remains, avoiding unnecessary prompts.
 - **Trips with valid stop codes now count as matched**, so a missing display name no longer blocks prediction history.
