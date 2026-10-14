@@ -223,7 +223,8 @@ function _findStopCandidates(stopName, docs) {
   const inputKey = stopNameKey(stopName);
   const inputGroup = getConnectionGroup(stopName);
   const normalizedInput = normalizeStopName(stopName);
-  const exactMatches = [];
+  const literalMatches = [];
+  const keyedMatches = [];
   const connectedMatches = [];
   const seen = new Set();
 
@@ -238,12 +239,15 @@ function _findStopCandidates(stopName, docs) {
       direction: data.direction || null,
     };
     const names = [data.name, ...(data.aliases || [])].filter(Boolean);
-    // Same station by name: identical text, or punctuation twins / platform records of that station.
-    const exact = names.some(name => name.toLowerCase() === lowerName || (inputKey && stopNameKey(name) === inputKey));
-    if (exact) {
+    // Literal name match first; the station-key match (punctuation twins, platform records of the
+    // same station) is only a fallback, so a directional platform asked for by its full name never
+    // resolves to its opposite-direction twin.
+    const literal = names.some(name => name.toLowerCase() === lowerName);
+    const keyed = !literal && inputKey && names.some(name => stopNameKey(name) === inputKey);
+    if (literal || keyed) {
       if (!seen.has(doc.id)) {
         seen.add(doc.id);
-        exactMatches.push(candidate);
+        (literal ? literalMatches : keyedMatches).push(candidate);
       }
       continue;
     }
@@ -259,7 +263,7 @@ function _findStopCandidates(stopName, docs) {
     }
   }
 
-  return [...exactMatches, ...connectedMatches];
+  return [...(literalMatches.length ? literalMatches : keyedMatches), ...connectedMatches];
 }
 
 async function _resolveCandidates(candidates, agency, route, direction, rawStopName) {

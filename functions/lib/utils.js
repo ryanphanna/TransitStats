@@ -185,7 +185,7 @@ function stopNameKey(label) {
  * also a candidate. Directional platforms with no parent present stay distinct, and different
  * stops are never merged. In strict mode (used before the route check) two records that carry
  * different stop codes are different stops and stay separate; platform records still fold into
- * their parent, except a platform whose direction is the requested one (it is the more specific
+ * their parent (both only within one home agency), except a platform whose direction is the requested one (it is the more specific
  * answer). The kept record carries the union of the merged records' routes so a
  * later route check does not lose evidence held only by a dropped duplicate.
  * @param {Array} candidates
@@ -218,9 +218,12 @@ function collapseEquivalentStopCandidates(candidates, { strict = false, directio
     // Strict: a record joins an existing same-identity group only if no stop code conflicts.
     const sameIdentity = [...groups.entries()].filter(([groupKey]) => groupKey === key || String(groupKey).startsWith(`${key}#`));
     const isPlatformChild = !wantedPlatform && isPlatformRecord(label) && key.endsWith('|') && parentKeys.has(stopNameKey(label));
-    // Platform records fold into their parent regardless of code; only real stops are code-checked.
-    const compatible = ([, members]) => isPlatformChild
-      || members.every(m => isPlatformRecord(m.stopName || m.name) || !m.stopCode || !candidate.stopCode || m.stopCode === candidate.stopCode);
+    // Records only merge within one home agency (a shared station doc must not lend its routes to
+    // another agency's record). Platform records fold into their parent regardless of code; real
+    // stops also need their codes not to conflict.
+    const sameAgency = m => (m.agency ?? null) === (candidate.agency ?? null);
+    const compatible = ([, members]) => members.every(m => sameAgency(m) && (isPlatformChild
+      || isPlatformRecord(m.stopName || m.name) || !m.stopCode || !candidate.stopCode || m.stopCode === candidate.stopCode));
     const home = strict ? sameIdentity.find(compatible) : sameIdentity[0];
     if (home) home[1].push(candidate);
     else groups.set(sameIdentity.length ? `${key}#${sameIdentity.length}` : key, [candidate]);

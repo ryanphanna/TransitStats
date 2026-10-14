@@ -76,3 +76,12 @@ test('collapseEquivalentStopCandidates merges punctuation twins', () => {
   assert.equal(out.length, 1);
   assert.equal(out[0].stopCode, '77');
 });
+
+test('collapseEquivalentStopCandidates does not merge records from different home agencies', () => {
+  const { collapseEquivalentStopCandidates } = require('./lib/utils');
+  const ttc = { agency: 'TTC', stopName: 'Union Station', routes: ['1'] };
+  const go = { agency: 'GO Transit', stopCode: 'UN', stopName: 'Union Station', routes: ['LW'] };
+  const out = collapseEquivalentStopCandidates([ttc, go], { strict: true });
+  assert.equal(out.length, 2);
+  assert.deepEqual(out.find(c => c.agency === 'TTC').routes, ['1']); // no GO route attached to the TTC record
+});

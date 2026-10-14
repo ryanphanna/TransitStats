@@ -296,3 +296,17 @@ test('lookupStopCheck: no whole-collection scan (lookupStop still does one for o
   assert.equal((await m.lookupStopCheck(null, 'Zzyzx Terminal', 'TTC', '1')).status, 'notFound');
   assert.equal(scans.length, 0);
 });
+
+test('lookupStop: a platform asked for by its full name never resolves to its opposite-direction twin', async () => {
+  const m = loadStopsModule({
+    stops: [
+      { id: 'sb', data: { agencies: ['TTC'], code: '9001-S', name: 'College Station - Southbound Platform', aliases: [] } },
+      { id: 'nb', data: { agencies: ['TTC'], code: '9001-N', name: 'College Station - Northbound Platform', aliases: [] } },
+    ],
+    stopRoutes: { 'TTC_9001-N': ['1'], 'TTC_9001-S': ['1'] },
+  });
+  const result = await m.lookupStop(null, 'College Station - Northbound Platform', 'TTC', '1', 'Northbound');
+  assert.equal(result?.stopCode, '9001-N');
+  const southbound = await m.lookupStop(null, 'College Station - Southbound Platform', 'TTC', '1');
+  assert.equal(southbound?.stopCode, '9001-S');
+});
