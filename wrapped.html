@@ -18,7 +18,7 @@
             <div class="wrapped-panel">
                 <p class="eyebrow">Your TransitStats</p>
                 <h1 id="wrapped-title">Transit Wrapped</h1>
-                <p class="wrapped-lede">A shareable card for one month of rides — trips, streak, top route, and favorite stop.</p>
+                <p class="wrapped-lede">A shareable card for one month of rides — trips, hours, top routes, and favorite stop.</p>
 
                 <label class="wrapped-month-label" for="wrapped-month">Month</label>
                 <select id="wrapped-month" class="wrapped-month" aria-describedby="wrapped-status"></select>
@@ -36,18 +36,8 @@
 
             <div id="wrapped-stage" class="wrapped-stage" hidden>
                 <div class="wrapped-preview-wrap">
-                    <canvas id="wrapped-preview" class="wrapped-preview" width="378" height="672" aria-label="Wrapped card preview"></canvas>
+                    <canvas id="wrapped-preview" class="wrapped-preview" width="540" height="960" aria-label="Wrapped card preview"></canvas>
                 </div>
-                <dl class="wrapped-facts">
-                    <div><dt>Trips</dt><dd id="fact-trips">—</dd></div>
-                    <div><dt>Hours</dt><dd id="fact-hours">—</dd></div>
-                    <div><dt>Days ridden</dt><dd id="fact-days">—</dd></div>
-                    <div><dt>Best streak</dt><dd id="fact-streak">—</dd></div>
-                    <div class="wrapped-fact-wide"><dt>Top route</dt><dd id="fact-route">—</dd></div>
-                    <div class="wrapped-fact-wide"><dt>Favorite stop</dt><dd id="fact-stop">—</dd></div>
-                    <div class="wrapped-fact-wide"><dt>Busiest day</dt><dd id="fact-busiest">—</dd></div>
-                    <div class="wrapped-fact-wide"><dt>Peak time</dt><dd id="fact-peak">—</dd></div>
-                </dl>
             </div>
         </section>
     </main>

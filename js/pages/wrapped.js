@@ -5,6 +5,8 @@ import { TripController } from '../trips/TripController.js';
 import { Profile } from '../profile.js';
 import { Stats } from '../stats.js';
 import { UI } from '../ui-utils.js';
+import { db } from '../firebase.js';
+import { buildPrestoTrips, projectPrestoTripsForStats } from '../presto-stop-matcher.js';
 import { downloadBlob, drawWrappedCard, renderWrappedPngBlob, WRAPPED_CARD } from '../wrapped-card.js';
 
 const monthSelect = document.getElementById('wrapped-month');
@@ -15,6 +17,12 @@ const shareBtn = document.getElementById('wrapped-share');
 const emptyEl = document.getElementById('wrapped-empty');
 const stageEl = document.getElementById('wrapped-stage');
 
+// Imported PRESTO rides count toward Wrapped like they do on the dashboard totals.
+// Set to false to use logged trips only.
+const INCLUDE_PRESTO_TRIPS = true;
+
+let loggedTrips = [];
+let prestoRides = [];
 let allTrips = [];
 let currentWrapped = null;
 
@@ -57,29 +65,9 @@ function selectedMonth() {
     return { year, monthIndex };
 }
 
-function fillFact(id, value) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = value;
-}
-
-function renderFacts(wrapped) {
-    fillFact('fact-trips', wrapped.trips.toLocaleString('en-US'));
-    fillFact('fact-hours', String(wrapped.hours));
-    fillFact('fact-days', wrapped.daysRidden.toLocaleString('en-US'));
-    fillFact('fact-streak', wrapped.bestStreak.toLocaleString('en-US'));
-    fillFact('fact-route', wrapped.topRoute
-        ? `${wrapped.topRoute.name} (${wrapped.topRoute.count}×)`
-        : '—');
-    fillFact('fact-stop', wrapped.favoriteStop?.name || '—');
-    fillFact('fact-busiest', wrapped.busiestDay
-        ? `${wrapped.busiestDay.label} · ${wrapped.busiestDay.count} ${wrapped.busiestDay.count === 1 ? 'trip' : 'trips'}`
-        : '—');
-    fillFact('fact-peak', wrapped.peak?.name || '—');
-}
-
 function renderPreview(wrapped, displayName) {
     if (!previewCanvas) return;
-    const scale = 0.35;
+    const scale = 0.5;
     previewCanvas.width = Math.round(WRAPPED_CARD.width * scale);
     previewCanvas.height = Math.round(WRAPPED_CARD.height * scale);
     const ctx = previewCanvas.getContext('2d');
@@ -116,7 +104,6 @@ function refresh() {
     }
 
     showEmpty(false);
-    renderFacts(wrapped);
     renderPreview(wrapped, displayName);
     setStatus(`${wrapped.label} · ${wrapped.trips} trip${wrapped.trips === 1 ? '' : 's'}`);
 }
@@ -178,10 +165,19 @@ async function handleShare() {
 }
 
 function onTrips(trips) {
-    allTrips = trips || [];
+    loggedTrips = trips || [];
+    rebuildTrips();
+}
+
+function rebuildTrips() {
+    allTrips = INCLUDE_PRESTO_TRIPS
+        ? Stats.mergeImportedRides(loggedTrips, prestoRides)
+        : [...loggedTrips];
+    const previous = monthSelect?.value;
     const months = populateMonths(allTrips);
-    if (months.length && monthSelect && !monthSelect.value) {
-        monthSelect.value = monthKey(months[0]);
+    if (months.length && monthSelect) {
+        const keepPrevious = months.some(month => monthKey(month) === previous);
+        monthSelect.value = keepPrevious ? previous : monthKey(months[0]);
     }
     refresh();
 }
@@ -196,6 +192,15 @@ async function init() {
     shareBtn?.addEventListener('click', handleShare);
 
     TripController.listen(user.uid, onTrips);
+    if (INCLUDE_PRESTO_TRIPS) {
+        db.collection('prestoTransactions').where('userId', '==', user.uid).onSnapshot(
+            snap => {
+                prestoRides = projectPrestoTripsForStats(buildPrestoTrips(snap.docs.map(doc => doc.data())));
+                rebuildTrips();
+            },
+            err => console.error('PRESTO rides failed to load:', err),
+        );
+    }
     await Trips.loadStopsLibrary();
     onTrips(TripController.allTrips);
     // The card is drawn on a canvas, which doesn't wait for web fonts.

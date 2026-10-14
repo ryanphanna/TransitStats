@@ -103,4 +103,21 @@ describe('Stats calendar-month Wrapped helpers', () => {
     it('sums hours from trip durations in minutes', () => {
         expect(Stats.computeWrapped(trips, 2026, 8).hours).toBe(0.8);
     });
+
+    it('adds imported rides but not ones that duplicate a logged trip', () => {
+        const logged = [{ startTime: new Date(2026, 8, 2, 8, 0), route: '501', duration: 20 }];
+        const imported = [
+            { startTime: new Date(2026, 8, 2, 8, 5), agency: 'TTC' },   // same ride as the logged one
+            { startTime: new Date(2026, 8, 4, 9, 0), agency: 'GO' },
+        ];
+        const merged = Stats.mergeImportedRides(logged, imported);
+        expect(merged).toHaveLength(2);
+
+        const wrapped = Stats.computeWrapped(merged, 2026, 8);
+        expect(wrapped.trips).toBe(2);
+        expect(wrapped.daysRidden).toBe(2);
+        expect(wrapped.hours).toBe(0.3);      // imported rides add no duration
+        expect(wrapped.topRoute).toEqual({ name: '501', count: 1 });
+        expect(wrapped.favoriteStop).toBeNull();
+    });
 });

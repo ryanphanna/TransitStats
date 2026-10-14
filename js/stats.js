@@ -105,6 +105,25 @@ export const Stats = {
     },
 
     /**
+     * Combine logged trips with imported PRESTO rides. An imported ride is
+     * dropped when a logged trip started within windowMs of it, since that is
+     * the same ride recorded twice. Imported rides carry only a start time and
+     * agency, so they add trips/days/streaks but no hours, routes, or stops.
+     */
+    mergeImportedRides(loggedTrips, importedRides, windowMs = 30 * 60 * 1000) {
+        const logged = loggedTrips || [];
+        const loggedTimes = logged
+            .map(trip => this.getTripDate(trip)?.getTime())
+            .filter(Number.isFinite);
+        const extra = (importedRides || []).filter(ride => {
+            const time = this.getTripDate(ride)?.getTime();
+            if (!Number.isFinite(time)) return false;
+            return !loggedTimes.some(loggedTime => Math.abs(loggedTime - time) <= windowMs);
+        });
+        return [...logged, ...extra];
+    },
+
+    /**
      * Keep trips whose local start date falls in a calendar month.
      * monthIndex is 0–11 (JavaScript Date month).
      */

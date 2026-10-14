@@ -90,11 +90,14 @@ export function drawWrappedCard(ctx, { displayName = 'Traveler', wrapped } = {})
     const right = left + tileW + gap;
     let row = 680;
 
+    // A streak of 1 day says nothing, so show stops visited instead.
     const tiles = [
         { value: formatCount(wrapped?.hours ?? 0), label: 'hours riding' },
-        { value: formatCount(wrapped?.daysRidden ?? 0), label: 'days ridden' },
+        { value: formatCount(wrapped?.daysRidden ?? 0), label: wrapped?.daysRidden === 1 ? 'day ridden' : 'days ridden' },
         { value: formatCount(wrapped?.routes ?? 0), label: wrapped?.routes === 1 ? 'route' : 'routes' },
-        { value: formatCount(wrapped?.bestStreak ?? 0), label: 'best streak (days)' },
+        (wrapped?.bestStreak ?? 0) > 1
+            ? { value: formatCount(wrapped.bestStreak), label: 'best streak (days)' }
+            : { value: formatCount(wrapped?.stops ?? 0), label: wrapped?.stops === 1 ? 'stop visited' : 'stops visited' },
     ];
 
     tiles.forEach((tile, i) => {
@@ -103,34 +106,80 @@ export function drawWrappedCard(ctx, { displayName = 'Traveler', wrapped } = {})
         drawStatTile(ctx, { x, y: row, w: tileW, h: tileH, ...tile });
     });
 
-    row += tileH + 56;
+    row += tileH + 48;
+    const panelX = 72;
+    const panelW = W - 144;
 
-    // Highlights panel
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-    roundRect(ctx, 72, row, W - 144, 470, 36);
-    ctx.fill();
+    // Top routes with proportional bars
+    const topRoutes = (wrapped?.topRoutes || []).slice(0, 3);
+    if (topRoutes.length) {
+        const rowH = 76;
+        const panelH = 96 + topRoutes.length * rowH;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        roundRect(ctx, panelX, row, panelW, panelH, 36);
+        ctx.fill();
 
-    const lines = [
-        ['Top route', wrapped?.topRoute ? `${wrapped.topRoute.name} · ${wrapped.topRoute.count}×` : '—'],
-        ['Favorite stop', wrapped?.favoriteStop ? wrapped.favoriteStop.name : '—'],
-        ['Busiest day', wrapped?.busiestDay
-            ? `${wrapped.busiestDay.label} · ${wrapped.busiestDay.count} ${wrapped.busiestDay.count === 1 ? 'trip' : 'trips'}`
-            : '—'],
-        ['Peak time', wrapped?.peak ? wrapped.peak.name : '—'],
-    ];
-
-    let lineY = row + 86;
-    lines.forEach(([label, value]) => {
+        ctx.textAlign = 'left';
         ctx.fillStyle = 'rgba(238, 248, 244, 0.65)';
         ctx.font = '600 28px Inter, system-ui, sans-serif';
-        ctx.fillText(label, 108, lineY);
+        ctx.fillText('Top routes', 108, row + 62);
 
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '700 40px Inter, system-ui, sans-serif';
-        const clipped = String(value).length > 34 ? `${String(value).slice(0, 33)}…` : String(value);
-        ctx.fillText(clipped, 108, lineY + 48);
-        lineY += 104;
-    });
+        const maxCount = topRoutes[0].count || 1;
+        const barX = 300;
+        const barMax = panelW - (barX - panelX) - 150;
+        topRoutes.forEach((route, i) => {
+            const y = row + 96 + i * rowH;
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '700 36px Inter, system-ui, sans-serif';
+            ctx.textAlign = 'left';
+            const name = String(route.name);
+            ctx.fillText(name.length > 8 ? `${name.slice(0, 7)}…` : name, 108, y + 42);
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+            roundRect(ctx, barX, y + 14, barMax, 28, 14);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            roundRect(ctx, barX, y + 14, Math.max(28, barMax * (route.count / maxCount)), 28, 14);
+            ctx.fill();
+
+            ctx.fillStyle = 'rgba(238, 248, 244, 0.85)';
+            ctx.font = '700 32px Inter, system-ui, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${route.count}×`, panelX + panelW - 36, y + 42);
+        });
+        row += panelH + 28;
+    }
+
+    // Highlights; a busiest day with a single trip is filler, so skip it.
+    const lines = [
+        ['Favorite stop', wrapped?.favoriteStop ? wrapped.favoriteStop.name : null],
+        ['Busiest day', wrapped?.busiestDay && wrapped.busiestDay.count > 1
+            ? `${wrapped.busiestDay.label} · ${wrapped.busiestDay.count} trips`
+            : null],
+        ['Peak time', wrapped?.peak ? wrapped.peak.name : null],
+    ].filter(([, value]) => value);
+
+    if (lines.length) {
+        const lineH = 104;
+        const panelH = 40 + lines.length * lineH;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        roundRect(ctx, panelX, row, panelW, panelH, 36);
+        ctx.fill();
+
+        ctx.textAlign = 'left';
+        let lineY = row + 70;
+        lines.forEach(([label, value]) => {
+            ctx.fillStyle = 'rgba(238, 248, 244, 0.65)';
+            ctx.font = '600 28px Inter, system-ui, sans-serif';
+            ctx.fillText(label, 108, lineY);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '700 40px Inter, system-ui, sans-serif';
+            const clipped = String(value).length > 34 ? `${String(value).slice(0, 33)}…` : String(value);
+            ctx.fillText(clipped, 108, lineY + 48);
+            lineY += lineH;
+        });
+    }
 
     ctx.fillStyle = 'rgba(238, 248, 244, 0.55)';
     ctx.font = '600 30px Inter, system-ui, sans-serif';
