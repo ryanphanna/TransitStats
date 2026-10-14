@@ -220,8 +220,9 @@ function summarize(records) {
     };
 }
 
-function money(cents) {
-    return `$${(cents / 100).toFixed(2)}`;
+export function money(cents) {
+    const amount = Math.abs(cents) / 100;
+    return `${cents < 0 ? '-' : ''}$${amount.toFixed(2)}`;
 }
 
 function show(element, visible) {

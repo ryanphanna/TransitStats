@@ -1,4 +1,5 @@
 import { getApps, initializeApp } from 'firebase/app';
+import { resolveDocRef } from './shared/firestore-refs.js';
 import {
     browserLocalPersistence,
     EmailAuthProvider,
@@ -109,15 +110,15 @@ function createBatch() {
     const batch = writeBatch(firestoreClient);
     return {
         set(document, data, options) {
-            batch.set(document._ref, data, options);
+            batch.set(resolveDocRef(document), data, options);
             return this;
         },
         update(document, data) {
-            batch.update(document._ref, data);
+            batch.update(resolveDocRef(document), data);
             return this;
         },
         delete(document) {
-            batch.delete(document._ref);
+            batch.delete(resolveDocRef(document));
             return this;
         },
         commit() {

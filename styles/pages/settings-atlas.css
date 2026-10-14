@@ -349,7 +349,6 @@ html[data-theme="dark"] body.settings-surface .header {
   color: var(--text-muted);
   font-size: 0.68rem;
   font-weight: 700;
-  text-transform: uppercase;
 }
 
 .settings-public-profile-group .settings-identity-row {

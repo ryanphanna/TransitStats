@@ -129,7 +129,6 @@
     font-size: 0.66rem;
     font-weight: 800;
     letter-spacing: 0.1em;
-    text-transform: uppercase;
 }
 
 .public-kicker {
@@ -188,7 +187,6 @@
 .public-stat span {
     font-size: 0.75rem;
     color: var(--text-secondary);
-    text-transform: uppercase;
     letter-spacing: 0.05em;
 }
 
@@ -257,7 +255,6 @@
     font-size: 0.68rem;
     font-weight: 900;
     letter-spacing: 0.1em;
-    text-transform: uppercase;
 }
 
 .public-error-card h1 {

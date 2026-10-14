@@ -32,21 +32,12 @@ describe('/import page access', () => {
         await import('../js/pages/import.js');
     });
 
-    it('tells a non-pilot user they are not set up, without signing them out', async () => {
+    it('opens the importer for any invited user, pilot or not, without signing them out', async () => {
         checkWhitelist.mockResolvedValue({ allowed: true, isAdmin: false, pilot: null });
-        await authListener({ uid: 'u1', email: 'a@example.com' });
-        await vi.waitFor(() => expect(document.getElementById('import-denied-step').classList.contains('hidden')).toBe(false));
-        expect(document.getElementById('import-denied-message').textContent).toMatch(/isn't set up for importing/);
-        expect(signOut).not.toHaveBeenCalled();
-        const { initPrestoImporter } = await import('../js/presto-importer.js');
-        expect(initPrestoImporter).not.toHaveBeenCalled();
-    });
-
-    it('opens the importer for a pilot user', async () => {
-        checkWhitelist.mockResolvedValue({ allowed: true, isAdmin: false, pilot: 'presto' });
         await authListener({ uid: 'u1', email: 'a@example.com' });
         const { initPrestoImporter } = await import('../js/presto-importer.js');
         await vi.waitFor(() => expect(initPrestoImporter).toHaveBeenCalled());
+        expect(document.getElementById('import-active').classList.contains('hidden')).toBe(false);
         expect(signOut).not.toHaveBeenCalled();
     });
 
