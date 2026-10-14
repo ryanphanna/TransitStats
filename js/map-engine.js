@@ -2,6 +2,7 @@ import { PredictionEngine } from './predict.js';
 import { auth } from './firebase.js';
 import { buildStopIndex, resolveStopLocation } from './atlas-stop-resolver.js';
 import { preparePrestoStops, resolvePrestoStopLocation } from './presto-stop-matcher.js';
+import { unmatchedImportedRides } from './shared/ride-merge.js';
 import { getTripStopLabel } from './trip-display.js';
 import { createMapSurface, DEFAULT_MAP_CENTER, DEFAULT_MAP_OVERVIEW_ZOOM } from './map-surface.js';
 import {
@@ -408,8 +409,9 @@ export const MapEngine = {
 
         // The map represents the complete trip history. Repeated trips at the
         // same GTFS stop are collapsed into one point below. Imported PRESTO
-        // activity renders alongside logged trips but isn't part of `this.trips`.
-        const limitedTrips = [...this.trips, ...this._prestoTrips];
+        // activity renders alongside logged trips (minus rides already logged)
+        // but isn't part of `this.trips`.
+        const limitedTrips = [...this.trips, ...unmatchedImportedRides(this.trips, this._prestoTrips)];
 
         for (let index = 0; index < limitedTrips.length; index += 1) {
             const trip = limitedTrips[index];

@@ -14,7 +14,14 @@ const LOCATION_ALIASES = new Map([
     ['Toronto- New USBT', 'Union Station Bus Terminal'],
 ]);
 
-function parseCsv(text) {
+export const PDF_ERROR = 'That looks like the PDF version of the report. In PRESTO, open Transit Usage Report, pick a year, click Get Report, then choose Export CSV (not Download PDF) and upload that file.';
+export const DATE_FORMAT_EXAMPLE = '4/1/2026 2:01:25 PM';
+
+function parseCsv(rawText) {
+    // Spreadsheet and browser exports often start with a UTF-8 byte order mark,
+    // which would otherwise glue itself onto the first header ("\uFEFFDate").
+    const text = String(rawText || '').replace(/^\uFEFF/, '');
+    if (text.startsWith('%PDF')) throw new Error(PDF_ERROR);
     const rows = [];
     let row = [];
     let field = '';
@@ -51,7 +58,8 @@ function parseCsv(text) {
         rows.push(row);
     }
 
-    const [headers, ...values] = rows;
+    const [rawHeaders, ...values] = rows;
+    const headers = rawHeaders?.map(header => header.trim());
     if (!headers?.includes('Date') || !headers.includes('Type')) {
         throw new Error('This does not look like a PRESTO Transit Usage Report.');
     }
@@ -83,6 +91,7 @@ function classifyType(value) {
     if (value === 'Fare Payment') return 'fare_payment';
     if (value === 'Period Pass Load') return 'period_pass_load';
     if (value === 'Epurse Load') return 'epurse_load';
+    if (/refund/i.test(String(value || ''))) return 'refund';
     return 'unknown';
 }
 
@@ -121,12 +130,58 @@ async function fingerprint(record) {
     return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
+// If NO ride row has a readable date, the export is in a date format we don't
+// handle; say so plainly instead of reporting every row as "needs review".
+export function assertDatesReadable(records) {
+    const fares = records.filter(record => record.type === 'fare_payment');
+    if (fares.length === 0 || fares.some(record => Number.isFinite(record.occurredAtSortKey))) return;
+    const sample = fares[0].occurredAtLocal || 'blank';
+    throw new Error(`We couldn't read the dates in this file (for example "${sample}"). The importer expects dates like ${DATE_FORMAT_EXAMPLE}. Export the Transit Usage Report as CSV straight from PRESTO without opening and re-saving it.`);
+}
+
+function sameAgency(a, b) {
+    return String(a.agency || a.agencySource || '').toLowerCase() === String(b.agency || b.agencySource || '').toLowerCase();
+}
+
+/**
+ * A refund row that exactly reverses an earlier fare (same agency, same
+ * amount, refund after the fare) cancels it: the fare isn't a ride we should
+ * import or total. One refund cancels at most one fare, the closest earlier
+ * one. Returns new records; cancelled fares get `refunded: true`.
+ */
+export function markRefundedFares(records) {
+    const marked = records.map(record => ({ ...record }));
+    const fares = marked.filter(record => record.type === 'fare_payment' && Number.isFinite(record.occurredAtSortKey) && record.amountCents < 0);
+    marked
+        .filter(record => record.type === 'refund' && Number.isFinite(record.occurredAtSortKey) && record.amountCents > 0)
+        .sort((a, b) => a.occurredAtSortKey - b.occurredAtSortKey)
+        .forEach(refund => {
+            const target = fares
+                .filter(fare => !fare.refunded && sameAgency(fare, refund)
+                    && fare.amountCents === -refund.amountCents
+                    && fare.occurredAtSortKey <= refund.occurredAtSortKey)
+                .sort((a, b) => b.occurredAtSortKey - a.occurredAtSortKey)[0];
+            if (target) target.refunded = true;
+        });
+    return marked;
+}
+
 function isRecordUsable(record) {
     return Number.isFinite(record.occurredAtSortKey) && record.amountCents !== null;
 }
 
 function summarize(records) {
-    const farePayments = records.filter(record => record.type === 'fare_payment');
+    const refundedFares = records.filter(record => record.type === 'fare_payment' && record.refunded);
+    const farePayments = records.filter(record => record.type === 'fare_payment' && !record.refunded);
+    // Everything that isn't a fare or a card load is skipped on import. Count
+    // those by the label PRESTO used so people can see what was left out.
+    const skipped = {};
+    records
+        .filter(record => !['fare_payment', 'epurse_load', 'period_pass_load'].includes(record.type))
+        .forEach(record => {
+            const label = String(record.raw?.Type || 'Unlabelled').trim() || 'Unlabelled';
+            skipped[label] = (skipped[label] || 0) + 1;
+        });
     // Epurse loads fund the reloadable balance that fares are paid from, so
     // they're comparable to fareChargedCents. Period pass loads pay for a
     // separate all-you-can-ride subscription and have no per-fare relationship
@@ -159,6 +214,9 @@ function summarize(records) {
         // so an invalid Period Pass Load or Epurse Load row would be discarded
         // either way — it must not block importable fare payments.
         invalidRows: farePayments.filter(record => !isRecordUsable(record)).length,
+        refundedFares: refundedFares.length,
+        refundedCents: -refundedFares.reduce((total, record) => total + (record.amountCents || 0), 0),
+        skipped,
     };
 }
 
@@ -240,6 +298,8 @@ export function initPrestoImporter({ user }) {
                 return rows.map((row, index) => toRecord(row, index + 2, file.name));
             }));
             pendingRecords = recordsByFile.flat();
+            assertDatesReadable(pendingRecords);
+            pendingRecords = markRefundedFares(pendingRecords);
             const summary = summarize(pendingRecords);
             const agencySummary = Object.entries(summary.agencies)
                 .map(([agency, count]) => `${agency} (${count})`)
@@ -250,6 +310,9 @@ export function initPrestoImporter({ user }) {
                 : locationCheck.pending === 0
                     ? `All ${locationCheck.matched} ride locations already recognized.`
                     : `${locationCheck.matched} of ${locationCheck.checked} ride locations recognized now; ${locationCheck.pending} will be matched after import.`;
+            const skippedLine = Object.keys(summary.skipped).length
+                ? `Skipped: ${Object.entries(summary.skipped).map(([label, count]) => `${count} ${label}`).join(', ')}.`
+                : null;
             preview.textContent = [
                 `${summary.rows} rows ready`,
                 `${summary.farePayments} fare payments · ${summary.epurseLoads} balance top-ups · ${summary.passLoads} pass purchases`,
@@ -257,9 +320,11 @@ export function initPrestoImporter({ user }) {
                 `${money(summary.epurseLoadedCents)} added to reloadable balance · ${money(summary.passLoadedCents)} spent on passes`,
                 `${summary.first || 'Unknown'} to ${summary.last || 'unknown'}`,
                 `Agencies: ${agencySummary || 'none'}`,
+                summary.refundedFares ? `${summary.refundedFares} refunded fare${summary.refundedFares === 1 ? '' : 's'} (${money(summary.refundedCents)}) cancelled out and will not be imported.` : null,
+                skippedLine,
                 summary.invalidRows ? `${summary.invalidRows} rows need review and will not be imported.` : 'All rows passed basic validation.',
                 locationLine,
-            ].join('\n');
+            ].filter(Boolean).join('\n');
             show(preview, true);
             show(actions, summary.farePayments - summary.invalidRows > 0);
             status(statusElement, 'Preview only. Nothing has been saved.', 'success');
@@ -280,7 +345,7 @@ export function initPrestoImporter({ user }) {
             // preview above already summarized them from the file in memory.
             // Only fare payments are worth persisting. Invalid rows (bad date
             // or amount) are skipped rather than written with null fields.
-            const fareRecords = pendingRecords.filter(record => record.type === 'fare_payment' && isRecordUsable(record));
+            const fareRecords = pendingRecords.filter(record => record.type === 'fare_payment' && !record.refunded && isRecordUsable(record));
             const records = await Promise.all(fareRecords.map(async record => ({
                 ...record,
                 fingerprint: await fingerprint(record),
