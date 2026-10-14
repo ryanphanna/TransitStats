@@ -1,0 +1,11 @@
+import { launch, signIn, BASE } from '../lib.mjs';
+const { browser, context } = await launch(); const page = await context.newPage();
+const logs=[]; page.on('console', m => { if (m.type()==='error') logs.push(m.text().slice(0,110)); });
+await signIn(page, 'plain');
+await page.goto(BASE + '/dashboard'); await page.waitForTimeout(3500);
+const t0 = Date.now();
+await page.click('#btn-header-logout'); await page.waitForTimeout(500); await page.click('#btn-header-logout');
+await page.waitForURL(u => u.pathname === '/', { timeout: 30000 }).catch(() => {});
+console.log('after clicking Log out, reached login page after', Math.round((Date.now()-t0)/1000), 's; url', page.url().replace(BASE,''));
+console.log([...new Set(logs)].slice(0,4));
+process.exit(0);

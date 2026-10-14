@@ -17,6 +17,8 @@ export async function launch({ phone = false, reducedMotion = false } = {}) {
         viewport: phone ? { width: 390, height: 844 } : { width: 1280, height: 900 },
         deviceScaleFactor: 2,
         acceptDownloads: true,
+        timezoneId: 'America/Toronto',
+        locale: 'en-CA',
         reducedMotion: reducedMotion ? 'reduce' : 'no-preference',
     });
     // Safety net: nothing from this session may reach the real Firebase project.
