@@ -8,28 +8,33 @@ const assert = require('node:assert/strict');
 const { HabitEngine } = require('./lib/habit');
 
 // ─── helpers ───────────────────────────────────────────────────────────────
+// Trips without an agency use America/Toronto local time, so dates are built in
+// Toronto local time (correcting for DST) regardless of the machine's TZ.
 
-function makeDate(dayOfWeek, hour, minutesAgo = 0) {
-  // Build a Date that falls on the given day-of-week (0=Sun) and hour.
-  const now = new Date('2026-05-11T12:00:00Z'); // known Monday = day 1
-  const currentDay = now.getDay();
-  const daysOffset = ((dayOfWeek - currentDay) + 7) % 7;
-  const d = new Date(now);
-  d.setDate(d.getDate() + daysOffset);
-  d.setHours(hour, 0, 0, 0);
-  if (minutesAgo) d.setMinutes(d.getMinutes() - minutesAgo);
-  return d;
+function localDate(y, m, d, hour) {
+  let t = new Date(Date.UTC(y, m, d, hour + 4));
+  for (let i = 0; i < 3; i++) {
+    const h = HabitEngine._localParts(t, null).hour;
+    if (h === hour) break;
+    t = new Date(t.getTime() + (hour - h) * 3600000);
+  }
+  return t;
+}
+
+function makeDate(dayOfWeek, hour, daysAgo = 0) {
+  // 2026-05-11 is a Monday (day 1). Returns that week's dayOfWeek at `hour` Toronto time.
+  const offset = ((dayOfWeek - 1) + 7) % 7;
+  return localDate(2026, 4, 11 + offset - daysAgo, hour);
 }
 
 function makeTrip(route, stop, direction, dayOfWeek, hour, endStop = 'Spadina Station', daysAgo = 0) {
-  const d = makeDate(dayOfWeek, hour);
-  d.setDate(d.getDate() - daysAgo);
   return {
     route,
     startStopName: stop,
     direction,
-    startTime: d,
+    startTime: makeDate(dayOfWeek, hour, daysAgo),
     endStopName: endStop,
+    agency: 'TTC',
   };
 }
 
@@ -88,12 +93,14 @@ test('extractHabits: at MIN_OBSERVATIONS returns a habit', () => {
   assert.equal(habits[0].route, '510');
   assert.equal(habits[0].stop, 'King / Spadina');
   assert.equal(habits[0].direction, 'Westbound');
-  assert.equal(habits[0].day, 1);
+  assert.equal(habits[0].dayGroup, 'weekday');
+  assert.equal(habits[0].agency, 'TTC');
+  assert.equal(habits[0].schema, HabitEngine.SCHEMA);
   assert.equal(habits[0].count, 3);
 });
 
 test('extractHabits: hourMin and hourMax computed correctly', () => {
-  // Hours 8 and 9 both fall in bucket 8 (floor(h/2)*2), so all 3 trips group together.
+  // Hours 8 and 9 both fall in the 8–11 bucket, so all 3 trips group together.
   const trips = [
     makeTrip('510', 'King / Spadina', 'Westbound', 1, 8),
     makeTrip('510', 'King / Spadina', 'Westbound', 1, 8),
@@ -104,17 +111,48 @@ test('extractHabits: hourMin and hourMax computed correctly', () => {
   assert.equal(habits[0].hourMax, 9);
 });
 
-test('extractHabits: same stop/route/direction on different days produces two habits', () => {
+test('extractHabits: weekday and weekend trips form separate habits', () => {
   const monday = makeTripHistory(3, '510', 'King / Spadina', 'Westbound', 1, 8);
-  const friday = makeTripHistory(3, '510', 'King / Spadina', 'Westbound', 5, 17);
-  const habits = HabitEngine.extractHabits([...monday, ...friday]);
+  const saturday = makeTripHistory(3, '510', 'King / Spadina', 'Westbound', 6, 8);
+  const habits = HabitEngine.extractHabits([...monday, ...saturday]);
   assert.equal(habits.length, 2);
-  const days = habits.map(h => h.day).sort();
-  assert.deepEqual(days, [1, 5]);
+  assert.deepEqual(habits.map(h => h.dayGroup).sort(), ['weekday', 'weekend']);
+});
+
+test('extractHabits: different weekdays at the same time group together', () => {
+  const trips = [
+    makeTrip('510', 'King / Spadina', 'Westbound', 1, 8),
+    makeTrip('510', 'King / Spadina', 'Westbound', 2, 8),
+    makeTrip('510', 'King / Spadina', 'Westbound', 4, 9),
+  ];
+  const habits = HabitEngine.extractHabits(trips);
+  assert.equal(habits.length, 1);
+  assert.equal(habits[0].count, 3);
+});
+
+test('extractHabits: uses agency local time, not server time (Friday 9pm stays a weekday)', () => {
+  // Friday 21:00 in Toronto is Saturday 01:00 UTC.
+  const trips = [0, 7, 14].map(daysAgo => makeTrip('504', 'King / Spadina', 'Eastbound', 5, 21, 'Broadview Station', daysAgo));
+  assert.equal(trips[0].startTime.getUTCDay(), 6);
+  const habits = HabitEngine.extractHabits(trips);
+  assert.equal(habits.length, 1);
+  assert.equal(habits[0].dayGroup, 'weekday');
+  assert.equal(habits[0].hourMin, 21);
+});
+
+test('extractHabits: end stop names counted case-insensitively', () => {
+  const trips = [
+    makeTrip('510', 'King / Spadina', 'Westbound', 1, 8, 'Spadina Station'),
+    makeTrip('510', 'King / Spadina', 'Westbound', 1, 8, 'SPADINA STATION', 7),
+    makeTrip('510', 'King / Spadina', 'Westbound', 1, 8, 'Roncesvalles', 14),
+  ];
+  const habits = HabitEngine.extractHabits(trips);
+  assert.equal(habits[0].endStopCount, 2);
+  assert.equal(habits[0].endStop, 'Spadina Station'); // newest spelling
 });
 
 test('extractHabits: same stop different hours far apart stay in different buckets', () => {
-  // hour 8 → bucket 8, hour 17 → bucket 16
+  // hour 8 → bucket 8 (8–11), hour 17 → bucket 16 (16–19)
   const morning = makeTripHistory(3, '510', 'King / Spadina', 'Westbound', 1, 8);
   const evening = makeTripHistory(3, '510', 'King / Spadina', 'Westbound', 1, 17);
   const habits = HabitEngine.extractHabits([...morning, ...evening]);
@@ -178,27 +216,28 @@ test('extractHabits: route stored as string even if numeric', () => {
 
 // ─── _confidence ───────────────────────────────────────────────────────────
 
-test('_confidence: 10 fresh same-hour observations returns ~1.0', () => {
-  const c = HabitEngine._confidence(10, Date.now(), 0);
-  assert.ok(c >= 0.99 && c <= 1.0, `expected ~1.0, got ${c}`);
+const habitRec = (count, endStopCount, daysAgo = 0) => ({ count, endStopCount, lastSeen: Date.now() - daysAgo * 86400000 });
+
+test('_confidence: consistent end stop scores high (4/4 fresh → 0.8)', () => {
+  assert.equal(HabitEngine._confidence(habitRec(4, 4)), 0.8);
 });
 
 test('_confidence: decays with age', () => {
-  const fresh = HabitEngine._confidence(10, Date.now(), 0);
-  const old = HabitEngine._confidence(10, Date.now() - 60 * 86400000, 0); // 60 days ago
+  const fresh = HabitEngine._confidence(habitRec(5, 5));
+  const old = HabitEngine._confidence(habitRec(5, 5, 60));
   assert.ok(old < fresh);
+  assert.ok(Math.abs(old - fresh / 2) < 0.01, 'halves after HALF_LIFE_DAYS');
 });
 
-test('_confidence: wider hour window reduces score', () => {
-  const tight = HabitEngine._confidence(10, Date.now(), 1);  // hourSpread ≤ 1
-  const loose = HabitEngine._confidence(10, Date.now(), 3);  // hourSpread > 2
-  assert.ok(loose < tight);
+test('_confidence: mixed end stops score low', () => {
+  const pure = HabitEngine._confidence(habitRec(5, 5));
+  const mixed = HabitEngine._confidence(habitRec(5, 2));
+  assert.ok(mixed < pure);
+  assert.ok(mixed < HabitEngine.CONFIDENCE_THRESHOLD);
 });
 
-test('_confidence: fewer observations reduces score', () => {
-  const many = HabitEngine._confidence(10, Date.now(), 0);
-  const few = HabitEngine._confidence(3, Date.now(), 0);
-  assert.ok(few < many);
+test('_confidence: zero without a known end stop', () => {
+  assert.equal(HabitEngine._confidence(habitRec(5, 0)), 0);
 });
 
 // ─── match ─────────────────────────────────────────────────────────────────
@@ -221,10 +260,38 @@ test('match: returns habit when day/hour/stop/confidence all match', () => {
   assert.equal(result.route, '510');
 });
 
-test('match: wrong day of week returns null', () => {
+test('match: weekday habit does not fire on a weekend', () => {
   const habits = HabitEngine.extractHabits(makeTripHistory(10, '510', 'King / Spadina', 'Westbound', 1, 8));
-  const tuesday = makeDate(2, 8); // Tuesday
-  assert.equal(HabitEngine.match(habits, 'King / Spadina', tuesday), null);
+  const saturday = makeDate(6, 8);
+  assert.equal(HabitEngine.match(habits, 'King / Spadina', saturday), null);
+});
+
+test('match: weekday habit fires on another weekday', () => {
+  const habits = HabitEngine.extractHabits(makeTripHistory(10, '510', 'King / Spadina', 'Westbound', 1, 8));
+  assert.ok(HabitEngine.match(habits, 'King / Spadina', makeDate(3, 8)) !== null);
+});
+
+test('match: agency filter matches habits built from trips with an agency', () => {
+  const habits = HabitEngine.extractHabits(makeTripHistory(5, '510', 'King / Spadina', 'Westbound', 1, 8));
+  const now = makeDate(1, 8);
+  const result = HabitEngine.match(habits, 'King / Spadina', now, { route: '510', direction: 'Westbound', agency: 'TTC' });
+  assert.ok(result !== null, 'serving always passes an agency; v1 habits never matched it');
+  assert.equal(result.endStop, 'Spadina Station');
+  assert.equal(HabitEngine.match(habits, 'King / Spadina', now, { route: '510', agency: 'MiWay' }), null);
+});
+
+test('match: habit with inconsistent end stops does not fire', () => {
+  const stops = ['Spadina Station', 'Bathurst', 'Roncesvalles', 'Dufferin', 'Strachan'];
+  const trips = stops.map((stop, i) => makeTrip('510', 'King / Spadina', 'Westbound', 1, 8, stop, i * 7));
+  const habits = HabitEngine.extractHabits(trips);
+  assert.equal(habits.length, 1);
+  assert.equal(HabitEngine.match(habits, 'King / Spadina', makeDate(1, 8)), null);
+});
+
+test('match: ignores old-schema (v1) records until rebuilt', () => {
+  const v1 = [{ stop: 'King / Spadina', route: '510', direction: 'Westbound', endStop: 'Spadina Station',
+    day: 1, bucket: 8, hourMin: 8, hourMax: 8, count: 10, lastSeen: makeDate(1, 8).getTime(), stale: false }];
+  assert.equal(HabitEngine.match(v1, 'King / Spadina', makeDate(1, 8)), null);
 });
 
 test('match: stop name matched case-insensitively', () => {
@@ -251,11 +318,7 @@ test('match: hour outside ±1 window returns null', () => {
 
 test('match: low-confidence habit filtered out', () => {
   // 3 trips taken 300 days ago → very low confidence
-  const trips = Array.from({ length: 3 }, (_, i) => {
-    const d = makeDate(1, 8);
-    d.setDate(d.getDate() - 300 - i);
-    return { route: '510', startStopName: 'King / Spadina', direction: 'Westbound', startTime: d, endStopName: 'Spadina Station' };
-  });
+  const trips = Array.from({ length: 3 }, (_, i) => makeTrip('510', 'King / Spadina', 'Westbound', 1, 8, 'Spadina Station', 301 + i * 7));
   const habits = HabitEngine.extractHabits(trips);
   // All habits should have confidence well below threshold
   const now = makeDate(1, 8);
@@ -363,16 +426,12 @@ test('rebuild: marks habit stale when different route emerges in same slot recen
 
   // Old habit: 5 trips on the 510, taken 9-13 weeks ago (all Mondays, outside 30-day window)
   const oldTrips = Array.from({ length: 5 }, (_, i) => {
-    const d = makeDate(1, 8);
-    d.setDate(d.getDate() - (9 + i) * 7);
-    return { route: '510', startStopName: 'King / Spadina', direction: 'Westbound', startTime: d, endStopName: 'Spadina Station' };
+    return makeTrip('510', 'King / Spadina', 'Westbound', 1, 8, 'Spadina Station', (9 + i) * 7);
   });
 
   // New pattern: 3 trips on the 29, taken in the last 3 weeks (all Mondays, inside 30-day window)
   const newTrips = Array.from({ length: 3 }, (_, i) => {
-    const d = makeDate(1, 8);
-    d.setDate(d.getDate() - (1 + i) * 7);
-    return { route: '29', startStopName: 'King / Spadina', direction: 'Northbound', startTime: d, endStopName: 'Lawrence Station' };
+    return makeTrip('29', 'King / Spadina', 'Northbound', 1, 8, 'Lawrence Station', (1 + i) * 7);
   });
 
   const result = await HabitEngine.rebuild(db, 'user1', [...oldTrips, ...newTrips]);
@@ -393,18 +452,23 @@ test('match: stale habits are filtered out', async () => {
   const db = makeDb(null);
 
   const oldTrips = Array.from({ length: 5 }, (_, i) => {
-    const d = makeDate(1, 8);
-    d.setDate(d.getDate() - (9 + i) * 7);
-    return { route: '510', startStopName: 'King / Spadina', direction: 'Westbound', startTime: d, endStopName: 'Spadina Station' };
+    return makeTrip('510', 'King / Spadina', 'Westbound', 1, 8, 'Spadina Station', (9 + i) * 7);
   });
   const newTrips = Array.from({ length: 3 }, (_, i) => {
-    const d = makeDate(1, 8);
-    d.setDate(d.getDate() - (1 + i) * 7);
-    return { route: '29', startStopName: 'King / Spadina', direction: 'Northbound', startTime: d, endStopName: 'Lawrence Station' };
+    return makeTrip('29', 'King / Spadina', 'Northbound', 1, 8, 'Lawrence Station', (1 + i) * 7);
   });
 
   const habits = await HabitEngine.rebuild(db, 'user1', [...oldTrips, ...newTrips]);
   const now = makeDate(1, 8);
   // 510 is stale — match with 510 filter should return null
   assert.equal(HabitEngine.match(habits, 'King / Spadina', now, { route: '510' }), null);
+});
+
+test('rebuild: two routes ridden from the same stop and slot do not mark each other stale', async () => {
+  const db = makeDb(null);
+  const a = [1, 2, 3].map(w => makeTrip('510', 'King / Spadina', 'Westbound', 1, 8, 'Spadina Station', w * 7));
+  const b = [1, 2, 3].map(w => makeTrip('29', 'King / Spadina', 'Northbound', 2, 9, 'Lawrence Station', w * 7));
+  const habits = await HabitEngine.rebuild(db, 'user1', [...a, ...b]);
+  assert.equal(habits.length, 2);
+  assert.ok(habits.every(h => h.stale === false));
 });

@@ -1,28 +1,46 @@
 /**
  * HabitEngine — learns recurring trip patterns from history.
  *
- * A "habit" is a (stop, route, direction) triplet that fires predictably
- * on certain days within a certain hour window. When a boarding matches a
- * known habit with sufficient confidence, the engine returns a prediction
- * directly without needing to run V4/V5.
+ * A "habit" is a (stop, route, direction) triplet that recurs in the same
+ * part of the week (weekday or weekend) and time-of-day bucket. When a
+ * boarding matches a known habit with sufficient confidence, the engine
+ * returns its usual end stop directly without needing to run V4/V5.
  *
  * Changelog:
  *   v1 - Habit extraction from trip history, match scoring, Firestore persistence.
  *        Confidence = count score × recency decay × time-window precision.
+ *   v2 - Never fired in v1 (habits had no agency, so serving's agency filter dropped
+ *        them all; exact-weekday × 2h buckets never reached the 0.75 threshold).
+ *        Now: agency stored on habits; day/hour in the agency's local time instead of
+ *        server UTC; weekday/weekend × 4h buckets; confidence measures how often the
+ *        group ended at its usual end stop (smoothed), × recency. Old-schema
+ *        records are ignored until the next rebuild. A habit seen in the last 30 days is
+ *        never marked stale. Tuned with ml/eval (see ml/EVAL.md).
  */
 
-const HabitEngine = {
-  VERSION: '1.0.0',
+const { AGENCY_TIMEZONE } = require('./constants');
 
-  CONFIDENCE_THRESHOLD: 0.75, // Minimum confidence to use habit prediction directly
+const DEFAULT_TIMEZONE = 'America/Toronto';
+const _formatters = {};
+
+const HabitEngine = {
+  VERSION: '2.0.0',
+  SCHEMA: 2,                  // Records without this schema are ignored by match()
+
+  CONFIDENCE_THRESHOLD: 0.6,  // Minimum confidence to use habit prediction directly
   MIN_OBSERVATIONS: 3,        // Minimum trips to form a habit candidate
+  BUCKET_HOURS: 4,            // Time-of-day bucket width
+  HOUR_SLACK: 1,              // Match tolerance outside the observed hour window
+  PURITY_PRIOR: 1,            // Smoothing: confidence = usual-end-stop count / (count + prior)
+  HALF_LIFE_DAYS: 60,         // Recency decay half-life
 
   /**
    * Extract habits from a set of completed trips.
-   * Groups by (stop, route, direction, dayOfWeek, 2-hour bucket) and
+   * Groups by (agency, stop, route, direction, weekday/weekend, time bucket) and
    * returns habit records for groups meeting MIN_OBSERVATIONS.
    *
-   * @param {Array} trips - Completed trips with startStopName, route, direction, startTime, endStopName
+   * @param {Array} trips - Completed trips with startStopName, route, direction, startTime, endStopName, agency
+   * @param {number} [since] - Only use trips starting at or after this epoch ms
    * @returns {Array} Habit records
    */
   extractHabits(trips, since = null) {
@@ -36,10 +54,10 @@ const HabitEngine = {
       if (isNaN(time.getTime())) continue;
       if (since && time.getTime() < since) continue;
 
-      const day = time.getDay();
-      const hour = time.getHours();
-      const bucket = Math.floor(hour / 2) * 2; // 2-hour buckets: 0, 2, 4, ..., 22
-      const key = `${this._norm(trip.agency)}|${this._norm(trip.startStopName)}|${trip.route}|${trip.direction}|${day}|${bucket}`;
+      const { dayGroup, hour } = this._localParts(time, trip.agency);
+      const bucket = this._bucket(hour);
+      const key = [trip.agency, trip.startStopName, trip.route, trip.direction]
+        .map(v => this._norm(v)).concat(dayGroup, bucket).join('|');
 
       if (!groups[key]) {
         groups[key] = {
@@ -47,7 +65,7 @@ const HabitEngine = {
           agency: trip.agency || null,
           route: trip.route.toString(),
           direction: trip.direction,
-          day,
+          dayGroup,
           bucket,
           observations: [],
         };
@@ -55,7 +73,7 @@ const HabitEngine = {
       groups[key].observations.push({
         time,
         hour,
-        endStop: trip.endStopName || null,
+        endStop: trip.endStopName || trip.endStop || null,
       });
     }
 
@@ -65,37 +83,37 @@ const HabitEngine = {
       if (group.observations.length < this.MIN_OBSERVATIONS) continue;
 
       const hours = group.observations.map(o => o.hour);
-      const hourMin = Math.min(...hours);
-      const hourMax = Math.max(...hours);
       const lastSeen = Math.max(...group.observations.map(o => o.time.getTime()));
 
-      // Most common end stop across observations
-      const endStopCounts = {};
+      // Most common end stop (case/space-insensitive), newest spelling wins ties.
+      const endStops = {};
       for (const o of group.observations) {
-        if (o.endStop) endStopCounts[o.endStop] = (endStopCounts[o.endStop] || 0) + 1;
+        if (!o.endStop) continue;
+        const k = this._norm(o.endStop);
+        const e = endStops[k] || (endStops[k] = { name: o.endStop, count: 0, last: 0 });
+        e.count += 1;
+        if (o.time.getTime() >= e.last) { e.last = o.time.getTime(); e.name = o.endStop; }
       }
-      const endStop = Object.entries(endStopCounts)
-        .sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+      const top = Object.values(endStops).sort((a, b) => b.count - a.count || b.last - a.last)[0] || null;
 
-      habits.push({
+      const habit = {
+        schema: this.SCHEMA,
         stop: group.stop,
+        agency: group.agency,
         route: group.route,
         direction: group.direction,
-        endStop,
-        day: group.day,
+        endStop: top ? top.name : null,
+        endStopCount: top ? top.count : 0,
+        dayGroup: group.dayGroup,
         bucket: group.bucket,
-        hourMin,
-        hourMax,
+        hourMin: Math.min(...hours),
+        hourMax: Math.max(...hours),
         count: group.observations.length,
         lastSeen,
-        confidence: this._confidence(
-          group.observations.length,
-          lastSeen,
-          hourMax - hourMin,
-          referenceMs
-        ),
         stale: false,
-      });
+      };
+      habit.confidence = this._confidence(habit, referenceMs);
+      habits.push(habit);
     }
 
     return habits;
@@ -108,48 +126,41 @@ const HabitEngine = {
    * @param {Array} habits - Loaded habits (from load())
    * @param {string} stop - Current boarding stop name
    * @param {Date} now - Current time
-   * @param {Object} [filters] - Optional route/direction filters
-   * @param {string} [filters.route] - Only match habits for this route
-   * @param {string} [filters.direction] - Only match habits for this direction
-   * @param {string} [filters.agency] - Only match habits for this agency
+   * @param {Object} [filters] - Optional route/direction/agency filters
    * @returns {Object|null} Best matching habit, or null if none qualify
    */
   match(habits, stop, now, { route = null, direction = null, agency = null } = {}) {
     if (!habits || !habits.length || !stop || !now) return null;
 
-    const day = now.getDay();
-    const hour = now.getHours();
     const nowMs = now.getTime();
+    const local = {};
+    const partsFor = (tzAgency) => {
+      const tz = this._timezone(tzAgency);
+      if (!local[tz]) local[tz] = this._localParts(now, tzAgency);
+      return local[tz];
+    };
 
-    const candidates = habits.filter(h => {
-      if (h.stale) return false;
-      if (!this._stopMatch(h.stop, stop)) return false;
-      if (h.day !== day) return false;
-      // Allow ±1 hour flexibility outside the observed window
-      if (hour < h.hourMin - 1 || hour > h.hourMax + 1) return false;
-      const confidence = this._confidence(h.count, h.lastSeen, h.hourMax - h.hourMin, nowMs);
-      if (confidence < this.CONFIDENCE_THRESHOLD) return false;
-      if (route && this._norm(h.route) !== this._norm(route.toString())) return false;
-      if (direction && this._norm(h.direction) !== this._norm(direction)) return false;
-      if (agency && this._norm(h.agency) !== this._norm(agency)) return false;
-      return true;
-    });
+    const candidates = [];
+    for (const h of habits) {
+      if (!h || h.schema !== this.SCHEMA || h.stale) continue;
+      if (!this._stopMatch(h.stop, stop)) continue;
+      if (route && this._norm(h.route) !== this._norm(route)) continue;
+      if (direction && this._norm(h.direction) !== this._norm(direction)) continue;
+      if (agency && this._norm(h.agency) !== this._norm(agency)) continue;
+      const { dayGroup, hour } = partsFor(h.agency || agency);
+      if (h.dayGroup !== dayGroup) continue;
+      if (hour < h.hourMin - this.HOUR_SLACK || hour > h.hourMax + this.HOUR_SLACK) continue;
+      const confidence = this._confidence(h, nowMs);
+      if (confidence < this.CONFIDENCE_THRESHOLD) continue;
+      candidates.push({ ...h, confidence });
+    }
 
     if (!candidates.length) return null;
-    return candidates
-      .map((habit) => ({
-        ...habit,
-        confidence: this._confidence(habit.count, habit.lastSeen, habit.hourMax - habit.hourMin, nowMs),
-      }))
-      .sort((a, b) => b.confidence - a.confidence)[0];
+    return candidates.sort((a, b) => b.confidence - a.confidence || b.count - a.count)[0];
   },
 
   /**
    * Load habits for a user from Firestore.
-   *
-   * @param {Object} db - Firestore instance
-   * @param {string} userId
-   * @returns {Array} Habit records (empty array if none)
    */
   async load(db, userId) {
     if (!db || !userId) return [];
@@ -159,10 +170,6 @@ const HabitEngine = {
 
   /**
    * Save habits for a user to Firestore.
-   *
-   * @param {Object} db
-   * @param {string} userId
-   * @param {Array} habits
    */
   async save(db, userId, habits) {
     if (!db || !userId) return;
@@ -174,31 +181,25 @@ const HabitEngine = {
   },
 
   /**
-   * Rebuild habits for a user from their full trip history and persist.
-   * Call after enough new trips accumulate, or on a weekly schedule.
-   *
-   * @param {Object} db
-   * @param {string} userId
-   * @param {Array} trips - Full trip history
-   * @returns {Array} Extracted habits
+   * Rebuild habits for a user from their recent trip history and persist.
+   * Called after each completed trip with the newest 200 completed trips.
    */
   async rebuild(db, userId, trips) {
     const habits = this.extractHabits(trips);
 
-    // Detect stale habits: if a different route/direction is emerging in the same
-    // (stop, day, bucket) slot within the last 30 days, the old habit is being replaced.
+    // Detect stale habits: if a habit hasn't been ridden in the last 30 days and a different
+    // route/direction has emerged in its (stop, day group, bucket) slot, it was replaced.
     const referenceMs = this._latestTripTime(trips);
     const thirtyDaysAgo = referenceMs - 30 * 86400000;
     const recentHabits = this.extractHabits(trips, thirtyDaysAgo);
+    const slotOf = h => `${this._norm(h.agency)}|${this._norm(h.stop)}|${h.dayGroup}|${h.bucket}`;
     const recentBySlot = {};
     for (const h of recentHabits) {
-      const slot = `${this._norm(h.agency)}|${this._norm(h.stop)}|${h.day}|${h.bucket}`;
-      if (!recentBySlot[slot]) recentBySlot[slot] = [];
-      recentBySlot[slot].push(h);
+      (recentBySlot[slotOf(h)] = recentBySlot[slotOf(h)] || []).push(h);
     }
     for (const habit of habits) {
-      const slot = `${this._norm(habit.agency)}|${this._norm(habit.stop)}|${habit.day}|${habit.bucket}`;
-      const recent = recentBySlot[slot] || [];
+      if (habit.lastSeen >= thirtyDaysAgo) continue; // still being ridden: not replaced
+      const recent = recentBySlot[slotOf(habit)] || [];
       const replacement = recent.find(r =>
         (this._norm(r.route) !== this._norm(habit.route) ||
          this._norm(r.direction) !== this._norm(habit.direction)) &&
@@ -215,20 +216,43 @@ const HabitEngine = {
   },
 
   /**
-   * Confidence score for a habit: count × recency × time-window precision.
-   *
-   * - Count: reaches ~1.0 at 10 observations
-   * - Recency: exponential decay with 30-day half-life
-   * - Precision: tighter hour window = more reliable signal
+   * Confidence that this boarding ends at the habit's usual end stop:
+   * smoothed share of the group's trips that ended there, × recency decay.
+   * 3/3 → 0.75, 4/4 → 0.8, 3/4 → 0.6 (fresh, prior 1).
    *
    * @private
    */
-  _confidence(count, lastSeenMs, hourSpread, referenceMs = Date.now()) {
-    const countScore = Math.min(count / 10, 1.0);
-    const daysSince = Math.max(0, (referenceMs - lastSeenMs) / 86400000);
-    const recency = Math.exp(-(Math.log(2) / 30) * daysSince);
-    const precision = hourSpread <= 1 ? 1.0 : hourSpread <= 2 ? 0.9 : 0.8;
-    return Math.round(countScore * recency * precision * 1000) / 1000;
+  _confidence(habit, referenceMs = Date.now()) {
+    if (!habit || !habit.count || !habit.endStopCount) return 0;
+    const share = habit.endStopCount / (habit.count + this.PURITY_PRIOR);
+    const daysSince = Math.max(0, (referenceMs - habit.lastSeen) / 86400000);
+    const recency = Math.exp(-(Math.log(2) / this.HALF_LIFE_DAYS) * daysSince);
+    return Math.round(share * recency * 1000) / 1000;
+  },
+
+  _bucket(hour) {
+    return Math.floor(hour / this.BUCKET_HOURS) * this.BUCKET_HOURS;
+  },
+
+  _timezone(agency) {
+    return (agency && AGENCY_TIMEZONE[agency]) || DEFAULT_TIMEZONE;
+  },
+
+  /** Day group ('weekday'/'weekend') and hour in the agency's local time. */
+  _localParts(time, agency) {
+    const tz = this._timezone(agency);
+    if (!_formatters[tz]) {
+      _formatters[tz] = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz, weekday: 'short', hour: 'numeric', hourCycle: 'h23',
+      });
+    }
+    let weekday = 'Mon';
+    let hour = 0;
+    for (const p of _formatters[tz].formatToParts(time)) {
+      if (p.type === 'weekday') weekday = p.value;
+      if (p.type === 'hour') hour = parseInt(p.value, 10) % 24;
+    }
+    return { dayGroup: weekday === 'Sat' || weekday === 'Sun' ? 'weekend' : 'weekday', hour };
   },
 
   _coerceTime(value) {

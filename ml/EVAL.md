@@ -80,7 +80,7 @@ There is no SMS vs PRESTO split: this account has no PRESTO imports. The legacy 
    - **S5 canonicalization:** V3 doesn't collapse "and"; ml_utils does.
 5. **Local time shows no gain yet:** -0.8 points, within noise. No fold contains a DST switch (next one: 2026-11-01). Keep it as a correctness fix and re-measure after November, not as an accuracy claim.
 6. **Topology masking doesn't help V4/V5.** It cuts coverage 88% → 76%, because when the legal set holds none of the model's classes the model abstains, and top-1 is flat.
-7. **The habit engine never fires,** live or in replay, because of two independent blockers:
+7. **The habit engine never fires,** live or in replay, because of two independent blockers (fixed: see "Habit engine: fix and retune (v2)" below):
    - `extractHabits` stores habits without an `agency` field, and `match()` drops every habit when serving passes an agency.
    - Even with that fixed, confidence = count/10 × recency × precision, against a 0.75 threshold. Habits are bucketed by exact weekday × 2h within a 200-trip window (about 8 weeks), so the best habit has 3–5 trips, and the measured max confidence is 0.19–0.44.
 
@@ -103,3 +103,48 @@ Replace `check_model_regression.py`'s comparison of each run's own random-window
 2. The candidate is the new pipeline, the baseline the currently published one, both refit per fold on the same rows.
 3. Reject if the candidate's paired top-1 on the last 90 days is lower with the CI upper bound below 0, or if coverage drops more than 5 points.
 4. Bump `EVAL_VERSION` only by a reviewed commit, so the gate always compares like with like.
+
+## Habit engine: fix and retune (v2)
+
+What changed in `functions/lib/habit.js`:
+- **Correctness:** habits now store `agency` (serving always passes one, so v1 never matched). Day and hour come from the agency's timezone (`AGENCY_TIMEZONE`, default America/Toronto), not server UTC; the replay gives identical habits under `TZ=UTC` and `TZ=America/Toronto`. Records carry `schema: 2`, and `match()` ignores older records until the next rebuild.
+- **Bucketing:** weekday vs weekend × 4h buckets (v1: exact weekday × 2h). Matching still allows ±1 h outside the observed hours.
+- **Confidence:** share of the group's trips that ended at its usual end stop, smoothed (`top / (count + 1)`), × recency with a 60-day half-life; threshold 0.6, minimum 3 trips. v1's confidence ignored whether the end stop was consistent at all.
+- **Stale rule:** a habit seen in the last 30 days is never marked stale. With weekday-wide slots, two routes ridden from the same stop marked each other stale. Coverage rose from 11.7% to 12.5%; the Served row is unchanged.
+- History window unchanged (200 trips at rebuild).
+- **Serving (`handlers-trip.js`):** the habit reply keeps the standard END/FORGOT line, which it used to drop, and the stored version is `habit_v2`.
+- **Serving, follow-up:** when a habit fires, V3/V4/V5 still run and are stored and graded as on any other trip, so live `predictionStats` stay complete. Admin "END 1" on a habit trip maps to the habit's end stop; V3's stored list is untouched, and a non-admin END 1 never resolves.
+- **Admin-only (Ryan's decision):** "Usual trip to X." is shown to admins only, gated like V3's list. Non-admin replies are byte-for-byte unchanged. The habit still runs, and is stored and graded, for everyone.
+
+Tuning: a sweep over the real habit.js (threshold 0) covered day grouping (exact day / weekday-weekend), bucket width (2/3/4 h), history (200/500/2000 trips), minimum trips, smoothing, half-life and threshold. Picked on the 249 rows before the last 90 days only.
+- Exact-day buckets stay too sparse at any setting: +1 to +2 points.
+- Weekday/weekend buckets help at every width (+4 to +6 on the tuning rows). 4 h was marginally best.
+- Longer history (500/2000) didn't help on the tuning rows, so the window stays 200.
+- Threshold between 0.5 and 0.7 changes almost nothing, because confidence is dominated by consistency.
+- The sweep differed from the final replay by about 2 rows. The sweep used a minimum of 2 trips, which changes stale-slot detection; the numbers below are from the unmodified `replay_js.js` on the committed code.
+
+Results (end stop, n=409; paired diffs on the last 90 days, n=160, from harness output):
+
+| Predictor | Top-1 [95% CI] | Top-3 | Coverage | vs V3 (90d) | vs B3 full (90d) |
+|---|---|---|---|---|---|
+| Habit engine, before | 0.0% | 0.0% | 0.0% | -31.2 | -50.0 |
+| Habit engine, after | 10.5% | 10.5% | 12.5% | -15.0 [-23.1, -6.2] | -33.8 |
+| Served to user (habit, else V3 top-3), before | 27.9% [23.7–32.4] | 29.6% | 42.5% | 0 | -18.8 [-26.2, -11.2] |
+| **Served to user (habit, else V3 top-3), after** | **32.3% [27.9–37.0]** | 34.0% | 46.0% | **+7.5 [+3.8, +11.9]** | -11.2 [-18.1, -4.4] |
+| Served: habit first, then V3 list (UX option) | 32.3% | 34.5% | 46.0% | +7.5 [+3.8, +11.9] | -11.2 |
+| Served: habit only when V3 abstains (UX option) | 30.8% | 32.5% | 46.0% | +6.9 [+3.1, +11.2] | -11.9 |
+
+When the habit fires (51 rows, 29 in the last 90 days) it is right 84% of the time (90% in the last 90 days); V3 is right 66% of the time when it answers.
+- **V3 had no answer (14 rows):** the habit is right on 12.
+- **V3 answered (37 rows):** the habit is right on 31. V3's top-1 is right on 25, and its top-3 on the same 25, so hiding V3's list costs nothing here.
+
+Segments for the served row: weekday 34.1%, weekend 20.4% (unchanged; no weekend habit fired), last 90 days 38.8%.
+
+Decision: ship it as a correctness fix with a gain. The served row beats V3 on the last 90 days with the CI above 0. It does not beat B3 on full history (-11.2), so it fails the full promotion bar. Bigger gains still need longer history and better coverage than any habit gives.
+
+UX (proposal, not implemented):
+- Keep the habit replacing V3's list. On the rows where both answer, the habit is more precise, and V3's list adds no extra top-3 hits.
+- Showing the habit first with V3's list after it is equivalent (+0.5 top-3) and could be adopted cheaply.
+- End-stop suggestions are admin-only. Admins see "Usual trip to X." in place of V3's list; non-admins see no end-stop hint. The "Served" row is the admin view.
+- Habit trips store V3's `endStopPrediction`/`endStopPredictions` too, so the web Atlas stop resolver keeps its end-stop hints.
+- `finalization.js` grades `habitPrediction.endStop` as `habit-endstop`, which is correct. V3/V4/V5 are graded separately; they also run on habit trips.
