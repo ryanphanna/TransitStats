@@ -100,7 +100,7 @@ exports.onTripFinalized = onDocumentWritten('trips/{tripId}', async (event) => {
     return;
   }
 
-  // A correction to the stops/agency/route/direction of an ended trip: re-check the stop match
+  // A correction to the start/end stop or agency of an ended trip: re-check the stop match
   // so a corrected trip is not left permanently unmatched (or matched on stale data).
   if (after.endTime != null) {
     try {
