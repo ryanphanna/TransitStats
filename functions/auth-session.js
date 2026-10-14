@@ -14,16 +14,32 @@ const ALLOWED_HOSTS = new Set([
   '127.0.0.1',
 ]);
 
-function cookieHeader(value, maxAge) {
-  return [
+function cookieHeader(value, maxAge, host = '') {
+  const parts = [
     `${SESSION_COOKIE}=${value}`,
-    'Domain=.transitstats.fyi',
     'Path=/',
     'HttpOnly',
-    'Secure',
     'SameSite=Lax',
     `Max-Age=${maxAge}`,
-  ].join('; ');
+  ];
+  // Domain must match the request host or browsers drop the cookie. Local
+  // Vite/emulator sessions need a host-only cookie; production keeps the
+  // shared .transitstats.fyi domain across subdomains.
+  if (host.endsWith('transitstats.fyi')) {
+    parts.splice(1, 0, 'Domain=.transitstats.fyi');
+    parts.push('Secure');
+  }
+  return parts.join('; ');
+}
+
+function isInvalidSessionCookieError(error) {
+  const code = String(error?.code || '');
+  return code.includes('session-cookie')
+    || code.includes('invalid-argument')
+    || code === 'auth/argument-error'
+    || code === 'auth/invalid-session-cookie'
+    || code === 'auth/session-cookie-expired'
+    || code === 'auth/session-cookie-revoked';
 }
 
 function getHost(req) {
@@ -81,8 +97,10 @@ async function handleAuthSession(req, res) {
 
   res.set('Cache-Control', 'no-store');
 
+  const host = getHost(req);
+
   if (req.method === 'DELETE') {
-    res.set('Set-Cookie', cookieHeader('', 0));
+    res.set('Set-Cookie', cookieHeader('', 0, host));
     res.status(204).end();
     return;
   }
@@ -102,12 +120,12 @@ async function handleAuthSession(req, res) {
         return;
       }
 
-      await recordLoginActivity(decoded.uid, getHost(req));
+      await recordLoginActivity(decoded.uid, host);
 
       const sessionCookie = await adminAuth.createSessionCookie(authHeader.slice(7), {
         expiresIn: SESSION_MAX_AGE_SECONDS * 1000,
       });
-      res.set('Set-Cookie', cookieHeader(sessionCookie, SESSION_MAX_AGE_SECONDS));
+      res.set('Set-Cookie', cookieHeader(sessionCookie, SESSION_MAX_AGE_SECONDS, host));
       res.status(204).end();
       return;
     }
@@ -125,15 +143,19 @@ async function handleAuthSession(req, res) {
 
     const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
     if (!(await isAllowedUser(decoded.uid, decoded.email || ''))) {
-      res.set('Set-Cookie', cookieHeader('', 0));
+      res.set('Set-Cookie', cookieHeader('', 0, host));
       res.status(403).json({ error: 'Access denied' });
       return;
     }
 
     const customToken = await adminAuth.createCustomToken(decoded.uid);
     res.status(200).json({ token: customToken });
-  } catch {
-    if (req.method === 'GET') res.set('Set-Cookie', cookieHeader('', 0));
+  } catch (error) {
+    // Only erase the cookie when it is known-bad. Transient Admin SDK / network
+    // failures used to Max-Age=0 the backstop and turn one flake into a logout.
+    if (req.method === 'GET' && isInvalidSessionCookieError(error)) {
+      res.set('Set-Cookie', cookieHeader('', 0, host));
+    }
     res.status(401).json({ error: 'Shared session is invalid' });
   }
 }

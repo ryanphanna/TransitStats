@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Idle tabs should stay signed in.** The shared session cookie is refreshed on focus and every 45 minutes, whitelist network flakes no longer force a logout, and a bad Admin SDK blip no longer wipes the cookie.
 - Removed the unused Rocket research page.
 - **Closed a privacy leak in Rocket.** Anyone could read other people's Rocket GPS trails. Sessions are now readable only by their owner.
 - Updated web and Functions dependencies to clear the active Dependabot security alerts.
