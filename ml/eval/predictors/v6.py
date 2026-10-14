@@ -182,15 +182,16 @@ class V6:
         return [(d, c) for d, c, _ in ranked[:depth]], [k for _, _, k in ranked[:depth]], used
 
     # -- rerank ---------------------------------------------------------------
-    def candidates(self, trip, replay_row):
+    def candidates(self, trip, replay_row, view="full"):
         """Candidate keys -> display + per-candidate features (all from history before the trip)."""
         h, c = self.h, self.data.canon
         f = self.feat(trip)
-        full = h._full_history(self.data, trip)
+        full = h._full_history(self.data, trip) if view == "full" else \
+            [x for x in h.serve_context(self.data, trip)["hist"] if h.is_clean(x) and x.get("_start")]
         pool = [x for x in full if (x.get("agency") or "").lower() == f["agency"]]
         v3 = [(p["stop"], p["confidence"]) for p in (replay_row or {}).get("v3EndTop") or []]
         b3 = h.baseline_predict(self.data, trip, "end", "local", full)["B3 stop x time, decayed"][:3]
-        bo, bo_keys, _ = self.backoff(trip, "full", RERANK_BACKOFF, depth=5)
+        bo, bo_keys, _ = self.backoff(trip, view, RERANK_BACKOFF, depth=5)
         disp = {}
         for d, _ in v3 + b3 + bo:
             disp.setdefault(c.v3(d), d)
@@ -207,7 +208,7 @@ class V6:
         hl = RERANK_BACKOFF["halflife"]
 
         def shares(level):
-            m = self.matches(trip, "full", level, "end", pool) or []
+            m = self.matches(trip, view, level, "end", pool) or []
             return {k: s for k, _, s in self.rank(m, hl)}, len(m)
 
         s_rsd, n_rsd = shares(("route", "start", "dir"))
@@ -265,15 +266,15 @@ FEATURE_NAMES = ["share_route_start_dir", "share_route_start", "share_route_star
 
 
 class Reranker:
-    def __init__(self, v6, replay):
-        self.v6, self.replay = v6, replay
+    def __init__(self, v6, replay, view="full"):
+        self.v6, self.replay, self.view = v6, replay, view
         self._cands = {}
         h, data = v6.h, v6.data
         self.train_trips = sorted([t for t in data.clean_rows if t["_id"] in replay], key=lambda t: t["_start"])
 
     def cands(self, t):
         if t["_id"] not in self._cands:
-            self._cands[t["_id"]] = self.v6.candidates(t, self.replay.get(t["_id"]))
+            self._cands[t["_id"]] = self.v6.candidates(t, self.replay.get(t["_id"]), self.view)
         return self._cands[t["_id"]]
 
     def fit(self, cutoff, C=1.0):
@@ -333,6 +334,7 @@ def register(h):
         if "end" in env["tasks"]:
             rr = env["state"]
             out.append(h.Pred("end", "V6 rerank (walk-forward logistic)", rr["rr"].predict(rr["model"], t)))
+            out.append(h.Pred("end", "V6 rerank, serve history only (exploratory)", rr["rr_s"].predict(rr["model_s"], t)))
         return out
 
     def setup(data, fold_start, tasks):
@@ -349,7 +351,8 @@ def register(h):
                     path = sys.argv[i + 1]
             replay = {r["id"]: r for r in map(json.loads, open(path))} if path else {}
             _STATE["rr"] = Reranker(v6, replay)
-        rr = _STATE["rr"]
-        return {"rr": rr, "model": rr.fit(fold_start)}
+            _STATE["rr_s"] = Reranker(v6, replay, view="serve")
+        rr, rr_s = _STATE["rr"], _STATE["rr_s"]
+        return {"rr": rr, "model": rr.fit(fold_start), "rr_s": rr_s, "model_s": rr_s.fit(fold_start)}
 
     h.register(h.Family("v6", {"route", "end"}, predict, setup=setup))

@@ -360,6 +360,26 @@ Code: `ml/eval/predictors/v6.py`, plus the tuning and extra checks in `ml/eval/v
 
 - The 409-row figures include the 249 tuning rows, so the tuned backoff's whole-window number is slightly optimistic. The last-90-day diffs are clean.
 - The full-history views read every clean trip before the trip, not the 100 that serving loads today.
+- **Exploratory: the same rerank fed only the 100-trip serve window** scores 44.0% top-1, -1.9 [-8.8, +5.6] against B3 full on the last 90 days, so it does not pass. The gain needs deep history.
 - With n=160, the rerank's lower bound against V3-else-B3 (+0.6) is thin. Re-check it on the next snapshot before trusting the size of the gain.
 
 **Decision:** the V6 rerank passes the promotion rule for end stop: it beats V3 and B3 full on the last 90 days, with both CIs above 0. The serving design is proposed for the manager's decision and is not implemented. V6 backoff alone, and the route backoff, do not pass.
+
+### Serving proposal for the V6 rerank (not implemented)
+
+- **Where:** a new `functions/lib/predict_v6.js` with the backoff, the candidate features and the logistic scorer.
+  - Call it from `handlers-trip.js` at the same places V3's end-stop prediction runs, the start and confirm-start paths.
+  - Run it in shadow first: log it to `predictionStats` as v6 and keep showing V3/habit. Promote it after a shadow period re-checks the paired gain live.
+  - Add a JS-vs-Python parity test, extending the `replay_js.js` replay, so the JS matches `ml/eval/predictors/v6.py`.
+- **What serving needs:**
+  - V3's top-3, already computed in that handler.
+  - The sequence context from `history[0]`, already loaded.
+  - Deep per-user history: needed, since the serve-window variant above fails.
+  - A coefficient file of 29 weights plus an intercept, published by the weekly retrain beside the V4/V5 artifacts.
+- **Retrain dependency:** the training features include V3's output on past trips, so the weekly retrain has to run the Node replay (`replay_js.js`) before fitting. The current retrain is Python only.
+- **History cost, two options:**
+  - **(a)** Read the full clean history per prediction: about as many document reads as the user has trips, roughly 3k for this account, against 100 today. Latency grows with it. This is the simplest version and matches what was scored.
+  - **(b)** A per-user summary document that finalization updates: 1 read per prediction and 1 write per completed trip.
+    - The decay is by rank within a bucket, so each bucket updates incrementally: multiply its weights by exp(-λ), then add 1.
+    - The rich buckets multiply keys, so it needs a split, for example one document per agency, route and start stop, to stay under the 1 MB limit. That is 1–2 reads per prediction.
+    - The scorer itself is a 7-candidate dot product, so latency is negligible.
