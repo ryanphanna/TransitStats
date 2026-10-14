@@ -119,3 +119,24 @@ describe('Auth.startSharedSessionKeepAlive', () => {
         expect(global.fetch.mock.calls.length).toBeGreaterThanOrEqual(3);
     });
 });
+
+describe('Auth.restoreSharedSession no-session detection', () => {
+    beforeEach(() => { globalThis.__authCurrentUser = null; });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        globalThis.__authCurrentUser = null;
+    });
+
+    it('treats a 200 HTML answer (dev server fallback) as a definite no-session', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('<!doctype html>', { status: 200, headers: { 'content-type': 'text/html' } })));
+        expect(await Auth.restoreSharedSession()).toBeNull();
+        expect(Auth.lastRestoreFoundNoSession).toBe(true);
+    });
+
+    it('keeps a 5xx as inconclusive so the grace period still applies', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 503, headers: { 'content-type': 'application/json' } })));
+        expect(await Auth.restoreSharedSession()).toBeNull();
+        expect(Auth.lastRestoreFoundNoSession).toBe(false);
+    });
+});
