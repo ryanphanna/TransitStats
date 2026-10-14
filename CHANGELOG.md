@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Opening Wrapped while signed out now goes to the login page instead of loading forever**, and signing in brings you back to Wrapped. A failed trip load now shows an error instead of spinning.
 - **Transit Wrapped** — a shareable transfer-ticket card for last month's rides (punched day grid, trips, hours, top routes, favorite stop, busiest day), from the dashboard or `/wrapped`. It always shows the previous calendar month and expires at the end of the current one; a month with no rides shows a "no transfer issued" ticket. Imported PRESTO rides count too (without hours, routes, or stops), and a ride you both logged and imported is counted once. Trips are counted in the month they started, so a ride that crosses midnight at month-end belongs to the earlier month.
 - **A failed PRESTO import now shows a plain, reassuring message** instead of a raw technical error, and explains it's safe to retry without creating duplicates.
 - **PRESTO import now shows step-by-step instructions** for getting your Transit Usage Report from PRESTO's site — previously there was no guidance anywhere on how to actually get that file.

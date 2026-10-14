@@ -1,5 +1,6 @@
 import { auth, authPersistenceReady, authPersistenceStatus, firestorePersistenceStatus } from '../firebase.js';
 import { Auth } from '../auth.js';
+import { loginUrlFor } from './return-path.js';
 
 // Mobile browsers can suspend a tab while Firebase is restoring IndexedDB,
 // and the shared-session request can then take longer than a normal page load.
@@ -113,6 +114,7 @@ else document.body.classList.remove('dark');
 /**
  * Resolves when auth is confirmed. Redirects to / if not authed or not whitelisted.
  * @param {object} options
+ * @param {boolean} options.returnToPage — send the visitor back to this page after sign-in
  * @param {boolean} options.adminOnly — redirect to /dashboard if user is not admin
  */
 export function requireAuth(options = {}) {
@@ -122,7 +124,7 @@ export function requireAuth(options = {}) {
         const listen = () => auth.onAuthStateChanged(async (user) => {
             if (checking || resolved) return;
             checking = true;
-            const loginUrl = '/';
+            const loginUrl = options.returnToPage ? loginUrlFor(window.location.pathname) : '/';
             // A Vite live reload can recreate the page before Firebase has
             // finished hydrating its LOCAL session. Give that restoration a
             // short grace period instead of treating the transient null as a

@@ -79,3 +79,33 @@ describe('requireAuth whitelist retries', () => {
         expect(Auth.startSharedSessionKeepAlive).toHaveBeenCalledWith(user);
     });
 });
+
+describe('requireAuth signed-out redirect', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+    });
+
+    it('sends a signed-out visitor to login and remembers the page', async () => {
+        vi.useFakeTimers();
+        localStorage.clear();
+        authState.currentUser = null;
+        global.fetch = vi.fn(async () => ({ status: 401, json: async () => ({}) }));
+        vi.spyOn(Auth, 'restoreSharedSession').mockResolvedValue(null);
+        const location = { pathname: '/wrapped', href: 'http://localhost/wrapped' };
+        vi.stubGlobal('location', location);
+        const originalWindowLocation = window.location;
+        Object.defineProperty(window, 'location', { value: location, configurable: true, writable: true });
+
+        const settled = vi.fn();
+        requireAuth({ returnToPage: true }).then(settled);
+        await vi.advanceTimersByTimeAsync(0);
+        authState.listener(null);
+        await vi.advanceTimersByTimeAsync(70 * 1000);
+
+        expect(location.href).toBe('/?next=%2Fwrapped');
+        expect(settled).not.toHaveBeenCalled();
+        Object.defineProperty(window, 'location', { value: originalWindowLocation, configurable: true, writable: true });
+    });
+});
