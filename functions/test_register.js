@@ -88,7 +88,7 @@ function load({ authUid = 'auth-uid', verification = null } = {}) {
 
 test('REGISTER finds the account via Firebase Auth, not a profiles query', async () => {
   const { mod, calls } = load({ authUid: 'auth-uid' });
-  await mod.handleRegister('+15192769853', 'Rider@Example.com');
+  await mod.handleRegister('+15195550143', 'Rider@Example.com');
   assert.equal(calls.authLookups.length, 1);
   assert.equal(calls.profileQueries.length, 0);
   assert.match(calls.sms.at(-1), /Code sent/);
@@ -96,7 +96,7 @@ test('REGISTER finds the account via Firebase Auth, not a profiles query', async
 
 test('REGISTER refuses when no verified Firebase Auth account has that email', async () => {
   const { mod, calls } = load({ authUid: null });
-  await mod.handleRegister('+15192769853', 'rider@example.com');
+  await mod.handleRegister('+15195550143', 'rider@example.com');
   assert.match(calls.sms.at(-1), /No account found/);
 });
 
@@ -105,7 +105,7 @@ test('verification links the phone to the Auth uid, ignoring any profile with a 
     authUid: 'auth-uid',
     verification: { code: '123456', attempts: 0, email: 'rider@example.com' },
   });
-  await mod.handleVerificationCode('+15192769853', '123456');
+  await mod.handleVerificationCode('+15195550143', '123456');
   assert.equal(calls.profileQueries.length, 0);
   assert.equal(calls.phoneSets.length, 1);
   assert.equal(calls.phoneSets[0].value.userId, 'auth-uid');
@@ -116,7 +116,7 @@ test('verification does not link when the Auth account is gone or unverified', a
     authUid: null,
     verification: { code: '123456', attempts: 0, email: 'rider@example.com' },
   });
-  await mod.handleVerificationCode('+15192769853', '123456');
+  await mod.handleVerificationCode('+15195550143', '123456');
   assert.equal(calls.phoneSets.length, 0);
   assert.match(calls.sms.at(-1), /Account not found/);
 });
@@ -126,11 +126,11 @@ test('parallel wrong codes cannot exceed 3 attempts, and a correct code is singl
     authUid: 'auth-uid',
     verification: { code: '123456', attempts: 0, email: 'rider@example.com' },
   });
-  await Promise.all(Array.from({ length: 12 }, (_, i) => mod.handleVerificationCode('+15192769853', String(100000 + i))));
+  await Promise.all(Array.from({ length: 12 }, (_, i) => mod.handleVerificationCode('+15195550143', String(100000 + i))));
   assert.equal(calls.sms.filter(message => message === 'Invalid code.').length, 3);
 
   // Locked now: the right code does not link the phone.
-  await mod.handleVerificationCode('+15192769853', '123456');
+  await mod.handleVerificationCode('+15195550143', '123456');
   assert.equal(calls.phoneSets.length, 0);
 });
 
@@ -139,14 +139,14 @@ test('two simultaneous correct submissions link the phone exactly once', async (
     authUid: 'auth-uid',
     verification: { code: '123456', attempts: 0, email: 'rider@example.com' },
   });
-  await Promise.all([0, 1].map(() => mod.handleVerificationCode('+15192769853', '123456')));
+  await Promise.all([0, 1].map(() => mod.handleVerificationCode('+15195550143', '123456')));
   assert.equal(calls.phoneSets.length, 1);
   assert.equal(calls.sms.filter(message => /Phone linked/.test(message)).length, 1);
 });
 
 test('help text never advertises a bare STOP line as a way to end a trip (STOP is a Twilio opt-out keyword)', async () => {
   const { mod, calls } = load();
-  await mod.handleHelp('+15192769853');
+  await mod.handleHelp('+15195550143');
   const help = calls.sms.at(-1);
   assert.match(help, /END \[?|END\n/);
   assert.doesNotMatch(help, /^STOP$/m);

@@ -125,12 +125,12 @@ function createOtpHarness(seed, { isAdmin = false } = {}) {
 }
 
 test('normalizePhoneNumber formats North American and international numbers as E.164', () => {
-  assert.equal(normalizePhoneNumber('(519) 276-9853'), '+15192769853');
+  assert.equal(normalizePhoneNumber('(519) 555-0143'), '+15195550143');
   assert.equal(normalizePhoneNumber('+442071234567'), '+442071234567');
 });
 
 test('admin phone gets no special treatment: cooldown applies and the response hides admin status', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'admin-1' },
     'profiles/admin-1': { isAdmin: true },
@@ -149,7 +149,7 @@ test('admin phone gets no special treatment: cooldown applies and the response h
 });
 
 test('regular OTP requests enforce the resend cooldown', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'user-1' },
     'profiles/user-1': { isAdmin: false },
@@ -166,7 +166,7 @@ test('regular OTP requests enforce the resend cooldown', async () => {
 });
 
 test('regular OTP requests enforce the rolling daily limit', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const now = Date.now();
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'user-1' },
@@ -242,7 +242,7 @@ test('a different IP is not affected by another IP hitting its limit', async () 
 });
 
 test('global daily send cap blocks further sends and logs an error', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const day = new Date().toISOString().slice(0, 10);
   const db = createFakeDb({
     [`phoneNumbers/${phone}`]: { userId: 'user-1' },
@@ -269,7 +269,7 @@ test('global daily send cap blocks further sends and logs an error', async () =>
 
 test('admin phone is subject to the per-IP and global caps', async () => {
   const day = new Date().toISOString().slice(0, 10);
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'admin-1' },
     'profiles/admin-1': { isAdmin: true },
@@ -283,7 +283,7 @@ test('admin phone is subject to the per-IP and global caps', async () => {
 });
 
 test('OTP verification returns a custom token for a valid code', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const { db, handlers } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'user-1' },
     [`phoneLoginVerification/${phone}`]: {
@@ -302,7 +302,7 @@ test('OTP verification returns a custom token for a valid code', async () => {
 });
 
 test('parallel wrong guesses cannot exceed the 3-attempt limit, and a correct code is single-use', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const seed = () => ({
     [`phoneNumbers/${phone}`]: { userId: 'user-1' },
     [`phoneLoginVerification/${phone}`]: {
@@ -338,7 +338,7 @@ test('parallel wrong guesses cannot exceed the 3-attempt limit, and a correct co
 });
 
 test('phone login sends no code for a text-provisioned link that is not yet confirmed', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'user-1', loginConfirmed: false },
     'profiles/user-1': { isAdmin: false },
@@ -361,7 +361,7 @@ test('phone login sends no code for a text-provisioned link that is not yet conf
 });
 
 test('request_otp answers an unregistered number exactly like a registered one', async () => {
-  const known = '+15192769853';
+  const known = '+15195550143';
   const unknown = '+15195550142';
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${known}`]: { userId: 'user-1' },
@@ -383,7 +383,7 @@ test('request_otp answers an unregistered number exactly like a registered one',
 });
 
 test('verifying a code is also refused for an unconfirmed link', async () => {
-  const phone = '+15192769853';
+  const phone = '+15195550143';
   const { handlers } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'user-1', loginConfirmed: false },
     [`phoneLoginVerification/${phone}`]: {

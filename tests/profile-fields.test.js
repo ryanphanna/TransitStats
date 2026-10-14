@@ -9,7 +9,7 @@ import {
 
 describe('profile field helpers', () => {
     it('formats North American phone numbers for account settings', () => {
-        expect(formatPhoneNumber('+15192769853')).toBe('(519) 276-9853');
+        expect(formatPhoneNumber('+15195550143')).toBe('(519) 555-0143');
         expect(formatPhoneNumber('')).toBe('Not linked');
     });
 
