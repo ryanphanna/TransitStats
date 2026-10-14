@@ -12,6 +12,24 @@ const SHARED_SESSION_REFRESH_MS = 45 * 60 * 1000;
 // recordLoginActivity server-side, so coalesce them into one call.
 const SHARED_SESSION_MIN_INTERVAL_MS = 30 * 1000;
 
+const SHARED_SESSION_TIMEOUT_MS = 8000;
+const SIGN_OUT_SYNC_WAIT_MS = 4000;
+
+function withTimeout(promise, ms) {
+    let timer;
+    const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Timed out')), ms); });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+async function fetchWithTimeout(url, init, ms, controller = new AbortController()) {
+    const timer = setTimeout(() => controller.abort(), ms);
+    try {
+        return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 export const Auth = {
     phoneApiUrl: getFunctionUrl('api', import.meta.env, 'VITE_API_URL'),
     sharedSessionUrl: '/auth/session',
@@ -213,19 +231,27 @@ export const Auth = {
     // Syncs can now run in the background, so they are tracked: signOut waits for them
     // so a late cookie POST can never land after the DELETE and resurrect the session.
     _pendingSyncs: new Set(),
+    _syncAborts: new Set(),
+    _signingOut: false,
 
     syncSharedSession(user = auth.currentUser) {
-        if (!user) return Promise.resolve(false);
-        const pending = this._syncSharedSessionNow(user);
+        // Nothing may mint a cookie once sign-out has started.
+        if (!user || this._signingOut) return Promise.resolve(false);
+        const controller = new AbortController();
+        this._syncAborts.add(controller);
+        const pending = this._syncSharedSessionNow(user, controller);
         this._pendingSyncs.add(pending);
-        const forget = () => this._pendingSyncs.delete(pending);
+        const forget = () => {
+            this._pendingSyncs.delete(pending);
+            this._syncAborts.delete(controller);
+        };
         pending.then(forget, forget);
         return pending;
     },
 
-    async _syncSharedSessionNow(user) {
+    async _syncSharedSessionNow(user, controller) {
         // A sync only ever mints a cookie for the user it started for.
-        const stillCurrent = () => auth.currentUser?.uid === user.uid;
+        const stillCurrent = () => !this._signingOut && auth.currentUser?.uid === user.uid;
         let lastError;
         let lastStatus = null;
         for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -233,19 +259,20 @@ export const Auth = {
                 if (!stillCurrent()) return false;
                 // Always force-refresh: a cached token near expiry can mint a
                 // cookie that dies while the tab is idle overnight.
-                const idToken = await user.getIdToken(true);
+                const idToken = await withTimeout(user.getIdToken(true), SHARED_SESSION_TIMEOUT_MS);
                 if (!stillCurrent()) return false;
-                const response = await fetch(this.sharedSessionUrl, {
+                const response = await fetchWithTimeout(this.sharedSessionUrl, {
                     method: 'POST',
                     credentials: 'include',
                     headers: { Authorization: `Bearer ${idToken}` }
-                });
+                }, SHARED_SESSION_TIMEOUT_MS, controller);
                 lastStatus = response.status;
                 if (!response.ok) throw new Error(`Shared session request failed (${response.status})`);
                 this._recordSharedSessionSync(true, { status: response.status, attempt: attempt + 1 });
                 return true;
             } catch (error) {
                 lastError = error;
+                if (!stillCurrent()) break;
                 if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
             }
         }
@@ -321,10 +348,10 @@ export const Auth = {
 
     async clearSharedSession() {
         try {
-            await fetch(this.sharedSessionUrl, {
+            await fetchWithTimeout(this.sharedSessionUrl, {
                 method: 'DELETE',
                 credentials: 'include'
-            });
+            }, SIGN_OUT_SYNC_WAIT_MS);
         } catch (error) {
             console.warn('Shared session could not be cleared:', error.message);
         }
@@ -332,10 +359,20 @@ export const Auth = {
 
     async signOut() {
         console.warn('[auth] Signing out current session.', { path: window.location.pathname });
-        // Let any in-flight cookie sync finish first so the DELETE is the last word.
-        await Promise.allSettled([...this._pendingSyncs]);
-        await this.clearSharedSession();
-        return auth.signOut();
+        // From here no sync may start or finish minting a cookie.
+        this._signingOut = true;
+        try {
+            this._syncAborts.forEach(controller => controller.abort());
+            // Let in-flight syncs settle so the DELETE is the last word, but never hang sign-out on a stalled network.
+            await Promise.race([
+                Promise.allSettled([...this._pendingSyncs]),
+                new Promise(resolve => setTimeout(resolve, SIGN_OUT_SYNC_WAIT_MS)),
+            ]);
+            await this.clearSharedSession();
+            return await auth.signOut();
+        } finally {
+            this._signingOut = false;
+        }
     },
 
     getErrorMessage(code) {

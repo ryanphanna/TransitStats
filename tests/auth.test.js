@@ -183,4 +183,39 @@ describe('shared-session sync vs sign-out', () => {
         await expect(Auth.syncSharedSession(user)).resolves.toBe(false);
         expect(global.fetch).not.toHaveBeenCalled();
     });
+
+    it('refuses to start a cookie sync once sign-out has begun (keep-alive during the DELETE)', async () => {
+        let releaseDelete;
+        const calls = [];
+        global.fetch = vi.fn((url, init) => {
+            calls.push(init.method);
+            return new Promise(resolve => { releaseDelete = () => resolve({ ok: true, status: 204 }); });
+        });
+        const signedOut = Auth.signOut();
+        await vi.waitFor(() => expect(calls).toEqual(['DELETE']));
+
+        await expect(Auth.syncSharedSession(globalThis.__authCurrentUser)).resolves.toBe(false);
+        expect(calls).toEqual(['DELETE']);
+
+        releaseDelete();
+        await signedOut;
+        expect(Auth._signingOut).toBe(false);
+    });
+
+    it('sign-out still completes when the token refresh and network stall', async () => {
+        vi.useFakeTimers();
+        try {
+            getIdToken.mockImplementationOnce(() => new Promise(() => {}));
+            // Like the real fetch, a stalled request rejects once its abort signal fires.
+            global.fetch = vi.fn((url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new Error('aborted')))));
+            void Auth.syncSharedSession(globalThis.__authCurrentUser);
+            const done = vi.fn();
+            Auth.signOut().then(done);
+            await vi.advanceTimersByTimeAsync(10000);
+            expect(done).toHaveBeenCalled();
+            expect(Auth._signingOut).toBe(false);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });
