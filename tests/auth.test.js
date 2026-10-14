@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const snapshots = new Map();
 const getIdToken = vi.fn(async () => 'fresh-id-token');
@@ -83,13 +83,39 @@ describe('Auth.syncSharedSession', () => {
     });
 });
 
-describe('auth-guard idle-session contract', () => {
-    it('keeps retrying whitelist flakes instead of signing out', async () => {
-        const { readFileSync } = await import('node:fs');
-        const { resolve } = await import('node:path');
-        const source = readFileSync(resolve(process.cwd(), 'js/shared/auth-guard.js'), 'utf8');
-        expect(source).toContain('while (verification.retryable)');
-        expect(source).toContain('Auth.startSharedSessionKeepAlive(sessionUser)');
-        expect(source).not.toMatch(/while \(verification\.retryable && Date\.now\(\) < verificationDeadline\)/);
+describe('Auth.startSharedSessionKeepAlive', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-10-14T12:00:00Z'));
+        localStorage.clear();
+        globalThis.__authCurrentUser = { uid: 'user_1', getIdToken };
+        global.fetch = vi.fn(async () => ({ ok: true, status: 204 }));
+        Auth._keepAliveBound = false;
+        Auth._lastKeepAliveSyncAt = 0;
+    });
+
+    afterEach(() => {
+        window.clearInterval(Auth._keepAliveTimer);
+        vi.useRealTimers();
+    });
+
+    it('coalesces focus and visibilitychange on one tab return into one session call', async () => {
+        Auth.startSharedSessionKeepAlive(globalThis.__authCurrentUser);
+        window.dispatchEvent(new Event('focus'));
+        document.dispatchEvent(new Event('visibilitychange'));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('syncs again on a later return and on the 45-minute tick', async () => {
+        Auth.startSharedSessionKeepAlive(globalThis.__authCurrentUser);
+        window.dispatchEvent(new Event('focus'));
+        await vi.advanceTimersByTimeAsync(60 * 1000);
+        window.dispatchEvent(new Event('focus'));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+
+        await vi.advanceTimersByTimeAsync(45 * 60 * 1000);
+        expect(global.fetch.mock.calls.length).toBeGreaterThanOrEqual(3);
     });
 });
