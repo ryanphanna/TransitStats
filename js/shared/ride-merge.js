@@ -5,8 +5,8 @@
 // `npm run sync:shared` (a test fails if the copy drifts). Keep this file
 // dependency-free, with plain `export function` declarations only.
 
-export const RIDE_MATCH_WINDOW_MS = 30 * 60 * 1000;
-export const PRESTO_TIME_ZONE = 'America/Toronto';
+const RIDE_MATCH_WINDOW_MS = 30 * 60 * 1000;
+const PRESTO_TIME_ZONE = 'America/Toronto';
 
 const AGENCY_ALIASES = {
     'toronto transit commission': 'ttc',
@@ -46,7 +46,7 @@ export function prestoWallClockToInstant(sortKey, timeZone = PRESTO_TIME_ZONE) {
     return instant;
 }
 
-export function loggedTripTime(trip) {
+function loggedTripTime(trip) {
     const value = trip?.startTime;
     if (value === null || value === undefined) return null;
     const date = value?.toDate ? value.toDate() : new Date(value);

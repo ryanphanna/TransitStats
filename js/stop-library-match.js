@@ -15,7 +15,7 @@ export function normalizeStopLibraryLabel(value) {
         .trim();
 }
 
-export function stopAgencies(stop) {
+function stopAgencies(stop) {
     return [...new Set(stop?.agencies || (stop?.agency ? [stop.agency] : []))]
         .filter(Boolean)
         .map(agency => String(agency).trim().toLowerCase());
