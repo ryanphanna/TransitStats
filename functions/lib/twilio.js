@@ -92,7 +92,18 @@ async function sendSmsReply(to, message) {
     return true;
   } catch (error) {
     console.error('Error sending message:', error);
+    // 21610: the recipient replied STOP. Remember it so we never text them again.
+    if (error?.code === 21610) await recordOptOut(to);
     return false;
+  }
+}
+
+async function recordOptOut(phone) {
+  try {
+    const { getFirestore, FieldValue } = require('./db');
+    await getFirestore().collection('smsOptOuts').doc(phone).set({ at: FieldValue.serverTimestamp(), reason: 'twilio-21610' });
+  } catch (e) {
+    console.error('Failed to record SMS opt-out:', e);
   }
 }
 

@@ -35,6 +35,37 @@ const { parseMultiLineTripFormat, parseSingleLineTripFormat, parseCasualTripForm
 const { isValidRoute, normalizeDirection, getRouteDisplay, getStopDisplay, normalizeAgency } = require('./utils');
 const { getConfiguredPrimaryAgency } = require('./primary-agency');
 const handlers = require('./handlers');
+const { createInviteHandlers } = require('./sms-invite');
+const { getAuth } = require('firebase-admin/auth');
+
+let inviteHandlers = null;
+function getInviteHandlers() {
+  if (!inviteHandlers) {
+    inviteHandlers = createInviteHandlers({
+      db, adminAuth: getAuth(), sendSmsReply, shouldRespondToUnknown, FieldValue, logger,
+    });
+  }
+  return inviteHandlers;
+}
+
+// Twilio's standard opt-out / opt-in keywords. (END is deliberately not here:
+// in this app END finishes a trip.)
+const OPT_OUT_KEYWORDS = /^(STOP|STOPALL|UNSUBSCRIBE|CANCEL|QUIT)$/;
+const OPT_IN_KEYWORDS = /^(START|UNSTOP)$/;
+
+/** Number with no linked account texted us. */
+async function handleUnknownNumber(phoneNumber, upperBody, trace) {
+  const invites = getInviteHandlers();
+  if (OPT_OUT_KEYWORDS.test(upperBody)) {
+    await invites.markOptedOut(phoneNumber, 'inbound-keyword');
+    return;
+  }
+  if (OPT_IN_KEYWORDS.test(upperBody)) {
+    await db.collection('smsOptOuts').doc(phoneNumber).delete().catch(() => {});
+    return;
+  }
+  await invites.handleUnknownSender(phoneNumber, trace);
+}
 
 /** Commands that are allowed to fall through pending-state handlers to normal dispatch. */
 const PENDING_PASSTHROUGH = new Set(['STATUS', 'STATS', 'FORGOT', 'INFO', 'COMMANDS', 'HELP', '?']);
@@ -116,10 +147,7 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
   if (isMms) {
     const user = await getUserByPhone(phoneNumber);
     if (!user) {
-      if (await shouldRespondToUnknown(phoneNumber)) {
-        await setPendingState(phoneNumber, { type: 'awaiting_email' });
-        await sendSmsReply(phoneNumber, 'TransitStats tracks your transit rides and shows you stats over time. What\'s your email to get started? (No account yet? Sign up at transitstats.fyi first.)');
-      }
+      await handleUnknownNumber(phoneNumber, upperBody, trace);
       return '';
     }
     await handlers.handleMmsTrip(phoneNumber, user, mediaUrl, receivedAt, trace);
@@ -133,10 +161,7 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
   // 5. User Authentication
   const user = await getUserByPhone(phoneNumber);
   if (!user) {
-    if (await shouldRespondToUnknown(phoneNumber)) {
-      await setPendingState(phoneNumber, { type: 'awaiting_email' });
-      await sendSmsReply(phoneNumber, 'Welcome to TransitStats! What\'s your email address? (No account yet? Sign up at transitstats.fyi first.)');
-    }
+    await handleUnknownNumber(phoneNumber, upperBody, trace);
     return '';
   }
 

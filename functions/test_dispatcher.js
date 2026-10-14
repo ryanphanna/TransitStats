@@ -27,6 +27,8 @@ function buildHarness({
     setPendingState: [],
     clearPendingState: 0,
     handleTripLogArgs: [],
+    unknownSender: [],
+    optOuts: [],
   };
 
   const handlers = {
@@ -144,6 +146,15 @@ function buildHarness({
       if (request === './utils') return utils;
       if (request === './handlers') return handlers;
       if (request === './logger') return logger;
+      if (request === './sms-invite') {
+        return {
+          createInviteHandlers: () => ({
+            handleUnknownSender: async (phone) => { calls.unknownSender.push(phone); },
+            markOptedOut: async (phone, reason) => { calls.optOuts.push([phone, reason]); },
+          }),
+        };
+      }
+      if (request === 'firebase-admin/auth') return { getAuth: () => ({}) };
     }
     return originalLoad(request, parent, isMain);
   };
@@ -256,21 +267,30 @@ test('dispatcher: MMS from known user triggers Snap-to-Start handler', async () 
   assert.equal(calls.sendSmsReply.length, 0);
 });
 
-test('dispatcher: MMS from unknown user gets conversational onboarding when allowed', async () => {
-  const { dispatch, calls } = buildHarness({
-    user: null,
-    shouldRespondToUnknown: true,
-  });
+test('dispatcher: MMS from an unlinked number goes to invite handling, not trip logging', async () => {
+  const { dispatch, calls } = buildHarness({ user: null });
   await dispatch('+14165550000', '', 'SM_MMS_2', { numMedia: 1, mediaUrl: 'https://example.com/stop.jpg' });
 
   assert.equal(calls.handleMmsTrip.length, 0);
-  assert.equal(calls.sendSmsReply.length, 1);
-  assert.equal(calls.sendSmsReply[0].phoneNumber, '+14165550000');
-  // v1.45.0 conversational registration: ask for the email directly and park
-  // an awaiting_email state, instead of the old "Text REGISTER [email]" reply.
-  assert.match(calls.sendSmsReply[0].message, /What's your email/);
-  assert.equal(calls.setPendingState.length, 1);
-  assert.equal(calls.setPendingState[0].type, 'awaiting_email');
+  assert.deepEqual(calls.unknownSender, ['+14165550000']);
+  assert.equal(calls.setPendingState.length, 0);
+});
+
+test('dispatcher: a text from an unlinked number goes to invite handling', async () => {
+  const { dispatch, calls } = buildHarness({ user: null });
+  await dispatch('+14165550001', '504 King to Spadina', 'SM_UNKNOWN_1');
+
+  assert.deepEqual(calls.unknownSender, ['+14165550001']);
+  assert.equal(calls.handleTripLog, 0);
+});
+
+test('dispatcher: STOP from an unlinked number records an opt-out and sends nothing', async () => {
+  const { dispatch, calls } = buildHarness({ user: null });
+  await dispatch('+14165550002', 'stop', 'SM_UNKNOWN_STOP');
+
+  assert.deepEqual(calls.optOuts, [['+14165550002', 'inbound-keyword']]);
+  assert.equal(calls.unknownSender.length, 0);
+  assert.equal(calls.sendSmsReply.length, 0);
 });
 
 test('dispatcher: mms_stop_needed single route uses stop reply and preserves receivedAt', async () => {

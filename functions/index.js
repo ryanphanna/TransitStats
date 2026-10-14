@@ -25,6 +25,9 @@ const { publicProfile } = require('./lib/public-profile');
 const { publicProfileOg } = require('./lib/public-profile-og');
 const { publicProfilePage } = require('./lib/public-profile-page');
 const { onDocumentWritten, onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { defineSecret } = require('firebase-functions/params');
+const { getAuth } = require('firebase-admin/auth');
+const { createInviteHandlers } = require('./lib/sms-invite');
 const finalization = require('./lib/finalization');
 const { enrichStopDoc } = require('./lib/atlas-enrich');
 
@@ -99,3 +102,31 @@ exports.onTripFinalized = onDocumentWritten('trips/{tripId}', async (event) => {
 // Tue  5 May 2026 10:55:13 EDT
 // Tue  5 May 2026 11:08:01 EDT
 // Tue  5 May 2026 11:19:21 EDT
+
+// When an admin adds or changes `phone` on an allowedUsers entry, send the
+// welcome text once for that number (skipped for opted-out numbers).
+exports.onInvitePhoneWritten = onDocumentWritten({
+  document: 'allowedUsers/{email}',
+  secrets: [
+    defineSecret('TWILIO_AUTH_TOKEN'),
+    defineSecret('TWILIO_ACCOUNT_SID'),
+    defineSecret('TWILIO_PHONE_NUMBER'),
+  ],
+}, async (event) => {
+  const { sendSmsReply } = require('./lib/twilio');
+  const { shouldRespondToUnknown, FieldValue } = require('./lib/db');
+  const invites = createInviteHandlers({
+    db: getFirestore(), adminAuth: getAuth(), sendSmsReply, shouldRespondToUnknown, FieldValue,
+    logger: require('./lib/logger'),
+  });
+  try {
+    const outcome = await invites.onInvitePhoneWritten({
+      email: event.params.email,
+      before: event.data?.before?.data(),
+      after: event.data?.after?.data(),
+    });
+    console.log(`onInvitePhoneWritten ${event.params.email}: ${outcome}`);
+  } catch (error) {
+    console.error('onInvitePhoneWritten failed', error.message);
+  }
+});
