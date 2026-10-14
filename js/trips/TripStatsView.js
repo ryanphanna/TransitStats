@@ -25,21 +25,15 @@ export const TripStatsView = {
 
         const metrics = Stats.computeMetrics(trips, range);
 
-        // Update primary metric boxes (try both base and -insights suffixed IDs)
+        // Update primary metric boxes
         this._updateBox('stat-trips', metrics.trips);
-        this._updateBox('stat-trips-insights', metrics.trips);
         this._updateBox('stat-routes', metrics.routes);
-        this._updateBox('stat-routes-insights', metrics.routes);
         this._updateBox('stat-hours', metrics.hours);
-        this._updateBox('stat-hours-insights', metrics.hours);
         this._updateBox('stat-stops', metrics.stops);
-        this._updateBox('stat-stops-insights', metrics.stops);
 
-        // Update top routes/stops lists (try both base and -insights suffixed IDs)
+        // Update top routes/stops lists
         this._renderCompactList('top-routes-list', metrics.topRoutes);
-        this._renderCompactList('top-routes-list-insights', metrics.topRoutes);
         this._renderCompactList('top-stops-list', metrics.topStops);
-        this._renderCompactList('top-stops-list-insights', metrics.topStops);
 
         // Heatmaps & Charts
         const activityPoints = Stats.computeActivityHeatmap(trips);
@@ -47,7 +41,6 @@ export const TripStatsView = {
 
         const peakTimes = Stats.computePeakTimes(trips);
         this._renderPeakChart('time-of-day-chart', peakTimes);
-        this._renderPeakChart('time-of-day-chart-insights', peakTimes);
 
         // Streaks
         const streaks = Stats.calculateStreaks(trips);
