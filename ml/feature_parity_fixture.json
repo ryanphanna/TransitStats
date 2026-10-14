@@ -1,0 +1,270 @@
+{
+ "_comment": "Synthetic trips (no real data). Expected features are what training builds (ml/test_feature_parity.py --regen); functions/test_ml_feature_parity.js checks serving builds the same.",
+ "policies": {
+  "PRIMARY": "collapse",
+  "DEFAULT": "preserve_variant"
+ },
+ "primaryAgency": "TTC",
+ "stops": [
+  {
+   "name": "Bravo Ave / Charlie St",
+   "aliases": [
+    "Bravo Ave and Charlie St"
+   ]
+  },
+  {
+   "name": "Golf St / Hotel Ave",
+   "aliases": []
+  }
+ ],
+ "trips": [
+  {
+   "_id": "t1",
+   "userId": "user-1",
+   "stop_matched": true,
+   "route": "501",
+   "agency": "TTC",
+   "timezone": "America/Toronto",
+   "startStopName": "Alpha Station",
+   "endStopName": "Bravo Ave and Charlie St",
+   "direction": "EB",
+   "startTime": "2026-06-01T12:00:00+00:00",
+   "endTime": "2026-06-01T12:30:00+00:00"
+  },
+  {
+   "_id": "t2",
+   "userId": "user-1",
+   "stop_matched": true,
+   "route": "29",
+   "agency": "TTC",
+   "timezone": "America/Toronto",
+   "startStopName": "Delta Loop",
+   "endStopName": "Alpha Station",
+   "needs_review": true,
+   "startTime": "2026-06-01T13:00:00+00:00",
+   "endTime": "2026-06-01T13:20:00+00:00"
+  },
+  {
+   "_id": "t3",
+   "userId": "user-1",
+   "stop_matched": true,
+   "route": "510A",
+   "agency": "TTC",
+   "timezone": "America/Toronto",
+   "startStopName": "Bravo Ave & Charlie St",
+   "endStopName": "Delta Loop",
+   "direction": "Northbound",
+   "startTime": "2026-06-01T14:00:00+00:00",
+   "endTime": "2026-06-01T14:25:00+00:00"
+  },
+  {
+   "_id": "t4",
+   "userId": "user-1",
+   "stop_matched": true,
+   "route": "LW",
+   "agency": "GO Transit",
+   "timezone": "America/Toronto",
+   "startStopName": "Echo GO",
+   "endStopName": "Foxtrot GO",
+   "startTime": "2026-06-02T01:30:00+00:00",
+   "endTime": "2026-06-02T02:15:00+00:00"
+  },
+  {
+   "_id": "t5",
+   "userId": "user-1",
+   "stop_matched": true,
+   "agency": "TTC",
+   "timezone": "America/Toronto",
+   "startStopName": "Foxtrot GO",
+   "endStopName": "Golf St at Hotel Ave",
+   "startTime": "2026-06-02T10:00:00+00:00",
+   "endTime": "2026-06-02T10:10:00+00:00"
+  },
+  {
+   "_id": "t6",
+   "userId": "user-1",
+   "stop_matched": true,
+   "route": "501",
+   "agency": "TTC",
+   "timezone": "America/Toronto",
+   "startStopName": "Golf St/Hotel Ave",
+   "endStopName": "Alpha Station",
+   "direction": "wb",
+   "startTime": "2026-06-02T10:30:00+00:00",
+   "endTime": "2026-06-02T11:00:00+00:00"
+  },
+  {
+   "_id": "t7",
+   "userId": "user-1",
+   "stop_matched": true,
+   "route": "7",
+   "agency": "TTC",
+   "timezone": "America/Toronto",
+   "startStopName": "Alpha Station",
+   "endStopName": "India Rd",
+   "direction": "S",
+   "startTime": "2026-11-01T06:30:00+00:00",
+   "endTime": "2026-11-01T07:00:00+00:00"
+  },
+  {
+   "_id": "t8",
+   "userId": "user-1",
+   "stop_matched": true,
+   "route": "12",
+   "agency": "Mystery Transit",
+   "timezone": "UTC",
+   "startStopName": "India Rd",
+   "endStopName": "Juliet Sq",
+   "startTime": "2026-11-02T03:00:00+00:00",
+   "endTime": "2026-11-02T03:30:00+00:00"
+  },
+  {
+   "_id": "t9",
+   "userId": "user-1",
+   "stop_matched": true,
+   "route": "E",
+   "agency": "LA Metro",
+   "timezone": "America/Los_Angeles",
+   "startStopName": "Kilo Station",
+   "endStopName": "Lima Station",
+   "direction": "eastward",
+   "startTime": "2026-11-03T02:00:00+00:00",
+   "endTime": "2026-11-03T02:40:00+00:00"
+  },
+  {
+   "_id": "t10",
+   "userId": "user-1",
+   "stop_matched": true,
+   "route": "501",
+   "agency": "TTC",
+   "timezone": "America/Toronto",
+   "startStopName": "Alpha Station",
+   "startTime": "2026-11-04T12:00:00+00:00"
+  },
+  {
+   "_id": "t11",
+   "userId": "user-1",
+   "stop_matched": false,
+   "route": "501",
+   "agency": "TTC",
+   "timezone": "America/Toronto",
+   "startStopName": "Alpha Station",
+   "endStopName": "Bravo Ave and Charlie St",
+   "startTime": "2026-11-04T13:00:00+00:00",
+   "endTime": "2026-11-04T13:30:00+00:00"
+  },
+  {
+   "_id": "t12",
+   "userId": "user-1",
+   "stop_matched": true,
+   "route": "510B",
+   "agency": "TTC",
+   "timezone": "America/Toronto",
+   "startStopName": "Alpha Station",
+   "endStopName": "Delta Loop",
+   "direction": "N",
+   "startTime": "2026-11-04T14:00:00+00:00",
+   "endTime": "2026-11-04T14:30:00+00:00"
+  }
+ ],
+ "expected": {
+  "t1": {
+   "hour_sin": 0.866025,
+   "hour_cos": -0.5,
+   "day_cos": 1.0,
+   "gap_missing": 1.0,
+   "agency_ttc": 1.0,
+   "route_ttc::501": 1.0,
+   "prev_route_none": 1.0,
+   "stop_alpha_station": 1.0,
+   "last_stop_none": 1.0,
+   "dir_eastbound": 1.0
+  },
+  "t3": {
+   "hour_sin": 0.5,
+   "hour_cos": -0.866025,
+   "day_cos": 1.0,
+   "gap_log": 0.728773,
+   "agency_ttc": 1.0,
+   "route_ttc::510": 1.0,
+   "prev_route_ttc::501": 1.0,
+   "stop_bravo_ave_charlie_st": 1.0,
+   "last_stop_bravo_ave_charlie_st": 1.0,
+   "dir_northbound": 1.0
+  },
+  "t4": {
+   "hour_sin": -0.707107,
+   "hour_cos": 0.707107,
+   "day_cos": 1.0,
+   "gap_log": 0.993542,
+   "agency_go_transit": 1.0,
+   "route_go_transit::lw": 1.0,
+   "prev_route_go_transit::510a": 1.0,
+   "stop_echo_go": 1.0,
+   "last_stop_delta_loop": 1.0
+  },
+  "t6": {
+   "hour_sin": 1.0,
+   "hour_cos": 0.0,
+   "day_sin": 0.781831,
+   "day_cos": 0.62349,
+   "gap_log": 0.521832,
+   "agency_ttc": 1.0,
+   "route_ttc::501": 1.0,
+   "prev_route_none": 1.0,
+   "stop_golf_st_hotel_ave": 1.0,
+   "last_stop_golf_st_hotel_ave": 1.0,
+   "dir_westbound": 1.0
+  },
+  "t7": {
+   "hour_sin": 0.258819,
+   "hour_cos": 0.965926,
+   "day_sin": -0.781831,
+   "day_cos": 0.62349,
+   "gap_log": 1.0,
+   "agency_ttc": 1.0,
+   "route_ttc::7": 1.0,
+   "prev_route_ttc::501": 1.0,
+   "stop_alpha_station": 1.0,
+   "last_stop_alpha_station": 1.0,
+   "dir_southbound": 1.0
+  },
+  "t8": {
+   "hour_sin": -0.5,
+   "hour_cos": 0.866025,
+   "day_sin": -0.781831,
+   "day_cos": 0.62349,
+   "gap_log": 1.0,
+   "agency_mystery_transit": 1.0,
+   "route_mystery_transit::12": 1.0,
+   "prev_route_mystery_transit::7": 1.0,
+   "stop_india_rd": 1.0,
+   "last_stop_india_rd": 1.0
+  },
+  "t9": {
+   "hour_sin": -1.0,
+   "hour_cos": -0.0,
+   "day_cos": 1.0,
+   "gap_log": 1.0,
+   "agency_la_metro": 1.0,
+   "route_la_metro::e": 1.0,
+   "prev_route_la_metro::12": 1.0,
+   "stop_kilo_station": 1.0,
+   "last_stop_juliet_sq": 1.0,
+   "dir_eastbound": 1.0
+  },
+  "t12": {
+   "hour_sin": 0.707107,
+   "hour_cos": -0.707107,
+   "day_sin": 0.974928,
+   "day_cos": -0.222521,
+   "gap_log": 1.0,
+   "agency_ttc": 1.0,
+   "route_ttc::510": 1.0,
+   "prev_route_ttc::e": 1.0,
+   "stop_alpha_station": 1.0,
+   "last_stop_lima_station": 1.0,
+   "dir_northbound": 1.0
+  }
+ }
+}

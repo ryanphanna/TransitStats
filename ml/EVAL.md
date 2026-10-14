@@ -202,3 +202,44 @@ Segments (end-stop top-1), V3 3.5.0 vs 3.4.1:
 - **Admin display gate (applied):** the admin SMS list and END 1/2/3 only use guesses with confidence ≥75. All guesses are still stored and graded. Per the harness, a shown guess appears on 61.1% of the 409 rows and is right 62.0% of the time, vs 40.8% / 66.5% for 3.4.1 at the same gate.
 
 **Decision:** V3 3.5.0 beats V3 as served by +22.5 points (CI above 0), so it ships on this branch. It does **not** meet the promotion rule against B3 on full history: +3.8, CI [-3.1, +10.6]. It's at parity with B3 or slightly ahead, but not significantly. Merging is for the manager to decide. The validity fix (item 1) stands alone as a correctness fix that doesn't regress (+8.8 at the 100 window).
+
+## V4/V5 end stop: fresh fit, relaxed filters, serve-parity features
+
+Scored by `ml/eval/predictors/v45.py` (`--only v45`). "Weekly" rows refit at each Monday 04:00 UTC retrain, as `retrain.yml` does. The shipped row is the exact config the training script now uses. End stop, n=409; deltas are paired top-1 on the last 90 days (n=160), with 95% CIs.
+
+| Predictor | Top-1 [95% CI] | Top-3 | Coverage | vs V3 (90d) | vs B3 full (90d) |
+|---|---|---|---|---|---|
+| V4 as deployed (80% fit, weekly; before) | 28.6% | 34.5% | 88.0% | +10.6 | -8.1 |
+| V5 as deployed (80% fit, weekly; before) | 27.9% | 34.5% | 88.0% | +8.1 | -10.6 |
+| H1 V4 weekly, 100% fit, shipped features | 34.5% | 41.1% | 88.0% | +12.5 | -6.2 |
+| H1 V5 weekly, 100% fit, shipped features | 35.5% | 41.3% | 88.0% | +13.8 | -5.0 |
+| V4 per fold, skew fixed + local, balanced (ref) | 34.0% | 40.8% | 88.0% | +13.8 | -5.0 |
+| H2 V4 ref, no class weight | 35.5% | 40.6% | 88.0% | +17.5 | -1.2 |
+| H2 V5 ref, regularized XGB (depth 3, 150 trees) | 34.0% (ref 34.2%) | 40.6% | 88.0% | +13.1 | -5.6 |
+| V4 no class weight + relaxed filters | 40.1% | 50.1% | 88.0% | +16.2 | -2.5 |
+| V5 relaxed filters | 37.4% | 47.9% | 88.0% | +14.4 | -4.4 |
+| H4 V4 relaxed + unseen-stop augmentation | 41.3% | 50.4% | 88.0% | +18.8 | 0.0 [-6.9, +6.9] |
+| H4 V5 relaxed + unseen-stop augmentation | 38.4% | 47.7% | 88.0% | +16.9 | -1.9 |
+| **V4 shipped (after): weekly, 100% fit, serve-parity + local time, no class weight, relaxed** | **40.8% [36.2–45.7]** | 49.4% | 88.0% | **+18.1 [+10.0, +26.2]** | -0.6 [-7.5, +6.2] |
+| **V5 shipped (after)** | **38.1% [33.6–42.9]** | 48.9% | 88.0% | **+15.6 [+8.8, +23.1]** | -3.1 [-10.0, +4.4] |
+| V4 shipped, topology-masked | 40.6% | 46.5% | 82.9% | +22.5 | +3.8 [-3.1, +10.6] |
+| V5 shipped, topology-masked | 39.4% | 46.5% | 82.9% | +21.2 | +2.5 [-4.4, +10.0] |
+
+"Relaxed filters" drops the route+start-stop ≥ 5 rule and lowers the end-stop class minimum from 10 to 5. Minimums of 3 and 2 scored within a point of 5. Shipped V4 thresholds:
+- Confidence ≥ 50: coverage 46%, precision 72%.
+- Confidence ≥ 75: coverage 21%, precision 87%.
+
+V3 has 43% coverage at 66% precision.
+
+1. **Freshness (H1) is real:** +6 to +8 points from fitting on 100% instead of holding back the newest 20%. The training script still measures top-1/top-3 on an 80/20 split for the regression gate, then refits on 100% for the shipped model.
+2. **The count filters were the biggest lever:** +5 points. They threw away most rare route+stop rows.
+3. **Class weights (H2):** dropping `balanced` gives V4 +1.5. A regularized XGB is neutral (not shipped).
+4. **Skews and local time (H3)** are shipped as correctness fixes; their accuracy effect stays within noise, as in v1.
+   - `export_trips.py` now builds `serve_prev_route`, `serve_last_end_stop` and `serve_minutes_since_last_trip` from serving's `history[0]`: the newest 100 completed trips by end time, with the serving filter.
+   - It also adds `local_hour` / `local_day_of_week` in the trip's agency zone (DST-aware).
+   - `train_endstop.py` scopes the route and the previous route with the current agency and the primary agency.
+   - Stop canonicalization now uses the same regex steps as `ml_utils.canonicalizeStop`.
+   - **Parity:** on the v1 snapshot, the training features equal the harness's serve-faithful features on 876/876 clean trips. `ml/test_feature_parity.py` and `functions/test_ml_feature_parity.js` check both sides against one synthetic fixture, which includes a DST fall-back, a late-evening weekday shift, LA and unmapped agencies, and unclean history.
+5. **Unseen start stops (H4):** training copies of each row without the stop one-hot gave +1 for both models. That is within noise and not shipped.
+6. **Promotion:** both models beat V3 as served with a CI above 0. Neither beats B3 on full history: V4 is -0.6, CI [-7.5, +6.2]. Serving them to users therefore isn't justified by this eval.
+   - **Decision:** ship the training and serving changes as freshness and correctness fixes for the shadow models, not as a user-facing switch.
