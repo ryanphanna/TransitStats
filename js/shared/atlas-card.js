@@ -31,7 +31,8 @@ export function renderAtlasCard({ publicProfile = false, signedIn = false, loadi
 
     const action = publicProfile && !signedIn
         ? '<a class="atlas-card-cta" href="/">Make your own map <span aria-hidden="true">→</span></a>'
-        : '<button id="atlas-share-map" class="atlas-card-cta" type="button">Share your map <span aria-hidden="true">→</span></button>';
+        : `<button id="atlas-share-map" class="atlas-card-cta" type="button">Share your map <span aria-hidden="true">→</span></button>
+           ${signedIn ? '<a class="atlas-card-secondary" href="/wrapped">Your Wrapped <span aria-hidden="true">→</span></a>' : ''}`;
     const initialName = loading ? '' : signedIn ? 'Your' : 'Traveler';
     const initialValue = loading ? '' : '0';
 

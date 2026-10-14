@@ -46,3 +46,90 @@ describe('Stats.computeTripPeriodCounts', () => {
         expect(Stats.computeTripPeriodCounts(trips, new Date(2026, 7, 14, 12)).daysRidden).toBe(2);
     });
 });
+
+describe('Stats calendar-month Wrapped helpers', () => {
+    const trips = [
+        { startTime: new Date(2026, 8, 2, 8), route: '501', startStopName: 'Spadina', endStopName: 'Bathurst', duration: 20 },
+        { startTime: new Date(2026, 8, 2, 18), route: '501', startStopName: 'Bathurst', endStopName: 'Spadina', duration: 22 },
+        { startTime: new Date(2026, 8, 3, 9), route: '2', startStopName: 'Spadina', endStopName: 'St George', duration: 8 },
+        { startTime: new Date(2026, 7, 20, 9), route: '504', startStopName: 'King', endStopName: 'Queen', duration: 15 },
+    ];
+
+    it('filters trips to a calendar month', () => {
+        expect(Stats.filterByCalendarMonth(trips, 2026, 8)).toHaveLength(3);
+        expect(Stats.filterByCalendarMonth(trips, 2026, 7)).toHaveLength(1);
+    });
+
+    it('picks the previous calendar month, rolling back over the new year', () => {
+        expect(Stats.previousMonth(new Date(2026, 10, 15))).toEqual({ year: 2026, monthIndex: 9 });
+        expect(Stats.previousMonth(new Date(2027, 0, 1))).toEqual({ year: 2026, monthIndex: 11 });
+        expect(Stats.previousMonth(new Date(2026, 2, 31))).toEqual({ year: 2026, monthIndex: 1 });
+    });
+
+    it('computes Wrapped highlights for a month', () => {
+        const wrapped = Stats.computeWrapped(trips, 2026, 8);
+        expect(wrapped.label).toBe('September 2026');
+        expect(wrapped.trips).toBe(3);
+        expect(wrapped.topRoute).toEqual({ name: '501', count: 2 });
+        expect(wrapped.favoriteStop.name).toBe('Spadina');
+        expect(wrapped.busiestDay).toEqual({
+            date: '2026-09-02',
+            count: 2,
+            label: expect.stringContaining('Sep'),
+        });
+        expect(wrapped.bestStreak).toBeGreaterThanOrEqual(2);
+    });
+
+    it('assigns a trip that crosses midnight to the month it started in', () => {
+        const crossing = [{
+            startTime: new Date(2026, 7, 31, 23, 50),
+            endTime: new Date(2026, 8, 1, 0, 10),
+            route: '501',
+            duration: 20,
+        }];
+        expect(Stats.computeWrapped(crossing, 2026, 7).trips).toBe(1);
+        expect(Stats.computeWrapped(crossing, 2026, 8).trips).toBe(0);
+    });
+
+    it('returns an empty summary for a month with no trips', () => {
+        const wrapped = Stats.computeWrapped(trips, 2026, 0);
+        expect(wrapped).toMatchObject({
+            trips: 0, hours: 0, routes: 0, stops: 0, daysRidden: 0, bestStreak: 0,
+            topRoute: null, favoriteStop: null, busiestDay: null, peak: null,
+        });
+    });
+
+    it('sums hours from trip durations in minutes', () => {
+        expect(Stats.computeWrapped(trips, 2026, 8).hours).toBe(0.8);
+    });
+
+    it('adds imported rides but not ones that duplicate a logged trip', () => {
+        const logged = [{ startTime: new Date(2026, 8, 2, 8, 0), route: '501', duration: 20 }];
+        const imported = [
+            { startTime: new Date(2026, 8, 2, 8, 5), agency: 'TTC' },   // same ride as the logged one
+            { startTime: new Date(2026, 8, 4, 9, 0), agency: 'GO' },
+        ];
+        const merged = Stats.mergeImportedRides(logged, imported);
+        expect(merged).toHaveLength(2);
+
+        const wrapped = Stats.computeWrapped(merged, 2026, 8);
+        expect(wrapped.trips).toBe(2);
+        expect(wrapped.daysRidden).toBe(2);
+        expect(wrapped.hours).toBe(0.3);      // imported rides add no duration
+        expect(wrapped.topRoute).toEqual({ name: '501', count: 1 });
+        expect(wrapped.favoriteStop).toBeNull();
+    });
+
+    it('lets each logged trip cancel only one imported ride', () => {
+        const logged = [{ startTime: new Date(2026, 8, 2, 8, 0), route: '501', duration: 20 }];
+        const imported = [
+            { startTime: new Date(2026, 8, 2, 8, 12), agency: 'TTC' },
+            { startTime: new Date(2026, 8, 2, 8, 3), agency: 'TTC' },   // closest, cancelled
+            { startTime: new Date(2026, 8, 2, 8, 20), agency: 'TTC' },
+        ];
+        const merged = Stats.mergeImportedRides(logged, imported);
+        expect(merged).toHaveLength(3);
+        expect(merged.filter(t => t.agency === 'TTC').map(t => t.startTime.getMinutes()).sort((a, b) => a - b))
+            .toEqual([12, 20]);
+    });
+});
