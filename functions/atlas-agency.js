@@ -5,6 +5,9 @@ const ATLAS_R2_BASE = process.env.ATLAS_R2_BASE || 'https://data.transitatlas.fy
 const RIDER_LABEL_ALIASES = {
   hsr: 'hamilton',
   smart: 'smart-ca',
+  // "PRT" otherwise matches West Virginia University's PRT (wvu-prt) by name.
+  prt: 'port-authority-pa',
+  'port authority of allegheny county': 'port-authority-pa',
 };
 
 let directoryCache = null;
@@ -79,4 +82,4 @@ async function resolveAtlasAgency(value) {
   return chooseMatch(agencies, value);
 }
 
-module.exports = { resolveAtlasAgency };
+module.exports = { resolveAtlasAgency, chooseMatch };
