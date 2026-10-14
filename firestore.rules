@@ -27,6 +27,22 @@ service cloud.firestore {
       );
     }
 
+    // PRESTO import is limited to admins and the 'presto' pilot. The flag lives
+    // where clients can't write it: allowedUsers (email accounts) or the
+    // server-managed profile field (phone accounts), mirroring checkWhitelist.
+    function canImportPresto() {
+      return isAdmin() || (request.auth != null && (
+        (request.auth.token.email_verified == true &&
+         exists(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())) &&
+         get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())).data.pilot == 'presto')
+        ||
+        (!('email' in request.auth.token) &&
+         exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
+         (get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.pilot == 'presto' ||
+          get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.isAdmin == true))
+      ));
+    }
+
     // Fields a signed-in user may set on their own profile. Everything else
     // (email, pilot, phone links, isAdmin, isPremium, ...) is written only by
     // the Admin SDK / functions, so allowlist rather than denylist.
@@ -87,8 +103,8 @@ service cloud.firestore {
     // PRESTO pilot activity stays separate from canonical trip history.
     match /prestoTransactions/{transactionId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if isInvited() && request.resource.data.userId == request.auth.uid;
-      allow update: if isInvited() && resource.data.userId == request.auth.uid
+      allow create: if isInvited() && canImportPresto() && request.resource.data.userId == request.auth.uid;
+      allow update: if isInvited() && canImportPresto() && resource.data.userId == request.auth.uid
                     && request.resource.data.userId == request.auth.uid;
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
