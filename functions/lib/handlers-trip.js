@@ -27,7 +27,7 @@ const { PredictionEngine } = require('./predict.js');
 const { TransferEngine } = require('./transfer.js');
 const { NetworkEngine } = require('./network.js');
 const { HabitEngine } = require('./habit');
-const { isPhoneConfirmed, phoneTag, LOCKED_TRIP_TEXT } = require('./phone-confirmation');
+const { isPhoneConfirmed, phoneTag, tripStartedByPhone, LOCKED_TRIP_TEXT } = require('./phone-confirmation');
 const { PredictionEngineV4 } = require('./predict_v4.js');
 const { PredictionEngineV5 } = require('./predict_v5.js');
 const logger = require('./logger');
@@ -562,6 +562,7 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
   });
 
   await createTrip({
+    sourcePhone: phoneTag(phoneNumber),
     userId: user.userId,
     route: newTrip.route,
     direction: newTrip.direction || null,
@@ -611,7 +612,7 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
 
   // An unconfirmed number can only end a trip it started itself; anything else
   // gets the same neutral reply, so it can't tell whether a trip exists.
-  if (unconfirmed && (!activeTrip || activeTrip.sourcePhone !== phoneTag(phoneNumber))) {
+  if (unconfirmed && (!activeTrip || !tripStartedByPhone(activeTrip, phoneNumber))) {
     await sendSmsReply(phoneNumber, LOCKED_TRIP_TEXT);
     return;
   }
