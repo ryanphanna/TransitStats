@@ -3,7 +3,9 @@
  * The card is a monthly transfer ticket (see wrapped/ticket.js).
  */
 
-import { drawTicket, TICKET_FONTS } from './wrapped/ticket.js';
+import { drawTicket, TICKET_FONTS, TICKET_RECT } from './wrapped/ticket.js';
+
+export { TICKET_RECT };
 
 export const WRAPPED_CARD = Object.freeze({
     width: 1080,
@@ -16,8 +18,8 @@ export function loadCardFonts() {
     return Promise.all(TICKET_FONTS.map(font => document.fonts.load(font).catch(() => null)));
 }
 
-export function drawWrappedCard(ctx, { displayName, wrapped } = {}) {
-    drawTicket(ctx, { displayName, wrapped });
+export function drawWrappedCard(ctx, { displayName, wrapped, anim } = {}) {
+    drawTicket(ctx, { displayName, wrapped, anim });
 }
 
 /**

@@ -17,30 +17,53 @@
   display: grid;
   grid-template-columns: minmax(0, 400px) minmax(0, 1fr);
   gap: 40px;
-  align-items: start;
+  align-items: stretch;
 }
 
 /* The control panel is a paper stub with ticket notches */
 .wrapped-panel {
   position: relative;
-  padding: 36px 32px 32px;
+  display: flex;
+  flex-direction: column;
+  padding: 0 32px 32px;
   background: var(--w-paper);
   border-radius: 14px;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
 }
 
-.wrapped-brand {
-  margin: 0 0 14px;
-  font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
-  font-weight: 800;
-  font-size: 1.1rem;
-  letter-spacing: -0.01em;
+.wrapped-panel-top {
+  flex: 0 0 auto;
+  /* housing height + the ticket's perforation line (34.5% of a 400px-wide ticket), so both perforations line up */
+  min-height: calc(44px + 255px);
+  padding-top: 32px;
 }
+
+.wrapped-panel-bottom {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.wrapped-reprint {
+  align-self: flex-start;
+  margin-top: 14px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: var(--w-ink);
+  font: inherit;
+  font-size: 0.9rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.wrapped-reprint:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .wrapped-panel h1 {
   margin: 0 0 14px;
   font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
-  font-size: clamp(2.6rem, 6vw, 3.6rem);
+  font-size: clamp(2.4rem, 5vw, 3.1rem);
   font-weight: 900;
   line-height: 0.95;
   letter-spacing: -0.03em;
@@ -49,7 +72,7 @@
 }
 
 .wrapped-lede {
-  margin: 0 0 40px;
+  margin: 0 0 28px;
   color: var(--w-faded);
   font-size: 0.95rem;
   line-height: 1.5;
@@ -57,7 +80,7 @@
 
 .wrapped-perf {
   position: relative;
-  margin: 0 -8px 24px;
+  margin: 0 -8px 22px;
   border-top: 3px dashed var(--w-faded);
 }
 
@@ -76,7 +99,7 @@
 .wrapped-perf::after { right: -39px; }
 
 .wrapped-status {
-  margin: 12px 0 0;
+  margin: 0;
   min-height: 1.4em;
   color: var(--w-faded);
   font-size: 0.9rem;
@@ -126,14 +149,69 @@
 }
 
 .wrapped-stage {
+  align-self: start;
   display: grid;
   justify-items: center;
 }
 
+.wrapped-printer {
+  position: relative;
+  width: min(100%, 400px);
+}
+
+/* Flat ticket-machine housing; the ticket feeds out from under its slot */
+.wrapped-printer {
+  --housing: 44px;
+}
+
+.wrapped-housing {
+  position: relative;
+  z-index: 2;
+  height: var(--housing);
+  margin: 0 -14px;
+  border-radius: 8px;
+  background: #1a2230;
+}
+
+.wrapped-slot {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 9px;
+  height: 7px;
+  border-radius: 4px;
+  background: #05080d;
+}
+
+.wrapped-light {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #3ddc84;
+}
+
+.wrapped-printer.is-printing .wrapped-light {
+  background: #ffb020;
+  animation: wrapped-blink 0.3s steps(1) infinite;
+}
+
+@keyframes wrapped-blink {
+  50% { opacity: 0.15; }
+}
+
+/* Clip only the top edge so the ticket emerges from the slot */
+.wrapped-feed {
+  clip-path: inset(0 -60px -80px -60px);
+}
+
 .wrapped-preview {
   display: block;
-  width: min(100%, 400px);
+  width: 100%;
   height: auto;
+  filter: drop-shadow(0 18px 22px rgba(0, 0, 0, 0.28));
 }
 
 @media (max-width: 860px) {
@@ -143,7 +221,7 @@
     gap: 28px;
   }
 
-  .wrapped-preview {
-    width: 100%;
+  .wrapped-panel-top {
+    min-height: 0;
   }
 }

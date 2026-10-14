@@ -7,7 +7,7 @@ import { Stats } from '../stats.js';
 import { UI } from '../ui-utils.js';
 import { db } from '../firebase.js';
 import { buildPrestoTrips, projectPrestoTripsForStats } from '../presto-stop-matcher.js';
-import { downloadBlob, drawWrappedCard, loadCardFonts, renderWrappedPngBlob, WRAPPED_CARD } from '../wrapped-card.js';
+import { downloadBlob, drawWrappedCard, loadCardFonts, renderWrappedPngBlob, TICKET_RECT } from '../wrapped-card.js';
 
 // Dev-only sample data: /wrapped?demo=1 skips sign-in. Stripped from production builds.
 const DEMO = import.meta.env.DEV && new URLSearchParams(location.search).has('demo');
@@ -16,6 +16,8 @@ const previewCanvas = document.getElementById('wrapped-preview');
 const downloadBtn = document.getElementById('wrapped-download');
 const shareBtn = document.getElementById('wrapped-share');
 const stageEl = document.getElementById('wrapped-stage');
+const printerEl = document.querySelector('.wrapped-printer');
+const reprintBtn = document.getElementById('wrapped-reprint');
 
 // Imported PRESTO rides count toward Wrapped like they do on the dashboard totals.
 // Set to false to use logged trips only.
@@ -25,6 +27,7 @@ let loggedTrips = [];
 let prestoRides = [];
 let allTrips = [];
 let currentWrapped = null;
+let hasPrinted = false;
 
 function displayNameForCard() {
     if (DEMO) return 'Ryan';
@@ -44,24 +47,98 @@ function targetMonth() {
     return Stats.previousMonth();
 }
 
-function renderPreview(wrapped, displayName) {
+// The preview shows just the paper (cropped from the 1080x1920 card); the red field is the page.
+function renderPreview(wrapped, displayName, anim = null) {
     if (!previewCanvas) return;
     const scale = 0.5;
-    previewCanvas.width = Math.round(WRAPPED_CARD.width * scale);
-    previewCanvas.height = Math.round(WRAPPED_CARD.height * scale);
+    previewCanvas.width = Math.round(TICKET_RECT.w * scale);
+    previewCanvas.height = Math.round(TICKET_RECT.h * scale);
     const ctx = previewCanvas.getContext('2d');
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
-    drawWrappedCard(ctx, { displayName, wrapped });
+    ctx.setTransform(scale, 0, 0, scale, -TICKET_RECT.x * scale, -TICKET_RECT.y * scale);
+    drawWrappedCard(ctx, { displayName, wrapped, anim });
+}
+
+// Print animation (on-page only; the exported PNG is always the finished card):
+// the ticket feeds out of the slot in short printer jerks, the days punch in order,
+// then the stamp thumps down.
+const FEED_MS = 1200;
+const PUNCH_START = 1250;
+const PUNCH_MS = 650;
+const STAMP_START = 1950;
+const STAMP_MS = 420;
+let printRun = 0;
+let feedAnimation = null;
+
+function prefersReducedMotion() {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
+
+function playPrint(wrapped, displayName) {
+    const run = ++printRun;
+    feedAnimation?.cancel();
+    printerEl?.classList.remove('is-printing');
+    if (prefersReducedMotion() || !previewCanvas?.animate) {
+        renderPreview(wrapped, displayName);
+        return;
+    }
+    printerEl?.classList.add('is-printing');
+
+    // Stepped feed: a quick move, then a short hold, like a ticket printer advancing.
+    const stops = [0.14, 0.3, 0.45, 0.6, 0.74, 0.86, 0.95, 1];
+    const cycle = FEED_MS / stops.length;
+    const at = progress => `translateY(${(progress - 1) * 100}%)`;
+    const frames = [{ transform: at(0), offset: 0 }];
+    stops.forEach((progress, k) => {
+        frames.push({ transform: at(progress), offset: (k * cycle + cycle * 0.38) / FEED_MS, easing: 'ease-out' });
+        frames.push({ transform: at(progress), offset: ((k + 1) * cycle) / FEED_MS });
+    });
+    feedAnimation = previewCanvas.animate(frames, { duration: FEED_MS, fill: 'backwards' });
+
+    const ridden = wrapped.dayCounts.filter(count => count > 0).length;
+    const start = performance.now();
+    const total = STAMP_START + STAMP_MS;
+    const frame = now => {
+        if (run !== printRun) return;
+        const elapsed = now - start;
+        if (elapsed >= total) {
+            renderPreview(wrapped, displayName);
+            printerEl?.classList.remove('is-printing');
+            return;
+        }
+        const punchProgress = Math.min(1, Math.max(0, (elapsed - PUNCH_START) / PUNCH_MS));
+        const stamp = Math.min(1, Math.max(0, (elapsed - STAMP_START) / STAMP_MS));
+        renderPreview(wrapped, displayName, { punches: punchProgress * ridden, stamp });
+        requestAnimationFrame(frame);
+    };
+    renderPreview(wrapped, displayName, { punches: 0, stamp: 0 });
+    requestAnimationFrame(frame);
+}
+
+// "Download by Oct 31": the last day of this month, when the card switches to the next month.
+function showDeadline() {
+    const el = document.getElementById('wrapped-deadline');
+    if (!el) return;
+    const end = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0);
+    el.textContent = `Download by ${end.toLocaleString('en-US', { month: 'short' })} ${end.getDate()}.`;
 }
 
 function refresh() {
+    showDeadline();
     const month = targetMonth();
     const wrapped = Stats.computeWrapped(allTrips, month.year, month.monthIndex);
     currentWrapped = wrapped;
-    renderPreview(wrapped, displayNameForCard());
-    stageEl?.removeAttribute('hidden');
-
     const hasRides = wrapped.trips > 0;
+    stageEl?.removeAttribute('hidden');
+    if (hasRides && !hasPrinted) {
+        hasPrinted = true;
+        playPrint(wrapped, displayNameForCard());
+    } else {
+        printRun++;
+        printerEl?.classList.remove('is-printing');
+        renderPreview(wrapped, displayNameForCard());
+    }
+    if (reprintBtn) reprintBtn.disabled = !hasRides;
+
     if (downloadBtn) downloadBtn.disabled = !hasRides;
     if (shareBtn) shareBtn.disabled = !hasRides;
     setStatus(hasRides
@@ -145,6 +222,7 @@ async function init() {
     await loadCardFonts();
     downloadBtn?.addEventListener('click', handleDownload);
     shareBtn?.addEventListener('click', handleShare);
+    reprintBtn?.addEventListener('click', () => currentWrapped?.trips && playPrint(currentWrapped, displayNameForCard()));
 
     if (DEMO) {
         const demo = await import('../wrapped/demo-data.js');

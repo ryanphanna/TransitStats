@@ -37,7 +37,16 @@ function leaderRow(ctx, { x, w, y, label, value }) {
     ctx.fillText('.'.repeat(count), startX, y);
 }
 
-export function drawTicket(ctx, { displayName = 'Traveler', wrapped } = {}) {
+// Where the paper sits on the 1080x1920 canvas; the on-page preview crops to this.
+export const TICKET_RECT = Object.freeze({ x: 70, y: 90, w: 940, h: 1740 });
+
+const easeOutBack = t => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
+
+/**
+ * anim (on-page print animation only): { punches: how many days are punched so far (fractional),
+ * stamp: 0 = hidden .. 1 = settled }. Omit for the final card.
+ */
+export function drawTicket(ctx, { displayName = 'Traveler', wrapped, anim = null } = {}) {
     const W = 1080;
     const H = 1920;
     const w = wrapped || {};
@@ -113,28 +122,33 @@ export function drawTicket(ctx, { displayName = 'Traveler', wrapped } = {}) {
     ctx.fillText(`expires ${shortMonth(expiry.getMonth())} ${expiry.getDate()}`, px + pw, ty + 384);
     ctx.textAlign = 'left';
 
-    // Punch grid: one cell per day, punched where a ride happened
+    // Punch grid: one ring per day, punched where a ride happened
     const cols = 16;
     const cell = Math.floor(pw / cols);
     const gridY = ty + 416;
     const counts = w.dayCounts || [];
+    let punchOrder = 0;
     for (let i = 0; i < last; i++) {
         const cx = px + (i % cols) * cell + cell / 2;
         const cy = gridY + Math.floor(i / cols) * 72 + 30;
-        const ridden = (counts[i] || 0) > 0;
-        if (ridden) {
-            ctx.fillStyle = FIELD;
-            ctx.beginPath();
-            ctx.arc(cx, cy, 20, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = INK;
-            ctx.lineWidth = 2.5;
-            ctx.stroke();
-        } else {
-            ctx.fillStyle = FADED;
-            ctx.font = `400 24px ${MONO}`;
-            ctx.textAlign = 'center';
-            ctx.fillText(String(i + 1), cx, cy + 8);
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = 'rgba(23, 32, 46, 0.22)';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 20, 0, Math.PI * 2);
+        ctx.stroke();
+        if ((counts[i] || 0) > 0) {
+            const local = anim ? anim.punches - punchOrder : 1;
+            punchOrder++;
+            if (local > 0) {
+                const scale = local >= 1 ? 1 : Math.max(0.2, easeOutBack(local));
+                ctx.fillStyle = FIELD;
+                ctx.beginPath();
+                ctx.arc(cx, cy, 20 * scale, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = INK;
+                ctx.lineWidth = 2.5;
+                ctx.stroke();
+            }
         }
     }
     ctx.textAlign = 'left';
@@ -156,22 +170,34 @@ export function drawTicket(ctx, { displayName = 'Traveler', wrapped } = {}) {
     ctx.font = `600 44px ${MONO}`;
     ctx.fillText(plural(w.trips, 'ride', 'rides'), px + 4, y + 172);
 
-    // Stamp
-    ctx.save();
-    ctx.translate(px + pw - 150, y + 60);
-    ctx.rotate(-0.2);
-    ctx.strokeStyle = STAMP;
-    ctx.fillStyle = STAMP;
-    ctx.lineWidth = 6;
-    ctx.globalAlpha = 0.85;
-    roundRect(ctx, -140, -70, 280, 140, 14);
-    ctx.stroke();
-    ctx.textAlign = 'center';
-    ctx.font = `800 40px ${DISPLAY}`;
-    ctx.fillText('fully used', 0, -6);
-    ctx.font = `400 26px ${MONO}`;
-    ctx.fillText(`${w.year}-${String((w.monthIndex || 0) + 1).padStart(2, '0')}`, 0, 38);
-    ctx.restore();
+    // Stamp: thumps down with a small overshoot when animating
+    const stampT = anim ? anim.stamp : 1;
+    if (stampT > 0) {
+        const settle = stampT < 0.6 ? 1.7 - 0.78 * (stampT / 0.6) : 0.92 + 0.08 * ((stampT - 0.6) / 0.4);
+        // Fare-validator imprint: double rule, machine name, "validated", month-end date.
+        const endDate = `${shortMonth(w.monthIndex)} ${last}`;
+        ctx.save();
+        ctx.translate(px + pw - 170, y + 62);
+        ctx.rotate(-0.16 - (1 - stampT) * 0.3);
+        ctx.scale(settle, settle);
+        ctx.strokeStyle = STAMP;
+        ctx.fillStyle = STAMP;
+        ctx.globalAlpha = 0.88 * Math.min(1, stampT * 3);
+        ctx.lineWidth = 6;
+        roundRect(ctx, -165, -82, 330, 164, 18);
+        ctx.stroke();
+        ctx.lineWidth = 2.5;
+        roundRect(ctx, -153, -70, 306, 140, 12);
+        ctx.stroke();
+        ctx.textAlign = 'center';
+        ctx.font = `400 20px ${MONO}`;
+        ctx.fillText('transitstats', 0, -42);
+        ctx.font = `800 54px ${DISPLAY}`;
+        ctx.fillText('validated', 0, 12);
+        ctx.font = `600 30px ${MONO}`;
+        ctx.fillText(endDate, 0, 54);
+        ctx.restore();
+    }
 
     // Lower half: blocks share any spare height so short months don't leave a hole.
     const routes = (w.topRoutes || []).slice(0, 3);

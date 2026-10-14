@@ -15,21 +15,30 @@
     <main id="app-root">
         <section class="wrapped-view" aria-labelledby="wrapped-title">
             <div class="wrapped-panel">
-                <p class="wrapped-brand">transitstats</p>
-                <h1 id="wrapped-title">Transit Wrapped</h1>
-                <p class="wrapped-lede">Last month's rides on a transfer ticket you can share. It expires at the end of this month.</p>
+                <div class="wrapped-panel-top">
+                    <h1 id="wrapped-title">Transit Wrapped</h1>
+                    <p class="wrapped-lede">Last month's rides on a transfer ticket you can share. <span id="wrapped-deadline"></span></p>
+                </div>
 
                 <div class="wrapped-perf" aria-hidden="true"></div>
-                <p id="wrapped-status" class="wrapped-status">Loading your trips…</p>
+                <div class="wrapped-panel-bottom">
+                    <p id="wrapped-status" class="wrapped-status">Loading your trips…</p>
 
-                <div class="wrapped-actions">
-                    <button id="wrapped-download" class="wrapped-btn wrapped-btn-primary" type="button" disabled>Download PNG</button>
-                    <button id="wrapped-share" class="wrapped-btn wrapped-btn-secondary" type="button" disabled>Share</button>
+                    <div class="wrapped-actions">
+                        <button id="wrapped-download" class="wrapped-btn wrapped-btn-primary" type="button" disabled>Download PNG</button>
+                        <button id="wrapped-share" class="wrapped-btn wrapped-btn-secondary" type="button" disabled>Share</button>
+                    </div>
+                    <button id="wrapped-reprint" class="wrapped-reprint" type="button" disabled>Print again</button>
                 </div>
             </div>
 
             <div id="wrapped-stage" class="wrapped-stage" hidden>
-                <canvas id="wrapped-preview" class="wrapped-preview" width="540" height="960" aria-label="Wrapped card preview"></canvas>
+                <div class="wrapped-printer">
+                    <div class="wrapped-housing" aria-hidden="true"><span class="wrapped-slot"></span><span class="wrapped-light"></span></div>
+                    <div class="wrapped-feed">
+                        <canvas id="wrapped-preview" class="wrapped-preview" width="470" height="870" aria-label="Wrapped ticket preview"></canvas>
+                    </div>
+                </div>
             </div>
         </section>
     </main>
