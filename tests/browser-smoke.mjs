@@ -41,6 +41,14 @@ await startServerIfNeeded();
 const browser = await chromium.launch({ headless: true });
 try {
     const page = await browser.newPage();
+    // The dev server has no /auth/session endpoint (it answers with index.html),
+    // which the auth guard reads as "unsure" and waits 60s. Production answers
+    // 401 when nobody is signed in, so do the same here.
+    await page.route('**/auth/session', route => route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'no session' }),
+    }));
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await assertSignedOutRedirect(page, '/dashboard');
     await assertSignedOutRedirect(page, '/wrapped', '/?next=%2Fwrapped');
