@@ -103,3 +103,43 @@ Replace `check_model_regression.py`'s comparison of each run's own random-window
 2. The candidate is the new pipeline, the baseline the currently published one, both refit per fold on the same rows.
 3. Reject if the candidate's paired top-1 on the last 90 days is lower with the CI upper bound below 0, or if coverage drops more than 5 points.
 4. Bump `EVAL_VERSION` only by a reviewed commit, so the gate always compares like with like.
+
+## Habit engine: fix and retune (v2)
+
+What changed in `functions/lib/habit.js`:
+- **Correctness:** habits now store `agency` (serving always passes one, so v1 never matched). Day and hour come from the agency's timezone (`AGENCY_TIMEZONE`, default America/Toronto), not server UTC; the replay gives identical habits under `TZ=UTC` and `TZ=America/Toronto`. Records carry `schema: 2`, and `match()` ignores older records until the next rebuild.
+- **Bucketing:** weekday vs weekend × 4h buckets (v1: exact weekday × 2h). Matching still allows ±1 h outside the observed hours.
+- **Confidence:** share of the group's trips that ended at its usual end stop, smoothed (`top / (count + 1)`), × recency with a 60-day half-life; threshold 0.6, minimum 3 trips. v1's confidence ignored whether the end stop was consistent at all.
+- History window unchanged (200 trips at rebuild).
+
+Tuning: a sweep over the real habit.js (threshold 0) covered day grouping (exact day / weekday-weekend), bucket width (2/3/4 h), history (200/500/2000 trips), minimum trips, smoothing, half-life and threshold. Picked on the 249 rows before the last 90 days only.
+- Exact-day buckets stay too sparse at any setting: +1 to +2 points.
+- Weekday/weekend buckets help at every width (+4 to +6 on the tuning rows). 4 h was marginally best.
+- Longer history (500/2000) didn't help on the tuning rows, so the window stays 200.
+- Threshold between 0.5 and 0.7 changes almost nothing, because confidence is dominated by consistency.
+- The sweep differed from the final replay by about 2 rows. The sweep used a minimum of 2 trips, which changes stale-slot detection; the numbers below are from the unmodified `replay_js.js` on the committed code.
+
+Results (end stop, n=409; paired diffs on the last 90 days, n=160, from harness output):
+
+| Predictor | Top-1 [95% CI] | Top-3 | Coverage | vs V3 (90d) | vs B3 full (90d) |
+|---|---|---|---|---|---|
+| Habit engine, before | 0.0% | 0.0% | 0.0% | -31.2 | -50.0 |
+| Habit engine, after | 9.8% | 9.8% | 11.7% | -16.9 | -35.6 |
+| Served to user (habit, else V3 top-3), before | 27.9% [23.7–32.4] | 29.6% | 42.5% | 0 | -18.8 [-26.2, -11.2] |
+| **Served to user (habit, else V3 top-3), after** | **32.3% [27.9–37.0]** | 34.0% | 46.0% | **+7.5 [+3.8, +11.9]** | -11.2 [-18.1, -4.4] |
+| Served: habit first, then V3 list (UX option) | 32.3% | 34.5% | 46.0% | +7.5 [+3.8, +11.9] | -11.2 |
+| Served: habit only when V3 abstains (UX option) | 30.8% | 32.5% | 46.0% | +6.9 [+3.1, +11.2] | -11.9 |
+
+When the habit fires (48 rows, 26 in the last 90 days) it is right 83% of the time (88% in the last 90 days); V3 is right 66% of the time when it answers.
+- **V3 had no answer (14 rows):** the habit is right on 12.
+- **V3 answered (34 rows):** the habit is right on 28. V3's top-1 is right on 22, and its top-3 on the same 22, so hiding V3's list costs nothing here.
+
+Segments for the served row: weekday 34.1%, weekend 20.4% (unchanged; no weekend habit fired), last 90 days 38.8%.
+
+Decision: ship it as a correctness fix with a gain. The served row beats V3 on the last 90 days with the CI above 0. It does not beat B3 on full history (-11.2), so it fails the full promotion bar. Bigger gains still need longer history and better coverage than any habit gives.
+
+UX (proposal, not implemented):
+- Keep the habit replacing V3's list. On the rows where both answer, the habit is more precise, and V3's list adds no extra top-3 hits.
+- Showing the habit first with V3's list after it is equivalent (+0.5 top-3) and could be adopted cheaply.
+- Non-admin users never see V3's list (`getPredictionPrompt(null)`). For them the habit is now the only end-stop prediction ever shown, so the "else V3 top-3" row describes the admin view only.
+- When the habit fires, serving skips V3/V4/V5, so live `v3-endstop` stats lose those trips. They are graded as `habit-endstop` instead. `finalization.js` grades `habitPrediction.endStop`, which is correct.
