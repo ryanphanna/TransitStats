@@ -158,7 +158,7 @@ export const MapEngine = {
                 renderer: this._canvasRenderer,
                 points: cached.points,
                 getLabel: point => point.label,
-                baseRadius: document.body.classList.contains('v2-clean') ? 4 : 4.5,
+                baseRadius: 4.5,
             });
             console.log(`MapEngine: Loaded ${cached.points.length} cached markers`);
             return true;
@@ -453,7 +453,7 @@ export const MapEngine = {
             }
         }
 
-        const baseRadius = document.body.classList.contains('v2-clean') ? 4 : 4.5;
+        const baseRadius = 4.5;
 
         if (renderId !== this._renderGeneration || this._isDragging) {
             if (this._isDragging) this._renderQueued = true;

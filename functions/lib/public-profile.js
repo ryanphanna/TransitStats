@@ -149,14 +149,6 @@ const AGENCY_COUNTRIES = new Map([
   ...['TMB'].map(agency => [agency.toLowerCase(), 'Spain']),
 ]);
 
-function normalizeStopLabel(value) {
-  return String(value || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
-}
-
 function buildStopLocationIndex(stops = []) {
   const index = new Map();
   const add = (key, location) => {

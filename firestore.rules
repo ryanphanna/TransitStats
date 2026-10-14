@@ -156,14 +156,9 @@ service cloud.firestore {
       allow write: if false; // Only written/updated by Admin SDK/Functions
     }
 
-    // Rocket Research — GPS event streams stay owner-only (never world-readable).
-    // Same ownership pattern as trips/PRESTO: create + update must keep userId pinned.
+    // Rocket was removed; its data is deleted. Deny everything.
     match /rocket_trips/{tripId} {
-      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update: if request.auth != null && resource.data.userId == request.auth.uid
-                    && request.resource.data.userId == request.auth.uid;
-      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow read, write: if false;
     }
   }
 }

@@ -164,7 +164,7 @@ describe('firestore.rules: profile privilege boundaries', () => {
             displayName: 'New Name',
             defaultAgency: 'GO',
             isPublic: true,
-            betaFeatures: { rocket: true },
+            betaFeatures: { predictions: true },
             updatedAt: new Date(),
         }));
     });
@@ -317,7 +317,7 @@ describe('firestore.rules: PRESTO activity is user-scoped', () => {
     });
 });
 
-describe('firestore.rules: rocket_trips stay owner-only', () => {
+describe('firestore.rules: rocket_trips are denied to everyone', () => {
     beforeAll(async () => {
         testEnv = await initializeTestEnvironment({
             projectId: PROJECT_ID,
@@ -335,62 +335,21 @@ describe('firestore.rules: rocket_trips stay owner-only', () => {
         if (testEnv) await testEnv.cleanup();
     });
 
-    test('unauthenticated client cannot read rocket GPS sessions', async () => {
+    test('signed-in owner cannot read or create rocket sessions', async () => {
         await testEnv.withSecurityRulesDisabled(async (context) => {
             await setDoc(doc(context.firestore(), 'rocket_trips/rocket_1'), {
                 userId: 'user_1',
                 status: 'active',
-                events: [{ type: 'SESSION_START', location: { lat: 43.65, lng: -79.38 } }],
             });
         });
 
+        const ownerDb = authedDb('user_1', 'user@example.com');
+        await assertFails(getDoc(doc(ownerDb, 'rocket_trips/rocket_1')));
+        await assertFails(setDoc(doc(ownerDb, 'rocket_trips/rocket_2'), { userId: 'user_1' }));
+    });
+
+    test('unauthenticated client cannot read rocket sessions', async () => {
         const anonDb = testEnv.unauthenticatedContext().firestore();
-        await assertFails(getDoc(doc(anonDb, 'rocket_trips/rocket_1')));
         await assertFails(getDocs(collection(anonDb, 'rocket_trips')));
-    });
-
-    test('another authenticated user cannot read the owner rocket session', async () => {
-        await testEnv.withSecurityRulesDisabled(async (context) => {
-            await setDoc(doc(context.firestore(), 'rocket_trips/rocket_1'), {
-                userId: 'user_1',
-                status: 'active',
-                events: [{ type: 'SESSION_START', location: { lat: 43.65, lng: -79.38 } }],
-            });
-        });
-
-        const otherDb = authedDb('user_2', 'other@example.com');
-        await assertFails(getDoc(doc(otherDb, 'rocket_trips/rocket_1')));
-    });
-
-    test('owner can create, read, and update their own rocket session', async () => {
-        const ownerDb = authedDb('user_1', 'user@example.com');
-        const session = doc(ownerDb, 'rocket_trips/rocket_1');
-        await assertSucceeds(setDoc(session, {
-            userId: 'user_1',
-            status: 'active',
-            events: [],
-        }));
-        await assertSucceeds(getDoc(session));
-        // Same query shape Rocket uses to recover its own active session.
-        await assertSucceeds(getDocs(query(
-            collection(ownerDb, 'rocket_trips'),
-            where('userId', '==', 'user_1'),
-            where('status', '==', 'active'),
-        )));
-        await assertSucceeds(updateDoc(session, { status: 'finalized' }));
-    });
-
-    test('owner cannot reassign a rocket session to another user', async () => {
-        await testEnv.withSecurityRulesDisabled(async (context) => {
-            await setDoc(doc(context.firestore(), 'rocket_trips/rocket_1'), {
-                userId: 'user_1',
-                status: 'active',
-            });
-        });
-
-        const ownerDb = authedDb('user_1', 'user@example.com');
-        await assertFails(updateDoc(doc(ownerDb, 'rocket_trips/rocket_1'), {
-            userId: 'user_2',
-        }));
     });
 });

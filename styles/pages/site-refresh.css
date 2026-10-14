@@ -260,7 +260,6 @@
 
 .trip-card,
 .stat-box,
-.compact-row,
 .insight-row,
 .rt-agency-progress-row,
 .stop-card,
@@ -415,81 +414,6 @@
 .auth-card .btn-primary:hover:not(:disabled) {
   background: #087f59;
   filter: none;
-}
-
-/* Legacy/V2 entry points use the same product language as the main app. */
-.v2-split-body {
-  background: var(--bg-app);
-  color: var(--text-primary);
-}
-
-.v2-left-pane {
-  background: var(--bg-card);
-  box-shadow: none;
-  border-right: 1px solid var(--border);
-}
-
-.v2-title {
-  color: var(--text-primary);
-}
-
-.v2-title span,
-.v2-f-icon {
-  color: var(--accent);
-}
-
-.v2-subtitle,
-.v2-input-hint,
-.v2-f-text span {
-  color: var(--text-secondary);
-}
-
-.v2-input-group,
-.v2-feature-card {
-  background: var(--bg-muted);
-  border-color: var(--border);
-}
-
-.v2-input-group:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-soft);
-}
-
-.v2-btn-go {
-  background: var(--accent);
-  border-radius: 10px;
-}
-
-.v2-btn-go:hover {
-  background: #087f59;
-  transform: none;
-}
-
-.v2-right-pane {
-  background: var(--bg-muted);
-}
-
-.v2-guest-card {
-  background: var(--bg-card);
-  backdrop-filter: none;
-  border-color: var(--border);
-  box-shadow: var(--shadow);
-}
-
-.v2-guest-logo {
-  color: var(--text-primary);
-}
-
-.v2-guest-card p {
-  color: var(--text-secondary);
-}
-
-.v2-guest-btn {
-  background: var(--accent);
-}
-
-.v2-guest-btn:hover {
-  background: #087f59;
 }
 
 @media (max-width: 640px) {

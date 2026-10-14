@@ -29,9 +29,6 @@ export default defineConfig(({ mode, command }) => {
                     index: './index.html',
                     public: './public.html',
                     dashboard: './dashboard.html',
-                    v2: './v2.html',
-                    'v2-home': './v2-home.html',
-                    rocket: './Tools/Rocket/index.html',
                     terms: './terms.html',
                     privacy: './privacy.html',
                     import: './import.html',
@@ -99,7 +96,7 @@ export default defineConfig(({ mode, command }) => {
 
                 server.middlewares.use((req, res, next) => {
                     const url = req.url.split('?')[0];
-                    const targets = ['/dashboard', '/v2', '/v2-home', '/public', '/terms', '/privacy', '/import', '/route-heatmap'];
+                    const targets = ['/dashboard', '/public', '/terms', '/privacy', '/import', '/route-heatmap'];
                     const isUserProfilePath = url === '/user' || url.startsWith('/user/');
                     if (targets.includes(url)) {
                         req.url = url + '.html' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '');
