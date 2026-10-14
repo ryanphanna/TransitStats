@@ -36,8 +36,8 @@ service cloud.firestore {
               'betaFeatures', 'createdAt', 'updatedAt'];
     }
 
-    // Public emoji identities are three distinct keys from js/identity.js
-    // joined with '-' (a test keeps this list in sync with that file).
+    // Public emoji identities are three keys from js/identity.js joined with '-'
+    // (repeats allowed; a test keeps this list in sync with that file).
     function emojiKeys() {
       return ['bus', 'train', 'subway', 'streetcar', 'lightrail', 'rocket', 'bike', 'scooter', 'walk', 'ferry', 'station', 'map', 'ticket', 'stop', 'bridge', 'cablecar', 'helicopter', 'airplane', 'sailing', 'taxi', 'truck', 'anchor', 'fuel', 'traffic', 'auto', 'monorail', 'bullettrain', 'tram', 'minibus', 'motorcycle', 'scooter2', 'busstop', 'motorway', 'tracks', 'v_traffic', 'construction', 'rowboat', 'speedboat', 'ship2', 'departure', 'arrival', 'aerialtram', 'mountainrail', 'panda', 'fox', 'koala', 'lion', 'tiger', 'frog', 'octopus', 'butterfly', 'owl', 'dino', 'whale', 'crab', 'bee', 'cat', 'dog', 'taco', 'pizza', 'burger', 'ramen', 'sushi', 'icecream', 'donut', 'coffee', 'beer', 'apple', 'cookie', 'cake', 'bread', 'pretzel', 'avocado', 'soccer', 'basketball', 'baseball', 'tennis', 'volleyball', 'football', 'pool', 'pingpong', 'skate', 'surf', 'cycle', 'climb', 'game', 'guitar', 'camera', 'tree', 'cactus', 'flower', 'moon', 'sun', 'cloud', 'fire', 'star', 'mountain', 'ocean', 'crystal', 'robot', 'alien', 'ghost', 'heart', 'gift', 'crown', 'gem', 'key', 'lock'];
     }
@@ -45,8 +45,7 @@ service cloud.firestore {
     function isEmojiUsername(username) {
       let p = username.split('-');
       return p.size() == 3
-        && p[0] in emojiKeys() && p[1] in emojiKeys() && p[2] in emojiKeys()
-        && p[0] != p[1] && p[0] != p[2] && p[1] != p[2];
+        && p[0] in emojiKeys() && p[1] in emojiKeys() && p[2] in emojiKeys();
     }
 
     // Profiles - users can read/write their own profile. Never publicly readable,
@@ -176,13 +175,14 @@ service cloud.firestore {
       allow create: if isInvited()
         && request.resource.data.uid == request.auth.uid
         && username.size() >= 1
-        && username.size() <= 20
         && (
           (request.resource.data.type == 'custom'
+            && username.size() <= 20
             && isAdmin()
             && username.matches('^[a-z0-9-]+$'))
           ||
           (request.resource.data.type == 'emoji'
+            && username.size() <= 38 // 3 longest keys + 2 dashes (a test checks this)
             && isEmojiUsername(username))
         );
       allow update, delete: if false; // Usernames are permanent for now

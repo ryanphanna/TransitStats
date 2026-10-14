@@ -52,3 +52,22 @@ jobs:
           java-version: '21'
       - run: npm install -g firebase-tools
       - run: cd functions && npm install && npm run test:e2e
+
+  browser:
+    runs-on: ubuntu-latest
+    env:
+      VITE_FIREBASE_API_KEY: ci-placeholder
+      VITE_FIREBASE_AUTH_DOMAIN: ci-placeholder.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: demo-ci
+      VITE_FIREBASE_STORAGE_BUCKET: ci-placeholder.appspot.com
+      VITE_FIREBASE_MESSAGING_SENDER_ID: '1'
+      VITE_FIREBASE_APP_ID: 1:1:web:ci
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser

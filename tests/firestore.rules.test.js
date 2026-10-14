@@ -6,7 +6,7 @@ import {
     assertSucceeds,
     initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { deleteDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { getDocs, collection, query, where } from 'firebase/firestore';
 
 const PROJECT_ID = 'transit-stats-rules-test';
@@ -505,14 +505,40 @@ describe('firestore.rules: account isolation and invite-only writes', () => {
     });
 
     // 5: emoji usernames must be real emoji identities
-    test('emoji usernames must be three distinct known emoji keys', async () => {
+    test('emoji usernames must be three known emoji keys (repeats allowed)', async () => {
         await invite('user@example.com');
         const db = authedDb('user_1', 'user@example.com');
         await assertFails(setDoc(doc(db, 'usernames/hello-world'), { uid: 'user_1', type: 'emoji' }));
-        await assertFails(setDoc(doc(db, 'usernames/bus-bus-taco'), { uid: 'user_1', type: 'emoji' }));
+        await assertSucceeds(setDoc(doc(db, 'usernames/bus-bus-taco'), { uid: 'user_1', type: 'emoji' }));
+        await assertSucceeds(setDoc(doc(db, 'usernames/subway-subway-subway'), { uid: 'user_1', type: 'emoji' }));
         await assertFails(setDoc(doc(db, 'usernames/bus-taco'), { uid: 'user_1', type: 'emoji' }));
         await assertFails(setDoc(doc(db, 'usernames/admin'), { uid: 'user_1', type: 'emoji' }));
         await assertSucceeds(setDoc(doc(db, 'usernames/fox-taco-owl'), { uid: 'user_1', type: 'emoji' }));
+    });
+
+    test('the longest possible emoji username is accepted; custom names keep the 20 cap', async () => {
+        await invite('user@example.com');
+        await invite('admin@example.com', { isAdmin: true });
+        const rules = readFileSync(RULES_PATH, 'utf8');
+        const listed = [...rules.match(/function emojiKeys\(\) \{\s*return \[([^\]]+)\]/)[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+        const longest = listed.reduce((a, b) => (b.length > a.length ? b : a));
+        const max = [longest, longest, longest].join('-');
+        const db = authedDb('user_1', 'user@example.com');
+        await assertSucceeds(setDoc(doc(db, `usernames/${max}`), { uid: 'user_1', type: 'emoji' }));
+        await assertSucceeds(setDoc(doc(db, 'usernames/train-lightrail-scooter'), { uid: 'user_1', type: 'emoji' }));
+        expect(rules).toContain(`username.size() <= ${max.length}`);
+        const admin = authedDb('admin_1', 'admin@example.com');
+        await assertSucceeds(setDoc(doc(admin, 'usernames/' + 'a'.repeat(20)), { uid: 'admin_1', type: 'custom' }));
+        await assertFails(setDoc(doc(admin, 'usernames/' + 'a'.repeat(21)), { uid: 'admin_1', type: 'custom' }));
+    });
+
+    test('the reservation and profile can be written together in one batch', async () => {
+        await invite('user@example.com');
+        const db = authedDb('user_1', 'user@example.com');
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'usernames/subway-subway-subway'), { uid: 'user_1', type: 'emoji' });
+        batch.set(doc(db, 'profiles/user_1'), { username: 'subway-subway-subway', emojiUsername: 'subway-subway-subway', usernameAliases: ['subway-subway-subway'], usernameType: 'emoji' }, { merge: true });
+        await assertSucceeds(batch.commit());
     });
 
     test('the rules emoji list matches js/identity.js', async () => {

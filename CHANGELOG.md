@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Saving a public identity works again.**
 - **PRESTO import is now available to everyone.** Every signed-in user can import their PRESTO history from the import page and settings, and new accounts with no rides see the import prompt.
 - **No more all-caps labels.** Removed the last uppercase styling (e.g. "Recent activity", the route heatmap heading), and a test now blocks it coming back.
 - **Negative amounts in the PRESTO import preview read "-$10.05"** instead of "$-10.05".
