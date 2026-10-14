@@ -1,3 +1,4 @@
+import { safeReturnPath } from '../shared/return-path.js';
 import { auth } from '../firebase.js';
 import { Auth } from '../auth.js';
 import { normalizePhone } from '../phone-fields.js';
@@ -365,14 +366,14 @@ function init() {
     let restoring = false;
     auth.onAuthStateChanged(async (user) => {
         if (user) {
-            window.location.href = '/dashboard';
+            window.location.href = safeReturnPath(window.location.search);
             return;
         }
         if (restoring) return;
         restoring = true;
         const restoredUser = await Auth.restoreSharedSession();
         if (restoredUser) {
-            window.location.href = '/dashboard';
+            window.location.href = safeReturnPath(window.location.search);
         }
     });
 
