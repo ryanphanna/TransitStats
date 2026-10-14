@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Agency names are cleaned up in one place.** "MFTA" and "NFTA" now both become NFTA Metro, and "GO" becomes GO Transit, wherever an agency is typed by text message.
 - **Icons are bundled with the app and the map library no longer blocks the first paint.** Icons used to load from a CDN at an unpinned version on every page; now only the icons the app uses ship with it.
 - **Pages show your data sooner after you navigate.** Signed-in pages no longer wait on the shared-session sync before rendering.
 - **Prediction models are no longer published in the public repository.** The trained models contained real stop and route names, so they now live in private storage, are trained only on approved users, and only those users get ML predictions; everyone else gets the rule-based predictions.

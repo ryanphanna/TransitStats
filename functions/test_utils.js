@@ -27,3 +27,10 @@ test('isValidRoute rejects obvious garbage', () => {
   assert.equal(isValidRoute('Need To Correct Origin To Keelesdale'), false);
   assert.equal(isValidRoute('This is definitely not a route name at all'), false);
 });
+
+test('normalizeAgency uses the shared alias list (GO, NFTA/MFTA)', () => {
+  const { normalizeAgency } = require('./lib/utils');
+  assert.equal(normalizeAgency('GO'), 'GO Transit');
+  assert.equal(normalizeAgency('MFTA'), 'NFTA Metro');
+  assert.equal(normalizeAgency('Unknown Agency'), 'Unknown Agency');
+});
