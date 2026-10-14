@@ -105,21 +105,41 @@ export const Stats = {
     },
 
     /**
-     * Combine logged trips with imported PRESTO rides. An imported ride is
-     * dropped when a logged trip started within windowMs of it, since that is
-     * the same ride recorded twice. Imported rides carry only a start time and
-     * agency, so they add trips/days/streaks but no hours, routes, or stops.
+     * Combine logged trips with imported PRESTO rides. Each logged trip cancels
+     * at most one imported ride (the closest one within windowMs), since that is
+     * the same ride recorded twice; extra imported rides nearby are kept.
+     * Imported rides carry only a start time and agency, so they add
+     * trips/days/streaks but no hours, routes, or stops.
      */
     mergeImportedRides(loggedTrips, importedRides, windowMs = 30 * 60 * 1000) {
         const logged = loggedTrips || [];
-        const loggedTimes = logged
-            .map(trip => this.getTripDate(trip)?.getTime())
-            .filter(Number.isFinite);
-        const extra = (importedRides || []).filter(ride => {
-            const time = this.getTripDate(ride)?.getTime();
-            if (!Number.isFinite(time)) return false;
-            return !loggedTimes.some(loggedTime => Math.abs(loggedTime - time) <= windowMs);
+        const imported = (importedRides || [])
+            .map(ride => ({ ride, time: this.getTripDate(ride)?.getTime() }))
+            .filter(item => Number.isFinite(item.time));
+
+        // Pair logged trips with imported rides closest-first, one-to-one.
+        const pairs = [];
+        logged.forEach((trip, loggedIndex) => {
+            const time = this.getTripDate(trip)?.getTime();
+            if (!Number.isFinite(time)) return;
+            imported.forEach((item, importedIndex) => {
+                const gap = Math.abs(item.time - time);
+                if (gap <= windowMs) pairs.push({ gap, loggedIndex, importedIndex });
+            });
         });
+        pairs.sort((x, y) => x.gap - y.gap);
+
+        const usedLogged = new Set();
+        const matchedImported = new Set();
+        pairs.forEach(({ loggedIndex, importedIndex }) => {
+            if (usedLogged.has(loggedIndex) || matchedImported.has(importedIndex)) return;
+            usedLogged.add(loggedIndex);
+            matchedImported.add(importedIndex);
+        });
+
+        const extra = imported
+            .filter((_, index) => !matchedImported.has(index))
+            .map(item => item.ride);
         return [...logged, ...extra];
     },
 

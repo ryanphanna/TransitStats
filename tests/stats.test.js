@@ -120,4 +120,17 @@ describe('Stats calendar-month Wrapped helpers', () => {
         expect(wrapped.topRoute).toEqual({ name: '501', count: 1 });
         expect(wrapped.favoriteStop).toBeNull();
     });
+
+    it('lets each logged trip cancel only one imported ride', () => {
+        const logged = [{ startTime: new Date(2026, 8, 2, 8, 0), route: '501', duration: 20 }];
+        const imported = [
+            { startTime: new Date(2026, 8, 2, 8, 12), agency: 'TTC' },
+            { startTime: new Date(2026, 8, 2, 8, 3), agency: 'TTC' },   // closest, cancelled
+            { startTime: new Date(2026, 8, 2, 8, 20), agency: 'TTC' },
+        ];
+        const merged = Stats.mergeImportedRides(logged, imported);
+        expect(merged).toHaveLength(3);
+        expect(merged.filter(t => t.agency === 'TTC').map(t => t.startTime.getMinutes()).sort((a, b) => a - b))
+            .toEqual([12, 20]);
+    });
 });
