@@ -210,15 +210,31 @@ export const Auth = {
         }
     },
 
-    async syncSharedSession(user = auth.currentUser) {
-        if (!user) return false;
+    // Syncs can now run in the background, so they are tracked: signOut waits for them
+    // so a late cookie POST can never land after the DELETE and resurrect the session.
+    _pendingSyncs: new Set(),
+
+    syncSharedSession(user = auth.currentUser) {
+        if (!user) return Promise.resolve(false);
+        const pending = this._syncSharedSessionNow(user);
+        this._pendingSyncs.add(pending);
+        const forget = () => this._pendingSyncs.delete(pending);
+        pending.then(forget, forget);
+        return pending;
+    },
+
+    async _syncSharedSessionNow(user) {
+        // A sync only ever mints a cookie for the user it started for.
+        const stillCurrent = () => auth.currentUser?.uid === user.uid;
         let lastError;
         let lastStatus = null;
         for (let attempt = 0; attempt < 3; attempt += 1) {
             try {
+                if (!stillCurrent()) return false;
                 // Always force-refresh: a cached token near expiry can mint a
                 // cookie that dies while the tab is idle overnight.
                 const idToken = await user.getIdToken(true);
+                if (!stillCurrent()) return false;
                 const response = await fetch(this.sharedSessionUrl, {
                     method: 'POST',
                     credentials: 'include',
@@ -316,6 +332,8 @@ export const Auth = {
 
     async signOut() {
         console.warn('[auth] Signing out current session.', { path: window.location.pathname });
+        // Let any in-flight cookie sync finish first so the DELETE is the last word.
+        await Promise.allSettled([...this._pendingSyncs]);
         await this.clearSharedSession();
         return auth.signOut();
     },

@@ -8,6 +8,7 @@ vi.mock('../js/firebase.js', () => ({
         get currentUser() {
             return globalThis.__authCurrentUser || null;
         },
+        signOut: async () => {},
     },
     authPersistenceReady: Promise.resolve(),
     db: {
@@ -138,5 +139,48 @@ describe('Auth.restoreSharedSession no-session detection', () => {
         vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 503, headers: { 'content-type': 'application/json' } })));
         expect(await Auth.restoreSharedSession()).toBeNull();
         expect(Auth.lastRestoreFoundNoSession).toBe(false);
+    });
+});
+
+describe('shared-session sync vs sign-out', () => {
+    beforeEach(() => {
+        getIdToken.mockClear();
+        globalThis.__authCurrentUser = { uid: 'user_1', getIdToken };
+    });
+    afterEach(() => {
+        vi.restoreAllMocks();
+        globalThis.__authCurrentUser = null;
+    });
+
+    it('signOut waits for an in-flight cookie POST so the DELETE always lands last', async () => {
+        const calls = [];
+        let releasePost;
+        global.fetch = vi.fn((url, init) => {
+            calls.push(init.method);
+            if (init.method === 'POST') return new Promise(resolve => { releasePost = () => resolve({ ok: true, status: 204 }); });
+            return Promise.resolve({ ok: true, status: 204 });
+        });
+        const sync = Auth.syncSharedSession(globalThis.__authCurrentUser);
+        await vi.waitFor(() => expect(calls).toEqual(['POST']));
+
+        const signedOut = Auth.signOut();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(calls).toEqual(['POST']);
+
+        releasePost();
+        await sync;
+        await signedOut;
+        expect(calls).toEqual(['POST', 'DELETE']);
+    });
+
+    it('a sync never mints a cookie for a user who is no longer signed in', async () => {
+        global.fetch = vi.fn(async () => ({ ok: true, status: 204 }));
+        const user = globalThis.__authCurrentUser;
+        getIdToken.mockImplementationOnce(async () => {
+            globalThis.__authCurrentUser = { uid: 'user_2', getIdToken };
+            return 'token';
+        });
+        await expect(Auth.syncSharedSession(user)).resolves.toBe(false);
+        expect(global.fetch).not.toHaveBeenCalled();
     });
 });
