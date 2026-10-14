@@ -7,25 +7,21 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@800;900&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles/main.css">
     <link rel="stylesheet" href="styles/pages/wrapped.css">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;800;900&family=Hanken+Grotesk:wght@500;700;800;900&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 </head>
 <body class="wrapped-surface">
     <main id="app-root">
         <section class="wrapped-view" aria-labelledby="wrapped-title">
             <div class="wrapped-panel">
-                <p class="eyebrow">Your TransitStats</p>
+                <p class="wrapped-brand">transitstats</p>
                 <h1 id="wrapped-title">Transit Wrapped</h1>
-                <p class="wrapped-lede">A shareable card for one month of rides — trips, hours, top routes, and favorite stop.</p>
+                <p class="wrapped-lede">One month of rides on a transfer ticket you can share.</p>
 
+                <div class="wrapped-perf" aria-hidden="true"></div>
                 <label class="wrapped-month-label" for="wrapped-month">Month</label>
                 <select id="wrapped-month" class="wrapped-month" aria-describedby="wrapped-status"></select>
-                <p id="wrapped-concept-label" class="wrapped-month-label">Design (temporary)</p>
-                <div id="wrapped-concept" class="wrapped-concepts" role="group" aria-labelledby="wrapped-concept-label"></div>
                 <p id="wrapped-status" class="wrapped-status">Loading your trips…</p>
 
                 <div class="wrapped-actions">
@@ -39,9 +35,7 @@
             </div>
 
             <div id="wrapped-stage" class="wrapped-stage" hidden>
-                <div class="wrapped-preview-wrap">
-                    <canvas id="wrapped-preview" class="wrapped-preview" width="540" height="960" aria-label="Wrapped card preview"></canvas>
-                </div>
+                <canvas id="wrapped-preview" class="wrapped-preview" width="540" height="960" aria-label="Wrapped card preview"></canvas>
             </div>
         </section>
     </main>
