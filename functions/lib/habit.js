@@ -14,7 +14,8 @@
  *        Now: agency stored on habits; day/hour in the agency's local time instead of
  *        server UTC; weekday/weekend × 4h buckets; confidence measures how often the
  *        group ended at its usual end stop (smoothed), × recency. Old-schema
- *        records are ignored until the next rebuild. Tuned with ml/eval (see ml/EVAL.md).
+ *        records are ignored until the next rebuild. A habit seen in the last 30 days is
+ *        never marked stale. Tuned with ml/eval (see ml/EVAL.md).
  */
 
 const { AGENCY_TIMEZONE } = require('./constants');
@@ -186,8 +187,8 @@ const HabitEngine = {
   async rebuild(db, userId, trips) {
     const habits = this.extractHabits(trips);
 
-    // Detect stale habits: if a different route/direction is emerging in the same
-    // (stop, day group, bucket) slot within the last 30 days, the old habit is being replaced.
+    // Detect stale habits: if a habit hasn't been ridden in the last 30 days and a different
+    // route/direction has emerged in its (stop, day group, bucket) slot, it was replaced.
     const referenceMs = this._latestTripTime(trips);
     const thirtyDaysAgo = referenceMs - 30 * 86400000;
     const recentHabits = this.extractHabits(trips, thirtyDaysAgo);
@@ -197,6 +198,7 @@ const HabitEngine = {
       (recentBySlot[slotOf(h)] = recentBySlot[slotOf(h)] || []).push(h);
     }
     for (const habit of habits) {
+      if (habit.lastSeen >= thirtyDaysAgo) continue; // still being ridden: not replaced
       const recent = recentBySlot[slotOf(habit)] || [];
       const replacement = recent.find(r =>
         (this._norm(r.route) !== this._norm(habit.route) ||

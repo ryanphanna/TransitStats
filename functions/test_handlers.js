@@ -263,6 +263,7 @@ function loadHandlers(overrides = {}) {
       if (request === './predict_v4.js') return predictV4;
       if (request === './predict_v5.js') return predictV5;
       if (request === './constants') return constants;
+      if (request === './habit' && overrides.habit) return overrides.habit;
       if (request === 'firebase-admin') return firebaseAdmin;
       if (request === './logger') {
         return {
@@ -479,6 +480,49 @@ test('handleTripLog: Line 1 College auto-resolves to subway station', async () =
   assert.equal(calls.createTrip.length, 1);
   assert.equal(calls.createTrip[0].startStopCode, '9001');
   assert.equal(calls.createTrip[0].startStopName, 'College');
+});
+
+test('handleTripLog: a firing habit is stored, shown with END instructions, and skips V3', async () => {
+  let v3Called = false;
+  let matchArgs = null;
+  const { handlers, calls, restore } = loadHandlers({
+    habit: {
+      HabitEngine: {
+        VERSION: '2.0.0',
+        load: async () => [{ schema: 2 }],
+        match: (habits, stop, now, filters) => {
+          matchArgs = { stop, filters };
+          return { stop, route: '510', direction: 'Westbound', endStop: 'Spadina Station', confidence: 0.8, count: 4 };
+        },
+        rebuild: async () => [],
+      },
+    },
+    predict: {
+      PredictionEngine: {
+        stopsLibrary: [], networkGraph: null,
+        guess: () => { v3Called = true; return null; },
+        guessEndStop: () => { v3Called = true; return null; },
+        guessTopEndStops: () => { v3Called = true; return []; },
+        getEndStopConstraint: () => ({ source: 'none', legalStops: null }),
+        _stopMatch: () => false,
+      },
+    },
+  });
+
+  try {
+    await handlers.handleTripLog('+14165550031', { userId: 'u31' }, '11985', '510', 'Westbound', 'TTC');
+  } finally {
+    restore();
+  }
+
+  assert.equal(matchArgs.filters.agency, 'TTC');
+  assert.equal(calls.createTrip.length, 1);
+  assert.equal(calls.createTrip[0].habitPrediction.endStop, 'Spadina Station');
+  assert.equal(calls.createTrip[0].habitPrediction.version, 'habit_v2');
+  assert.equal(v3Called, false);
+  const reply = calls.sendSmsReply[0]?.message || '';
+  assert.match(reply, /Usual trip to Spadina Station\./);
+  assert.match(reply, /END \[stop\] to finish/);
 });
 
 test('handleTripLog: direction in a platform name resolves without prompting', async () => {

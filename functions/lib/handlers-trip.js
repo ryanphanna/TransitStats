@@ -278,7 +278,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       endStop: habitMatch.endStop || null,
       confidence: habitMatch.confidence,
       count: habitMatch.count,
-      version: 'habit_v1',
+      version: `habit_v${HabitEngine.VERSION.split('.')[0]}`,
     } : null;
     const habitFired = habitPrediction !== null;
     const lastTrip = history.length > 0 ? history[0] : null;
@@ -417,7 +417,8 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
 
   let replyBody = `Started ${routeDisplay} from ${finalStopDisplay}${agencySuffix(resolvedAgency, defaultAgency)}.`;
   if (habitPrediction?.endStop) {
-    replyBody += `\n\nUsual trip to ${habitPrediction.endStop}.`;
+    // Keep the END/FORGOT instructions the normal prompt carries.
+    replyBody += `\n\nUsual trip to ${habitPrediction.endStop}.` + getPredictionPrompt(null);
   } else {
     replyBody += getPredictionPrompt(isAdmin ? endStopPredictions : null);
   }

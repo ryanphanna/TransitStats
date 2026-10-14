@@ -463,3 +463,12 @@ test('match: stale habits are filtered out', async () => {
   // 510 is stale — match with 510 filter should return null
   assert.equal(HabitEngine.match(habits, 'King / Spadina', now, { route: '510' }), null);
 });
+
+test('rebuild: two routes ridden from the same stop and slot do not mark each other stale', async () => {
+  const db = makeDb(null);
+  const a = [1, 2, 3].map(w => makeTrip('510', 'King / Spadina', 'Westbound', 1, 8, 'Spadina Station', w * 7));
+  const b = [1, 2, 3].map(w => makeTrip('29', 'King / Spadina', 'Northbound', 2, 9, 'Lawrence Station', w * 7));
+  const habits = await HabitEngine.rebuild(db, 'user1', [...a, ...b]);
+  assert.equal(habits.length, 2);
+  assert.ok(habits.every(h => h.stale === false));
+});
