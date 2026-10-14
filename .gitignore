@@ -60,12 +60,6 @@ trips.csv
 functions/scratch/
 Tools/scratch/
 
-# Local session and audit artifacts
-/handoff.md
-/PROJECT.md
-/SESSION_CONTEXT.md
-/.agents/
-
 # Generated ML/LLM reports and raw evaluation output
 /ml/artifacts/
 /ml/reports/
