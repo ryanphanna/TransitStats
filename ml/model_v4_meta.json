@@ -150,6 +150,7 @@
     "stop_sheppard_west_station",
     "stop_sheppard_yonge_station",
     "stop_sherbourne_station",
+    "stop_spadina_ave_college_st_north_side",
     "stop_spadina_ave_nassau_st",
     "stop_spadina_ave_nassau_st_south_side",
     "stop_spadina_ave_queen_st_west_north_side",
@@ -250,6 +251,7 @@
     "last_stop_fleet_st_fort_york_blvd",
     "last_stop_flower_washington",
     "last_stop_foothill_blvd_50th_av_eb",
+    "last_stop_forest_hill",
     "last_stop_gerrard_pape",
     "last_stop_harbourfront_centre",
     "last_stop_jack_layton_ferry_terminal",
@@ -401,9 +403,9 @@
     "prev_route_ttc::94",
     "prev_route_ttc::lsw"
   ],
-  "top1_accuracy": 0.5987,
-  "top3_accuracy": 0.8618,
-  "n_trips": 760,
+  "top1_accuracy": 0.6026,
+  "top3_accuracy": 0.8462,
+  "n_trips": 781,
   "feature_schema_version": 2,
   "agencies": [
     "ac_transit",

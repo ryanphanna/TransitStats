@@ -65,6 +65,7 @@
     "stop_bay_station",
     "stop_bloor_yonge_station",
     "stop_carlton_church",
+    "stop_cedarvale_station",
     "stop_college_beverley",
     "stop_college_st_spadina_ave",
     "stop_college_station",
@@ -144,9 +145,9 @@
     "dir_southbound",
     "dir_westbound"
   ],
-  "top1_accuracy": 0.7647,
-  "top3_accuracy": 0.9559,
-  "n_trips": 344,
+  "top1_accuracy": 0.7606,
+  "top3_accuracy": 0.9577,
+  "n_trips": 358,
   "feature_schema_version": 2,
   "agencies": [
     "ttc"
