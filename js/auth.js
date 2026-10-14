@@ -7,6 +7,9 @@ const SHARED_SESSION_SYNC_KEY = 'transitstats_shared_session_sync';
 // Re-mint before the Firebase ID token's typical 1h expiry so a suspended
 // tab still has a valid shared cookie when IndexedDB comes back empty.
 const SHARED_SESSION_REFRESH_MS = 45 * 60 * 1000;
+// focus + visibilitychange fire together on a tab return; each sync also runs
+// recordLoginActivity server-side, so coalesce them into one call.
+const SHARED_SESSION_MIN_INTERVAL_MS = 30 * 1000;
 
 export const Auth = {
     phoneApiUrl: 'https://us-central1-transitstats-21ba4.cloudfunctions.net/api',
@@ -14,6 +17,7 @@ export const Auth = {
     _restorePromise: null,
     _keepAliveBound: false,
     _keepAliveTimer: null,
+    _lastKeepAliveSyncAt: 0,
 
     // --- Rate Limiting ---
     getRateLimit() {
@@ -247,6 +251,9 @@ export const Auth = {
         const sync = () => {
             const current = auth.currentUser || user;
             if (!current) return;
+            const now = Date.now();
+            if (now - this._lastKeepAliveSyncAt < SHARED_SESSION_MIN_INTERVAL_MS) return;
+            this._lastKeepAliveSyncAt = now;
             void this.syncSharedSession(current);
         };
 
