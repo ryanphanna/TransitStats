@@ -557,3 +557,7 @@ html[data-theme="dark"] body.settings-surface .header {
     align-items: flex-start;
   }
 }
+
+.settings-identity-taken {
+  color: var(--danger);
+}
