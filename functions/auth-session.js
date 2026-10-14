@@ -78,9 +78,11 @@ async function recordLoginActivity(uid, host) {
   }
 }
 
-async function isAllowedUser(uid, email) {
+async function isAllowedUser(uid, email, emailVerified = false) {
   const db = getFirestore();
   if (email) {
+    // An unverified email proves nothing about who owns it.
+    if (emailVerified !== true) return false;
     const allowed = await db.collection('allowedUsers').doc(email.toLowerCase()).get();
     return allowed.exists;
   }
@@ -115,7 +117,7 @@ async function handleAuthSession(req, res) {
       }
 
       const decoded = await adminAuth.verifyIdToken(authHeader.slice(7));
-      if (!(await isAllowedUser(decoded.uid, decoded.email || ''))) {
+      if (!(await isAllowedUser(decoded.uid, decoded.email || '', decoded.email_verified))) {
         res.status(403).json({ error: 'Access denied' });
         return;
       }
@@ -142,7 +144,7 @@ async function handleAuthSession(req, res) {
     }
 
     const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
-    if (!(await isAllowedUser(decoded.uid, decoded.email || ''))) {
+    if (!(await isAllowedUser(decoded.uid, decoded.email || '', decoded.email_verified))) {
       res.set('Set-Cookie', cookieHeader('', 0, host));
       res.status(403).json({ error: 'Access denied' });
       return;

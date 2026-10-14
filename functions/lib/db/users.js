@@ -1,7 +1,8 @@
 /**
  * User lookup, profiles, auth whitelist, and verification
  */
-const { db, Timestamp } = require('./core');
+const { getAuth } = require('firebase-admin/auth');
+const { admin, db, Timestamp } = require('./core');
 
 async function getUserByPhone(phoneNumber) {
   const phoneDoc = await db.collection('phoneNumbers').doc(phoneNumber).get();
@@ -13,6 +14,19 @@ async function getUserProfile(userId) {
   const profileDoc = await db.collection('profiles').doc(userId).get();
   if (!profileDoc.exists) return null;
   return profileDoc.data();
+}
+
+// Resolve an account by its Firebase Auth email, never by a profile field:
+// profile docs are client-writable, so a profile's `email` proves nothing.
+// Only a verified email counts as owning the account.
+async function getAuthUidByEmail(email) {
+  try {
+    const record = await getAuth(admin).getUserByEmail(String(email || '').toLowerCase());
+    return record.emailVerified ? record.uid : null;
+  } catch (error) {
+    if (error?.code === 'auth/user-not-found') return null;
+    throw error;
+  }
 }
 
 async function isEmailAllowed(email) {
@@ -51,6 +65,7 @@ async function getVerificationData(phoneNumber) {
 }
 
 module.exports = {
+  getAuthUidByEmail,
   getUserByPhone,
   getUserProfile,
   isEmailAllowed,

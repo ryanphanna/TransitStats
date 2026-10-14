@@ -65,11 +65,32 @@ function createFakeDb(seed = {}) {
         },
       };
     },
-    async runTransaction(callback) {
-      await callback({
-        get: reference => reference.get(),
-        set: (reference, value) => reference.set(value),
+    // Transactions run one at a time, like Firestore resolving contention by
+    // retrying: each sees the previous one's committed writes.
+    _txQueue: Promise.resolve(),
+    runTransaction(callback) {
+      const run = this._txQueue.then(async () => {
+        const writes = [];
+        const result = await callback({
+          get: reference => reference.get(),
+          set: (reference, value) => { writes.push(() => reference.set(value)); },
+          update: (reference, value) => { writes.push(async () => {
+            const current = (await reference.get()).data() || {};
+            const next = { ...current };
+            for (const [key, change] of Object.entries(value)) {
+              next[key] = change?.constructor?.name === 'NumericIncrementTransform'
+                ? Number(current[key] || 0) + change.operand
+                : change;
+            }
+            await reference.set(next);
+          }); },
+          delete: reference => { writes.push(() => reference.delete()); },
+        });
+        for (const write of writes) await write();
+        return result;
       });
+      this._txQueue = run.catch(() => {});
+      return run;
     },
     read(collection, id) {
       return getDocument(collection, id);
@@ -278,6 +299,42 @@ test('OTP verification returns a custom token for a valid code', async () => {
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.token, 'token-user-1');
   assert.equal(db.read(`phoneLoginVerification`, phone), null);
+});
+
+test('parallel wrong guesses cannot exceed the 3-attempt limit, and a correct code is single-use', async () => {
+  const phone = '+15192769853';
+  const seed = () => ({
+    [`phoneNumbers/${phone}`]: { userId: 'user-1' },
+    [`phoneLoginVerification/${phone}`]: {
+      code: '123456',
+      attempts: 0,
+      expiresAt: { toDate: () => new Date(Date.now() + 60000) },
+    },
+  });
+
+  const { handlers } = createOtpHarness(seed());
+  const guesses = await Promise.all(Array.from({ length: 12 }, async (_, i) => {
+    const response = new FakeResponse();
+    await handlers.handleVerifyOtp({ body: { phoneNumber: phone, code: String(100000 + i) } }, response, `t${i}`);
+    return response;
+  }));
+  assert.equal(guesses.filter(r => r.body.error === 'Invalid verification code.').length, 3);
+  assert.ok(guesses.every(r => r.statusCode === 400 && !r.body.token));
+
+  // After lockout the right code no longer works.
+  const late = new FakeResponse();
+  await handlers.handleVerifyOtp({ body: { phoneNumber: phone, code: '123456' }, headers: {} }, late, 'late');
+  assert.equal(late.statusCode, 400);
+  assert.equal(late.body.token, undefined);
+
+  // Two simultaneous correct submissions: exactly one gets a token.
+  const second = createOtpHarness(seed());
+  const both = await Promise.all([0, 1].map(async () => {
+    const response = new FakeResponse();
+    await second.handlers.handleVerifyOtp({ body: { phoneNumber: phone, code: '123456' } }, response, 't');
+    return response;
+  }));
+  assert.equal(both.filter(r => r.statusCode === 200).length, 1);
 });
 
 test('authenticated command dispatch returns captured replies', async () => {

@@ -132,7 +132,7 @@ async function handleAdminMetrics(req, res) {
     const decoded = await adminAuth.verifyIdToken(authHeader.slice(7));
     const db = getFirestore();
     const allowed = await db.collection('allowedUsers').doc(String(decoded.email || '').toLowerCase()).get();
-    if (!allowed.exists || allowed.data()?.isAdmin !== true) {
+    if (decoded.email_verified !== true || !allowed.exists || allowed.data()?.isAdmin !== true) {
       res.status(403).json({ error: 'Admin access required' });
       return;
     }
