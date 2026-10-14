@@ -3,6 +3,7 @@ import { auth } from '../firebase.js';
 import { Auth } from '../auth.js';
 import { normalizePhone } from '../phone-fields.js';
 import { getPhoneCooldownSeconds, persistPhoneCooldown, clearPhoneCooldown } from '../shared/phone-cooldown.js';
+import { refreshIcons } from '../shared/icons.js';
 
 const DOM = {
     phoneStep: document.getElementById('auth-phone-step'),
@@ -141,7 +142,7 @@ function clearStatus() {
 function setBusy(button, busy, busyText, idleText) {
     button.disabled = busy;
     button.innerHTML = busy ? busyText : `${idleText} <i data-lucide="arrow-right" aria-hidden="true"></i>`;
-    if (window.lucide) lucide.createIcons();
+    refreshIcons();
 }
 
 function syncButtons() {
@@ -169,7 +170,7 @@ function updateRequestButton() {
     }
     DOM.requestCode.disabled = false;
     DOM.requestCode.innerHTML = 'Text me a code <i data-lucide="arrow-right" aria-hidden="true"></i>';
-    if (window.lucide) lucide.createIcons();
+    refreshIcons();
 }
 
 function updateResendButton() {
@@ -301,7 +302,7 @@ async function requestCode() {
         if (adminSession) clearPhoneCooldown(normalizedPhone);
         else persistPhoneCooldown(normalizedPhone);
         DOM.requestCode.innerHTML = 'Code sent <i data-lucide="check" aria-hidden="true"></i>';
-        if (window.lucide) lucide.createIcons();
+        refreshIcons();
         await wait(350);
         DOM.codeInput.value = '';
         DOM.heading.textContent = 'Enter the 6-digit code';
@@ -380,7 +381,7 @@ function init() {
     setupListeners();
     syncButtons();
     applyLocalTransitTheme();
-    if (window.lucide) lucide.createIcons();
+    refreshIcons();
 }
 
 if (document.readyState === 'loading') {

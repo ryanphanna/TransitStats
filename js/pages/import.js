@@ -3,6 +3,7 @@ import { Auth } from '../auth.js';
 import { initPrestoImporter } from '../presto-importer.js';
 import { normalizePhone } from '../phone-fields.js';
 import { getPhoneCooldownSeconds, persistPhoneCooldown, clearPhoneCooldown } from '../shared/phone-cooldown.js';
+import { refreshIcons } from '../shared/icons.js';
 
 const DOM = {
     emailStep: document.getElementById('import-email-step'),
@@ -65,7 +66,7 @@ async function sendLink() {
     } finally {
         DOM.sendLink.disabled = false;
         DOM.sendLink.innerHTML = 'Email me a sign-in link <i data-lucide="arrow-right" aria-hidden="true"></i>';
-        if (window.lucide) lucide.createIcons();
+        refreshIcons();
     }
 }
 
@@ -107,7 +108,7 @@ async function requestCode() {
     } finally {
         requestBusy = false;
         DOM.requestCode.innerHTML = 'Text me a code <i data-lucide="arrow-right" aria-hidden="true"></i>';
-        if (window.lucide) lucide.createIcons();
+        refreshIcons();
     }
 }
 
@@ -122,7 +123,7 @@ async function verifyCode() {
         DOM.codeInput.select();
         DOM.verifyCode.disabled = false;
         DOM.verifyCode.innerHTML = 'Continue <i data-lucide="arrow-right" aria-hidden="true"></i>';
-        if (window.lucide) lucide.createIcons();
+        refreshIcons();
     }
 }
 
@@ -184,7 +185,7 @@ async function init() {
         if (user) handleSignedInUser(user);
     });
 
-    if (window.lucide) lucide.createIcons();
+    refreshIcons();
 }
 
 if (document.readyState === 'loading') {
