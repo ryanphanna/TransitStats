@@ -92,7 +92,10 @@ describe('requireAuth signed-out redirect', () => {
         localStorage.clear();
         authState.currentUser = null;
         global.fetch = vi.fn(async () => ({ status: 401, json: async () => ({}) }));
-        vi.spyOn(Auth, 'restoreSharedSession').mockResolvedValue(null);
+        vi.spyOn(Auth, 'restoreSharedSession').mockImplementation(async () => {
+            Auth.lastRestoreFoundNoSession = true;
+            return null;
+        });
         const location = { pathname: '/wrapped', href: 'http://localhost/wrapped' };
         vi.stubGlobal('location', location);
         const originalWindowLocation = window.location;
@@ -102,10 +105,64 @@ describe('requireAuth signed-out redirect', () => {
         requireAuth({ returnToPage: true }).then(settled);
         await vi.advanceTimersByTimeAsync(0);
         authState.listener(null);
-        await vi.advanceTimersByTimeAsync(70 * 1000);
+        await vi.advanceTimersByTimeAsync(2000);
 
+        // Never signed in: redirects right away, not after the 60s grace period.
         expect(location.href).toBe('/?next=%2Fwrapped');
         expect(settled).not.toHaveBeenCalled();
         Object.defineProperty(window, 'location', { value: originalWindowLocation, configurable: true, writable: true });
+    });
+});
+
+describe('requireAuth grace period only when a session may exist', () => {
+    let location;
+    beforeEach(() => {
+        vi.useFakeTimers();
+        localStorage.clear();
+        authState.currentUser = null;
+        location = { pathname: '/dashboard', href: 'http://localhost/dashboard' };
+        Object.defineProperty(window, 'location', { value: location, configurable: true, writable: true });
+        vi.spyOn(Auth, 'restoreSharedSession').mockImplementation(async () => {
+            Auth.lastRestoreFoundNoSession = restoreOutcome === 'none';
+            return null;
+        });
+    });
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+    let restoreOutcome = 'none';
+
+    async function run() {
+        global.fetch = vi.fn(async () => ({ status: 401, json: async () => ({}) }));
+        requireAuth();
+        await vi.advanceTimersByTimeAsync(0);
+        authState.listener(null);
+    }
+
+    it('keeps waiting when a Firebase user is persisted', async () => {
+        restoreOutcome = 'none';
+        localStorage.setItem('firebase:authUser:key:[DEFAULT]', '{}');
+        await run();
+        await vi.advanceTimersByTimeAsync(30 * 1000);
+        expect(location.href).toBe('http://localhost/dashboard');
+        await vi.advanceTimersByTimeAsync(40 * 1000);
+        expect(location.href).toBe('/');
+    });
+
+    it('keeps waiting when the cookie check fails transiently', async () => {
+        restoreOutcome = 'error';
+        await run();
+        await vi.advanceTimersByTimeAsync(30 * 1000);
+        expect(location.href).toBe('http://localhost/dashboard');
+        await vi.advanceTimersByTimeAsync(40 * 1000);
+        expect(location.href).toBe('/');
+    });
+
+    it('redirects immediately when nothing is persisted and the cookie check finds no session', async () => {
+        restoreOutcome = 'none';
+        await run();
+        await vi.advanceTimersByTimeAsync(2000);
+        expect(location.href).toBe('/');
     });
 });
