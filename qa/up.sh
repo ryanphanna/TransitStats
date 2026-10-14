@@ -43,6 +43,7 @@ export VITE_FIREBASE_PROJECT_ID=demo-transitstats
 export VITE_FIREBASE_STORAGE_BUCKET=demo-transitstats.appspot.com
 export VITE_FIREBASE_MESSAGING_SENDER_ID=0
 export VITE_FIREBASE_APP_ID=qa-fake-app
+export VITE_PUBLIC_PROFILE_URL=http://127.0.0.1:5150/demo-transitstats/us-central1/publicProfile
 nohup nice -n 15 npx vite --config qa/vite.qa.config.js > "$RUN/vite.log" 2>&1 &
 echo $! > "$RUN/vite.pid"
 for _ in $(seq 1 30); do curl -sf http://localhost:5188/ >/dev/null 2>&1 && break; sleep 1; done
