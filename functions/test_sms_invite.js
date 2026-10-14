@@ -6,7 +6,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  createInviteHandlers, WELCOME_TEXT, SETUP_TEXT, LINKED_TEXT, NOT_INVITED_TEXT, PROVISIONED_CLAIM,
+  createInviteHandlers, WELCOME_TEXT, SETUP_TEXT, LINKED_TEXT, NOT_INVITED_TEXT, SETUP_PROBLEM_TEXT, PROVISIONED_CLAIM,
 } = require('./lib/sms-invite');
 const { setInvitePhone } = require('./scripts/set-invite-phone');
 
@@ -123,8 +123,9 @@ test('an unverified account we did not create is NOT linked (pre-registered squa
   await handlers.handleUnknownSender(PHONE);
 
   assert.equal(db.data.has(`phoneNumbers/${PHONE}`), false);
-  assert.equal(sms.length, 1);
-  assert.doesNotMatch(sms[0].message, /all set/);
+  assert.deepEqual(sms, [{ to: PHONE, message: SETUP_PROBLEM_TEXT }]);
+  // No email was sent in this case, so the text must not point at one.
+  assert.doesNotMatch(SETUP_PROBLEM_TEXT, /email/i);
 });
 
 test('an unverified account we provisioned earlier is accepted', async () => {

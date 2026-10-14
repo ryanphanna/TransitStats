@@ -26,6 +26,7 @@ const WELCOME_TEXT = [
 const SETUP_TEXT = 'You\'re all set! Text your trips here as you ride, like \'504 King to Spadina\'. '
   + 'We also emailed you a link to sign in on the website.';
 const LINKED_TEXT = 'You\'re all set! Text your trips here as you ride, like \'504 King to Spadina\'.';
+const SETUP_PROBLEM_TEXT = 'We couldn\'t finish setting up this number. Please contact us for help.';
 const NOT_INVITED_TEXT = 'TransitStats is invite-only. If you already have an account, text REGISTER and your email to link this number.';
 const SIGN_IN_URL = 'https://transitstats.fyi/import';
 const PROVISIONED_CLAIM = 'smsInviteProvisioned';
@@ -121,7 +122,7 @@ function createInviteHandlers({ db, adminAuth, sendSmsReply, shouldRespondToUnkn
     const account = await getOrCreateAuthUser(invite.email);
     if (account.error) {
       log.warn('Invite setup refused: existing unverified account', { email: invite.email, traceId });
-      await sendSmsReply(phoneNumber, 'We couldn\'t finish setting up this number. Please reply to the email we sent you.');
+      await sendSmsReply(phoneNumber, SETUP_PROBLEM_TEXT);
       return true;
     }
 
@@ -197,5 +198,6 @@ module.exports = {
   SETUP_TEXT,
   LINKED_TEXT,
   NOT_INVITED_TEXT,
+  SETUP_PROBLEM_TEXT,
   PROVISIONED_CLAIM,
 };
