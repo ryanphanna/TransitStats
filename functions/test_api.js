@@ -422,10 +422,10 @@ test('authenticated command dispatch returns captured replies', async () => {
   assert.deepEqual(response.body.replies, ['Trip logged.']);
 });
 
-test('the API runs commands with the verified owner\'s authority and refuses unverified emails', async () => {
+test('the API acts as the verified owner under its own web: identity, never as a phone', async () => {
   const seed = {
     'allowedUsers/test@example.com': { isAdmin: false },
-    'phoneNumbers/phone-1': { userId: 'user-1', loginConfirmed: false },
+    'phoneNumbers/+15195550143': { userId: 'user-1', loginConfirmed: false },
   };
   const calls = [];
   const build = () => createCommandHandler({
@@ -439,7 +439,8 @@ test('the API runs commands with the verified owner\'s authority and refuses unv
   const ok = new FakeResponse();
   await build()({ body: { command: 'STATS' } }, ok, { uid: 'user-1', email: 'test@example.com', emailVerified: true, traceId: 't' });
   assert.equal(ok.statusCode, 200);
-  assert.equal(calls[0].media.ownerAuthenticated, true);
+  assert.equal(calls[0].phone, 'web:user-1');
+  assert.deepEqual(calls[0].media.apiOwner, { userId: 'user-1', email: 'test@example.com' });
 
   for (const emailVerified of [false, undefined]) {
     const refused = new FakeResponse();

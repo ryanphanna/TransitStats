@@ -109,7 +109,7 @@ const PENDING_PASSTHROUGH = new Set(['STATUS', 'STATS', 'FORGOT', 'INFO', 'COMMA
  */
 async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = null) {
   const receivedAt = Date.now();
-  const { numMedia = 0, mediaUrl = null, ownerAuthenticated = false } = media;
+  const { numMedia = 0, mediaUrl = null, apiOwner = null } = media;
   const isMms = numMedia > 0 && !!mediaUrl;
 
   // Ensure we always have a traceId for this request lifecycle
@@ -173,18 +173,23 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
   // trip, since Twilio only matches whole-message keywords.)
   if (OPT_OUT_KEYWORDS.test(upperBody.trim())) return '';
 
-  // The link for this number. A web or app request (ownerAuthenticated) runs with
-  // the owner's authority, so the number's confirmation state doesn't apply to
-  // it; and it can never answer or start the unlock code exchange.
-  const link = await getUserByPhone(phoneNumber);
-  const locked = !!link && !ownerAuthenticated && !isPhoneConfirmed(link);
-  const actor = link && ownerAuthenticated ? { ...link, loginConfirmed: true } : link;
+  // Who is acting. A web or app request (apiOwner, set only by api-command.js
+  // after verifying the owner's email) is the owner themselves: it has its own
+  // identity key ("web:<uid>", never a phone), so its pending prompts and trips
+  // can't be reached from, or attributed to, any phone number. A text is
+  // whoever the sending number is linked to.
+  const link = apiOwner
+    ? { userId: apiOwner.userId, email: apiOwner.email, loginConfirmed: true }
+    : await getUserByPhone(phoneNumber);
+  const locked = !!link && !apiOwner && !isPhoneConfirmed(link);
+  const actor = link;
 
   // 3. Contextual/Pending State Logic
   const pendingState = await getPendingState(phoneNumber);
-  const apiBlocked = ownerAuthenticated && ['awaiting_verification', 'awaiting_email'].includes(pendingState?.type);
+  // The phone-linking exchanges are for a real phone only.
+  const apiBlocked = !!apiOwner && ['awaiting_verification', 'awaiting_email'].includes(pendingState?.type);
   if (pendingState && !apiBlocked) {
-    const handled = await handlePendingState(phoneNumber, body, upperBody, pendingState, trace, { locked });
+    const handled = await handlePendingState(phoneNumber, body, upperBody, pendingState, trace, { locked, user: actor });
     if (handled) return '';
   }
 
@@ -200,6 +205,11 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
       return '';
     }
     await handlers.handleMmsTrip(phoneNumber, user, mediaUrl, receivedAt, trace);
+    return '';
+  }
+
+  if (apiOwner && /^REGISTER\b/.test(upperBody)) {
+    await sendSmsReply(phoneNumber, 'To link a phone, text REGISTER from that phone.');
     return '';
   }
 
@@ -249,10 +259,9 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
 /**
  * Handles states like verification codes or start-trip confirmations
  */
-async function handleConfirmAgencyState(phoneNumber, body, upperBody, state, traceId = null) {
+async function handleConfirmAgencyState(phoneNumber, body, upperBody, state, traceId = null, user = null) {
   const trace = traceId || generateTraceIdLocal();
   if (/^[12]$/.test(body.trim())) {
-    const user = await getUserByPhone(phoneNumber);
     if (user) {
       const chosenAgency = state.agencyOptions[parseInt(body.trim(), 10) - 1];
       await clearPendingState(phoneNumber);
@@ -271,7 +280,6 @@ async function handleConfirmAgencyState(phoneNumber, body, upperBody, state, tra
   }
 
   if (upperBody === 'SKIP') {
-    const user = await getUserByPhone(phoneNumber);
     if (user) {
       // SKIP uses the default agency (index 1 in agencyOptions)
       const skippedAgency = state.agencyOptions[1] || state.agencyOptions[0];
@@ -290,11 +298,10 @@ async function handleConfirmAgencyState(phoneNumber, body, upperBody, state, tra
   return true;
 }
 
-async function handleConfirmStopState(phoneNumber, body, upperBody, state, traceId = null) {
+async function handleConfirmStopState(phoneNumber, body, upperBody, state, traceId = null, user = null) {
   const trace = traceId || generateTraceIdLocal();
   const num = parseInt(body.trim(), 10);
   if (!isNaN(num) && num >= 1 && num <= state.stopCandidates.length) {
-    const user = await getUserByPhone(phoneNumber);
     if (user) {
       const chosen = state.stopCandidates[num - 1];
       await clearPendingState(phoneNumber);
@@ -344,7 +351,6 @@ async function handleConfirmStopState(phoneNumber, body, upperBody, state, trace
     if (state.tripId) {
       await sendSmsReply(phoneNumber, 'No problem — trip continues.\n\nEND [stop] to finish.');
     } else {
-      const user = await getUserByPhone(phoneNumber);
       if (user) {
         await handlers.handleTripLog(
           phoneNumber, user, state.stopInput, state.route, state.direction,
@@ -374,14 +380,13 @@ async function handleConfirmStopState(phoneNumber, body, upperBody, state, trace
   return false;
 }
 
-async function handleMmsStopNeededState(phoneNumber, body, upperBody, state, traceId = null) {
+async function handleMmsStopNeededState(phoneNumber, body, upperBody, state, traceId = null, user = null) {
   const trace = traceId || generateTraceIdLocal();
   if (upperBody === 'DISCARD') {
     await clearPendingState(phoneNumber);
     await sendSmsReply(phoneNumber, 'Trip cancelled.');
     return true;
   }
-  const user = await getUserByPhone(phoneNumber);
   if (user && body.trim()) {
     await clearPendingState(phoneNumber);
     const stopReply = body.trim();
@@ -411,11 +416,10 @@ async function handleMmsStopNeededState(phoneNumber, body, upperBody, state, tra
   return true;
 }
 
-async function handleConfirmMmsRouteState(phoneNumber, body, upperBody, state, traceId = null) {
+async function handleConfirmMmsRouteState(phoneNumber, body, upperBody, state, traceId = null, user = null) {
   const trace = traceId || generateTraceIdLocal();
   const num = parseInt(body.trim(), 10);
   if (!isNaN(num) && num >= 1 && num <= state.routeCandidates.length) {
-    const user = await getUserByPhone(phoneNumber);
     if (user) {
       const chosen = state.routeCandidates[num - 1];
       await clearPendingState(phoneNumber);
@@ -447,10 +451,9 @@ async function handleConfirmMmsRouteState(phoneNumber, body, upperBody, state, t
   return true;
 }
 
-async function handleConfirmStartState(phoneNumber, upperBody, state, traceId = null) {
+async function handleConfirmStartState(phoneNumber, upperBody, state, traceId = null, user = null) {
   const trace = traceId || generateTraceIdLocal();
   if (upperBody === 'START') {
-    const user = await getUserByPhone(phoneNumber);
     if (user) await handlers.handleConfirmStart(phoneNumber, user, state, trace);
     return true;
   }
@@ -503,7 +506,7 @@ async function handleConfirmStartState(phoneNumber, upperBody, state, traceId = 
   return true;
 }
 
-async function handlePendingState(phoneNumber, body, upperBody, state, traceId = null, { locked = false } = {}) {
+async function handlePendingState(phoneNumber, body, upperBody, state, traceId = null, { locked = false, user = null } = {}) {
   const trace = traceId || generateTraceIdLocal();
 
   if (state.type === 'awaiting_verification' && /^\d{4,6}$/.test(body)) {
@@ -521,11 +524,11 @@ async function handlePendingState(phoneNumber, body, upperBody, state, traceId =
   }
 
   const stateHandlers = {
-    confirm_agency: () => handleConfirmAgencyState(phoneNumber, body, upperBody, state, trace),
-    confirm_stop: () => handleConfirmStopState(phoneNumber, body, upperBody, state, trace),
-    mms_stop_needed: () => handleMmsStopNeededState(phoneNumber, body, upperBody, state, trace),
-    confirm_mms_route: () => handleConfirmMmsRouteState(phoneNumber, body, upperBody, state, trace),
-    confirm_start: () => handleConfirmStartState(phoneNumber, upperBody, state, trace),
+    confirm_agency: () => handleConfirmAgencyState(phoneNumber, body, upperBody, state, trace, user),
+    confirm_stop: () => handleConfirmStopState(phoneNumber, body, upperBody, state, trace, user),
+    mms_stop_needed: () => handleMmsStopNeededState(phoneNumber, body, upperBody, state, trace, user),
+    confirm_mms_route: () => handleConfirmMmsRouteState(phoneNumber, body, upperBody, state, trace, user),
+    confirm_start: () => handleConfirmStartState(phoneNumber, upperBody, state, trace, user),
   };
 
   if (stateHandlers[state.type]) {

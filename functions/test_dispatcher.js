@@ -14,6 +14,7 @@ function buildHarness({
   user = { userId: 'user_1' },
   shouldRespondToUnknown = false,
   pendingState = null,
+  pendingByPhone = null,
   singleLineTrip = null,
   handlers: handlerOverrides = {},
 } = {}) {
@@ -80,7 +81,7 @@ function buildHarness({
         }),
       }),
     }),
-    getPendingState: async () => pendingState,
+    getPendingState: async (phone) => (pendingByPhone ? (pendingByPhone[phone] || null) : pendingState),
     getUserByPhone: async () => user,
     getUserProfile: async () => ({ defaultAgency: 'TTC' }),
     isEmailAdmin: async () => false,
@@ -690,25 +691,56 @@ test('dispatcher: a code reply from an unconfirmed number reaches verification',
   assert.equal(calls.confirmations.length, 0);
 });
 
-test('dispatcher: web/app commands use the owner\'s authority and never start or accept the unlock exchange', async () => {
-  const api = { numMedia: 0, ownerAuthenticated: true };
+const WEB_OWNER = { userId: 'user_1', email: 'owner@example.com' };
+const WEB = 'web:user_1';
+const apiMedia = { numMedia: 0, apiOwner: WEB_OWNER };
 
-  // An unconfirmed link: STATS runs, no code email, no unlock reply.
-  const run = buildHarness({ user: UNCONFIRMED, shouldRespondToUnknown: true });
-  await run.dispatch('+14165551234', 'STATUS', 'api_1', api);
+test('dispatcher: web/app commands run as the owner under their own web: key, whatever the phone link state', async () => {
+  // No phone link is consulted at all: the app identity carries the owner.
+  const run = buildHarness({ user: null, shouldRespondToUnknown: true });
+  await run.dispatch(WEB, 'STATUS', 'api_1', apiMedia);
   assert.equal(run.calls.handleStatus, 1);
   assert.equal(run.calls.confirmations.length, 0);
+  assert.equal(run.calls.unknownSender.length, 0);
   assert.equal(run.calls.sendSmsReply.length, 0);
+});
 
-  // A pending code exchange is not answered from the API.
+test('dispatcher: the app can never link a phone or answer a code exchange', async () => {
   let verified = 0;
+  let registered = 0;
   const pending = buildHarness({
-    user: UNCONFIRMED,
-    pendingState: { type: 'awaiting_verification', email: 'owner@example.com' },
-    handlers: { handleVerificationCode: async () => { verified++; } },
+    user: null,
+    pendingByPhone: { [WEB]: { type: 'awaiting_verification', email: 'owner@example.com' } },
+    handlers: {
+      handleVerificationCode: async () => { verified++; },
+      handleRegister: async () => { registered++; },
+    },
   });
-  await pending.dispatch('+14165551234', '123456', 'api_2', api);
+  await pending.dispatch(WEB, '123456', 'api_2', apiMedia);
+  await pending.dispatch(WEB, 'REGISTER me@example.com', 'api_3', apiMedia);
   assert.equal(verified, 0);
+  assert.equal(registered, 0);
+});
+
+test('dispatcher: a phone cannot answer a prompt the app created under the owner\'s web: key', async () => {
+  // The owner's app prompt exists only under web:user_1. Phone X (unconfirmed, same account) replies "1".
+  const attack = buildHarness({
+    user: UNCONFIRMED,
+    shouldRespondToUnknown: true,
+    pendingByPhone: { [WEB]: { type: 'confirm_agency', agencyOptions: ['TTC', 'GO Transit'], stopInput: 'Union', route: '1', direction: null, options: {} } },
+  });
+  await attack.dispatch('+14165551234', '1', 'SM_X1');
+  assert.equal(attack.calls.handleTripLog, 0);
+  assert.equal(attack.calls.clearPendingState, 0);
+
+  // The owner, from the app, answering their own prompt gets full owner behaviour.
+  const owner = buildHarness({
+    user: null,
+    pendingByPhone: { [WEB]: { type: 'confirm_agency', agencyOptions: ['TTC', 'GO Transit'], stopInput: 'Union', route: '1', direction: null, options: {} } },
+  });
+  await owner.dispatch(WEB, '1', 'api_4', apiMedia);
+  assert.equal(owner.calls.handleTripLog, 1);
+  assert.equal(owner.calls.handleTripLogArgs[0][1].loginConfirmed, true);
 });
 
 test('dispatcher: START and confirm_start prompts are never honoured for an unconfirmed number', async () => {
