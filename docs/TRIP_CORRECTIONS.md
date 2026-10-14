@@ -55,6 +55,8 @@ Current correction metadata / guardrails:
 - `exclude_from_accuracy`
 - `exclude_from_training`
 
+After any correction to the stop, agency, route or direction fields of an ended trip, `onTripFinalized` re-checks `stop_matched` (`refreshStopMatchAfterCorrection`) and updates it, in either direction.
+
 Background finalization (via `onTripFinalized` trigger + `runPostEndFinalization`) only runs on first `endTime`. Corrections set the exclusion flags and are skipped by the idempotency guard even if `needs_reprocess` is true; only explicit `triggerManualFinalization` (force) re-runs learning/grading.
 
 ## Recording User Intent in Corrections

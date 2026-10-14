@@ -271,3 +271,43 @@ test('triggerManualFinalization throws when trip does not exist', async () => {
   });
   await assert.rejects(() => finalization.triggerManualFinalization('missing-id'), /Trip not found/);
 });
+
+// --- refreshStopMatchAfterCorrection ---
+
+const endedTrip = (overrides = {}) => ({
+  route: '506', agency: 'TTC', direction: 'Westbound',
+  startStopName: 'College', endStopName: 'High Park', endTime: 1, stop_matched: false,
+  ...overrides,
+});
+
+test('a corrected stop that now resolves flips the trip to matched', async () => {
+  const { finalization } = loadFinalization();
+  const before = endedTrip({ startStopName: 'Colleg' });
+  const after = endedTrip();
+  const found = async () => ({ id: 's' });
+  assert.deepEqual(await finalization.refreshStopMatchAfterCorrection(before, after, found), { changed: true, matched: true });
+});
+
+test('a correction that no longer resolves flips a matched trip back to unmatched', async () => {
+  const { finalization } = loadFinalization();
+  const before = endedTrip({ stop_matched: true });
+  const after = endedTrip({ stop_matched: true, endStopName: 'Nowhere Station' });
+  const lookup = async (code, name) => (name === 'Nowhere Station' ? null : { id: 's' });
+  assert.deepEqual(await finalization.refreshStopMatchAfterCorrection(before, after, lookup), { changed: true, matched: false });
+});
+
+test('edits that do not touch the stop inputs, or trips still in progress, are left alone', async () => {
+  const { finalization } = loadFinalization();
+  const lookup = async () => { throw new Error('should not look anything up'); };
+  const trip = endedTrip();
+  assert.equal((await finalization.refreshStopMatchAfterCorrection(trip, { ...trip, notes: 'hi' }, lookup)).changed, false);
+  const active = endedTrip({ endTime: null });
+  assert.equal((await finalization.refreshStopMatchAfterCorrection(active, { ...active, startStopName: 'X' }, lookup)).changed, false);
+});
+
+test('writing stop_matched itself does not count as a stop input change', () => {
+  const { finalization } = loadFinalization();
+  const trip = endedTrip();
+  assert.equal(finalization.stopMatchInputsChanged(trip, { ...trip, stop_matched: true }), false);
+  assert.equal(finalization.stopMatchInputsChanged(trip, { ...trip, route: '505' }), true);
+});

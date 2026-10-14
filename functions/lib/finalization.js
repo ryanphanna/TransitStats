@@ -268,6 +268,43 @@ async function autoConfirmStopMatch(tripData, endStopData) {
   return true;
 }
 
+// Fields a correction can change that decide whether a trip's stops resolve to known stops.
+const STOP_MATCH_INPUT_FIELDS = [
+  'startStopCode', 'startStopName', 'startStop',
+  'endStopCode', 'endStopName', 'endStop',
+  'agency', 'route', 'direction',
+];
+
+function stopMatchInputsChanged(before, after) {
+  return STOP_MATCH_INPUT_FIELDS.some(field => (before?.[field] ?? null) !== (after?.[field] ?? null));
+}
+
+/**
+ * Re-checks whether an ended trip's boarding and exit stops resolve to known stops after a
+ * correction changed any of the inputs. Unlike the one-way auto-confirm at END, this can also
+ * flip a trip back to unmatched when the corrected values no longer resolve, so corrected trips
+ * neither stay unmatched forever nor stay matched on stale data.
+ * @returns {Promise<{changed: boolean, matched: boolean}>}
+ */
+async function refreshStopMatchAfterCorrection(before, after, lookup = lookupStop) {
+  const unchanged = { changed: false, matched: after?.stop_matched === true };
+  if (!before || !after || after.endTime == null) return unchanged;
+  if (!stopMatchInputsChanged(before, after)) return unchanged;
+  // Only recompute on edits to the stop inputs themselves; the stop_matched write we make
+  // afterwards is not an input, so it cannot loop.
+  const hasEnd = after.endStopCode || after.endStopName || after.endStop;
+  const hasStart = after.startStopCode || after.startStopName || after.startStop;
+  let matched = false;
+  if (hasStart && hasEnd) {
+    const [startStop, endStop] = await Promise.all([
+      lookup(after.startStopCode, after.startStopName || after.startStop, after.agency, after.route, after.direction),
+      lookup(after.endStopCode, after.endStopName || after.endStop, after.agency, after.route, after.direction),
+    ]);
+    matched = Boolean(startStop && endStop);
+  }
+  return { changed: matched !== (after.stop_matched === true), matched };
+}
+
 async function runPostEndFinalization(tripData, options = {}) {
   const { force = false } = options;
   const tripId = tripData.id;
@@ -402,4 +439,6 @@ module.exports = {
   triggerPostEndLearning,
   runPostEndFinalization,
   triggerManualFinalization,
+  refreshStopMatchAfterCorrection,
+  stopMatchInputsChanged,
 };
