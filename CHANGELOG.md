@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Closed a privacy leak in public profiles.** Anyone could read the raw profile record of a public user, including private fields like admin and premium status. Public profile pages still work; they get their data from the server instead.
 - Removed the unused Rocket research page.
 - **Closed a privacy leak in Rocket.** Anyone could read other people's Rocket GPS trails. Sessions are now readable only by their owner.
 - Updated web and Functions dependencies to clear the active Dependabot security alerts.
