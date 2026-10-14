@@ -60,11 +60,10 @@ describe('Stats calendar-month Wrapped helpers', () => {
         expect(Stats.filterByCalendarMonth(trips, 2026, 7)).toHaveLength(1);
     });
 
-    it('lists available months newest first', () => {
-        expect(Stats.listAvailableMonths(trips)).toEqual([
-            { year: 2026, monthIndex: 8 },
-            { year: 2026, monthIndex: 7 },
-        ]);
+    it('picks the previous calendar month, rolling back over the new year', () => {
+        expect(Stats.previousMonth(new Date(2026, 10, 15))).toEqual({ year: 2026, monthIndex: 9 });
+        expect(Stats.previousMonth(new Date(2027, 0, 1))).toEqual({ year: 2026, monthIndex: 11 });
+        expect(Stats.previousMonth(new Date(2026, 2, 31))).toEqual({ year: 2026, monthIndex: 1 });
     });
 
     it('computes Wrapped highlights for a month', () => {

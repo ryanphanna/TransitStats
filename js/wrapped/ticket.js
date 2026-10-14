@@ -105,10 +105,13 @@ export function drawTicket(ctx, { displayName = 'Traveler', wrapped } = {}) {
     ctx.fillStyle = FADED;
     ctx.font = `400 32px ${MONO}`;
     const last = w.daysInMonth || 30;
-    ctx.fillText(
-        `valid ${shortMonth(w.monthIndex)} 1 to ${shortMonth(w.monthIndex)} ${last}, ${w.year}`,
-        px, ty + 384,
-    );
+    ctx.fillText(`valid ${shortMonth(w.monthIndex)} 1 to ${shortMonth(w.monthIndex)} ${last}, ${w.year}`, px, ty + 384);
+    // A transfer expires: this card is only on offer through the end of the next month.
+    const expiry = new Date(w.year, w.monthIndex + 2, 0);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = STAMP;
+    ctx.fillText(`expires ${shortMonth(expiry.getMonth())} ${expiry.getDate()}`, px + pw, ty + 384);
+    ctx.textAlign = 'left';
 
     // Punch grid: one cell per day, punched where a ride happened
     const cols = 16;
@@ -138,6 +141,11 @@ export function drawTicket(ctx, { displayName = 'Traveler', wrapped } = {}) {
     ctx.fillStyle = FADED;
     ctx.font = `400 26px ${MONO}`;
     ctx.fillText(`${formatCount(w.daysRidden ?? 0)} ${plural(w.daysRidden, 'day', 'days')} punched`, px, gridY + 160);
+
+    if (!w.trips) {
+        drawEmptyBody(ctx, { px, pw, perfY, ty, th, w, W });
+        return;
+    }
 
     // Body: the ride count as the fare
     let y = perfY + 150;
@@ -238,4 +246,38 @@ export function drawTicket(ctx, { displayName = 'Traveler', wrapped } = {}) {
     ctx.fillStyle = FADED;
     ctx.font = `400 26px ${MONO}`;
     ctx.fillText(`${serialFor(w)}   transitstats.fyi`, W / 2, by + 118);
+}
+
+// Shown when nothing was ridden that month: a ticket that was never issued.
+function drawEmptyBody(ctx, { px, pw, perfY, ty, th, w, W }) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = INK;
+    fitFont(ctx, 'no transfer', { weight: 900, size: 170, min: 90, family: DISPLAY, maxWidth: pw });
+    ctx.fillText('no transfer', px - 6, perfY + 230);
+    ctx.fillText('issued', px - 6, perfY + 400);
+
+    ctx.fillStyle = FADED;
+    ctx.font = `400 34px ${MONO}`;
+    ctx.fillText(`no rides were logged in ${monthName(w).toLowerCase()}.`, px, perfY + 500);
+    ctx.fillText('ride this month and your next', px, perfY + 590);
+    ctx.fillText('transfer prints on the 1st.', px, perfY + 636);
+
+    ctx.save();
+    ctx.translate(px + pw - 130, perfY + 400);
+    ctx.rotate(0.12);
+    ctx.strokeStyle = STAMP;
+    ctx.fillStyle = STAMP;
+    ctx.lineWidth = 6;
+    ctx.globalAlpha = 0.85;
+    roundRect(ctx, -120, -56, 240, 112, 14);
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.font = `800 44px ${DISPLAY}`;
+    ctx.fillText('not valid', 0, 14);
+    ctx.restore();
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = FADED;
+    ctx.font = `400 26px ${MONO}`;
+    ctx.fillText('transitstats.fyi', W / 2, ty + th - 60);
 }

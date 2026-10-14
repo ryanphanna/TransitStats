@@ -11,12 +11,10 @@ import { downloadBlob, drawWrappedCard, loadCardFonts, renderWrappedPngBlob, WRA
 
 // Dev-only sample data: /wrapped?demo=1 skips sign-in. Stripped from production builds.
 const DEMO = import.meta.env.DEV && new URLSearchParams(location.search).has('demo');
-const monthSelect = document.getElementById('wrapped-month');
 const statusEl = document.getElementById('wrapped-status');
 const previewCanvas = document.getElementById('wrapped-preview');
 const downloadBtn = document.getElementById('wrapped-download');
 const shareBtn = document.getElementById('wrapped-share');
-const emptyEl = document.getElementById('wrapped-empty');
 const stageEl = document.getElementById('wrapped-stage');
 
 // Imported PRESTO rides count toward Wrapped like they do on the dashboard totals.
@@ -37,39 +35,13 @@ function setStatus(message) {
     if (statusEl) statusEl.textContent = message;
 }
 
-function monthKey({ year, monthIndex }) {
-    return `${year}-${monthIndex}`;
-}
-
-function populateMonths(trips) {
-    const months = Stats.listAvailableMonths(trips);
-    if (!monthSelect) return months;
-
-    monthSelect.replaceChildren();
-    if (months.length === 0) {
-        const option = document.createElement('option');
-        option.value = '';
-        option.textContent = 'No trips yet';
-        monthSelect.appendChild(option);
-        monthSelect.disabled = true;
-        return months;
-    }
-
-    months.forEach(({ year, monthIndex }) => {
-        const option = document.createElement('option');
-        option.value = monthKey({ year, monthIndex });
-        option.textContent = Stats.formatMonthLabel(year, monthIndex);
-        monthSelect.appendChild(option);
-    });
-    monthSelect.disabled = false;
-    return months;
-}
-
-function selectedMonth() {
-    const value = monthSelect?.value || '';
-    const [year, monthIndex] = value.split('-').map(Number);
-    if (!Number.isInteger(year) || !Number.isInteger(monthIndex)) return null;
-    return { year, monthIndex };
+// Wrapped always shows last calendar month, like a transfer that expires.
+// Dev-only override for checking other months: /wrapped?demo=1&month=2026-08
+function targetMonth() {
+    const override = DEMO ? new URLSearchParams(location.search).get('month') : null;
+    const match = override && /^(\d{4})-(\d{1,2})$/.exec(override);
+    if (match) return { year: Number(match[1]), monthIndex: Number(match[2]) - 1 };
+    return Stats.previousMonth();
 }
 
 function renderPreview(wrapped, displayName) {
@@ -82,35 +54,19 @@ function renderPreview(wrapped, displayName) {
     drawWrappedCard(ctx, { displayName, wrapped });
 }
 
-function showEmpty(show) {
-    emptyEl?.toggleAttribute('hidden', !show);
-    stageEl?.toggleAttribute('hidden', show);
-    if (downloadBtn) downloadBtn.disabled = show;
-    if (shareBtn) shareBtn.disabled = show;
-}
-
 function refresh() {
-    const month = selectedMonth();
-    if (!month) {
-        showEmpty(true);
-        setStatus('Log a few trips, then your Wrapped will show up here.');
-        currentWrapped = null;
-        return;
-    }
-
+    const month = targetMonth();
     const wrapped = Stats.computeWrapped(allTrips, month.year, month.monthIndex);
     currentWrapped = wrapped;
-    const displayName = displayNameForCard();
+    renderPreview(wrapped, displayNameForCard());
+    stageEl?.removeAttribute('hidden');
 
-    if (!wrapped.trips) {
-        showEmpty(true);
-        setStatus(`No trips in ${wrapped.label}.`);
-        return;
-    }
-
-    showEmpty(false);
-    renderPreview(wrapped, displayName);
-    setStatus(`${wrapped.label} · ${wrapped.trips} trip${wrapped.trips === 1 ? '' : 's'}`);
+    const hasRides = wrapped.trips > 0;
+    if (downloadBtn) downloadBtn.disabled = !hasRides;
+    if (shareBtn) shareBtn.disabled = !hasRides;
+    setStatus(hasRides
+        ? `${wrapped.label} · ${wrapped.trips} ${wrapped.trips === 1 ? 'ride' : 'rides'}`
+        : `No transfer issued for ${Stats.formatMonthLabel(month.year, month.monthIndex, { style: 'long' }).replace(/\s\d{4}$/, '')}.`);
 }
 
 function fileStem(wrapped) {
@@ -174,12 +130,6 @@ function rebuildTrips() {
     allTrips = INCLUDE_PRESTO_TRIPS
         ? Stats.mergeImportedRides(loggedTrips, prestoRides)
         : [...loggedTrips];
-    const previous = monthSelect?.value;
-    const months = populateMonths(allTrips);
-    if (months.length && monthSelect) {
-        const keepPrevious = months.some(month => monthKey(month) === previous);
-        monthSelect.value = keepPrevious ? previous : monthKey(months[0]);
-    }
     refresh();
 }
 
@@ -193,7 +143,6 @@ async function init() {
     }
 
     await loadCardFonts();
-    monthSelect?.addEventListener('change', refresh);
     downloadBtn?.addEventListener('click', handleDownload);
     shareBtn?.addEventListener('click', handleShare);
 
@@ -215,7 +164,8 @@ async function init() {
         );
     }
     await Trips.loadStopsLibrary();
-    onTrips(TripController.allTrips);
+    // Cached trips only; an empty list may just mean the first snapshot hasn't arrived.
+    if (TripController.allTrips?.length) onTrips(TripController.allTrips);
     // The card is drawn on a canvas, which doesn't wait for web fonts.
     loadCardFonts().then(() => currentWrapped && refresh());
 }

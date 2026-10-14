@@ -75,26 +75,6 @@
 .wrapped-perf::before { left: -39px; }
 .wrapped-perf::after { right: -39px; }
 
-.wrapped-month-label {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--w-faded);
-  font-size: 0.85rem;
-}
-
-.wrapped-month {
-  width: 100%;
-  min-height: 48px;
-  padding: 0 14px;
-  border: 2px solid var(--w-ink);
-  border-radius: 6px;
-  background: #fff;
-  color: var(--w-ink);
-  font: inherit;
-  font-weight: 600;
-  font-size: 1rem;
-}
-
 .wrapped-status {
   margin: 12px 0 0;
   min-height: 1.4em;
@@ -121,8 +101,7 @@
   cursor: pointer;
 }
 
-.wrapped-btn:focus-visible,
-.wrapped-month:focus-visible {
+.wrapped-btn:focus-visible {
   outline: 3px solid var(--w-red);
   outline-offset: 2px;
 }
@@ -142,6 +121,10 @@
   color: var(--w-ink);
 }
 
+.wrapped-stage[hidden] {
+  display: none !important;
+}
+
 .wrapped-stage {
   display: grid;
   justify-items: center;
@@ -151,18 +134,6 @@
   display: block;
   width: min(100%, 400px);
   height: auto;
-}
-
-.wrapped-empty {
-  padding: 28px;
-  border-radius: 14px;
-  background: var(--w-paper);
-  color: var(--w-faded);
-}
-
-.wrapped-empty[hidden],
-.wrapped-stage[hidden] {
-  display: none !important;
 }
 
 @media (max-width: 860px) {

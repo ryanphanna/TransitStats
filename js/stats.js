@@ -157,19 +157,10 @@ export const Stats = {
         });
     },
 
-    listAvailableMonths(trips) {
-        const keys = new Set();
-        (trips || []).forEach(trip => {
-            const date = this.getTripDate(trip);
-            if (!date) return;
-            keys.add(`${date.getFullYear()}-${date.getMonth()}`);
-        });
-        return Array.from(keys)
-            .map(key => {
-                const [year, monthIndex] = key.split('-').map(Number);
-                return { year, monthIndex };
-            })
-            .sort((a, b) => (b.year - a.year) || (b.monthIndex - a.monthIndex));
+    /** The calendar month before `now`, as { year, monthIndex } (January rolls back to December). */
+    previousMonth(now = new Date()) {
+        const date = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        return { year: date.getFullYear(), monthIndex: date.getMonth() };
     },
 
     formatMonthLabel(year, monthIndex, { style = 'long' } = {}) {
