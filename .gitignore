@@ -63,3 +63,4 @@ Tools/scratch/
 # Generated ML/LLM reports and raw evaluation output
 /ml/artifacts/
 /ml/reports/
+qa/.run/
