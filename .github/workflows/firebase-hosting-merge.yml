@@ -126,7 +126,7 @@ jobs:
       - run: npm install -g firebase-tools
       - run: npm install
       - run: npm run test:rules
-      - name: Deploy Firestore rules and indexes
+      - name: Deploy Firestore and Storage rules and indexes
         # The service account needs roles/firebase.admin, or at minimum
         # roles/firebaserules.admin (rules) and roles/datastore.indexAdmin (indexes).
         env:
@@ -135,4 +135,4 @@ jobs:
           set -euo pipefail
           printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
           trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
-          GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json" firebase deploy --only firestore --project transitstats-21ba4
+          GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json" firebase deploy --only firestore,storage --project transitstats-21ba4
