@@ -254,6 +254,26 @@ test('gradeAllPredictions writes a predictionStats doc when a V3 prediction is p
   assert.ok(calls.collectionAdds.some((c) => c.collection === 'predictionStats'));
 });
 
+test('gradeAllPredictions grades V3 and the habit separately on a habit trip', async () => {
+  const { finalization, calls } = loadFinalization();
+  const activeTrip = {
+    id: 't2', route: '510', agency: 'TTC', startStopName: 'King / Spadina',
+    endStopPrediction: { stop: 'Bathurst', confidence: 70 },
+    endStopPredictionV4: { stop: 'Bathurst', confidence: 55 },
+    endStopPredictionV5: { stop: 'Strachan', confidence: 50 },
+    habitPrediction: { stop: 'King / Spadina', endStop: 'Spadina Station', confidence: 0.8 },
+  };
+  await finalization.gradeAllPredictions(activeTrip, { userId: 'u1' }, { stopName: 'Spadina Station' }, 12);
+  const stats = calls.collectionAdds.filter((c) => c.collection === 'predictionStats').map((c) => c.data || c.doc || c);
+  const byVersion = (v) => stats.filter((d) => d.version === v);
+  assert.equal(byVersion('v3-endstop').length, 1);
+  assert.equal(byVersion('v3-endstop')[0].endStopPredicted, 'Bathurst');
+  assert.equal(byVersion('v4-endstop').length, 1);
+  assert.equal(byVersion('v5-endstop').length, 1);
+  assert.equal(byVersion('habit-endstop').length, 1);
+  assert.equal(byVersion('habit-endstop')[0].endStopPredicted, 'Spadina Station');
+});
+
 // --- triggerManualFinalization: throw paths ---
 
 test('triggerManualFinalization throws when tripId is missing', async () => {

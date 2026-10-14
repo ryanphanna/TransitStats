@@ -264,6 +264,7 @@ function loadHandlers(overrides = {}) {
       if (request === './predict_v5.js') return predictV5;
       if (request === './constants') return constants;
       if (request === './habit' && overrides.habit) return overrides.habit;
+      if (request === './intelligence-eligibility' && overrides.eligibility) return overrides.eligibility;
       if (request === 'firebase-admin') return firebaseAdmin;
       if (request === './logger') {
         return {
@@ -482,10 +483,11 @@ test('handleTripLog: Line 1 College auto-resolves to subway station', async () =
   assert.equal(calls.createTrip[0].startStopName, 'College');
 });
 
-test('handleTripLog: a firing habit is stored, shown with END instructions, and skips V3', async () => {
-  let v3Called = false;
+test('handleTripLog: a firing habit changes only the reply; V3/V4/V5 still run and are stored', async () => {
   let matchArgs = null;
+  const v3End = { stop: 'Bathurst', confidence: 70 };
   const { handlers, calls, restore } = loadHandlers({
+    dbModule: { isEmailAdmin: async () => true },
     habit: {
       HabitEngine: {
         VERSION: '2.0.0',
@@ -497,16 +499,28 @@ test('handleTripLog: a firing habit is stored, shown with END instructions, and 
         rebuild: async () => [],
       },
     },
+    eligibility: {
+      getEligibility: () => ({ routeEligible: true, endStopEligible: true, cleanTripCount: 50 }),
+      artifactSupportsAgency: () => true,
+    },
     predict: {
       PredictionEngine: {
         stopsLibrary: [], networkGraph: null,
-        guess: () => { v3Called = true; return null; },
-        guessEndStop: () => { v3Called = true; return null; },
-        guessTopEndStops: () => { v3Called = true; return []; },
+        guess: () => ({ route: '510', direction: 'Westbound', confidence: 80 }),
+        guessEndStop: () => v3End,
+        guessTopEndStops: () => [v3End, { stop: 'Dufferin', confidence: 20 }],
         getEndStopConstraint: () => ({ source: 'none', legalStops: null }),
         _stopMatch: () => false,
       },
     },
+    predictV4: { PredictionEngineV4: {
+      guessTopRoutes: () => [{ route: '510', confidence: 60 }],
+      guessTopEndStops: () => [{ stop: 'Bathurst', confidence: 55 }],
+    } },
+    predictV5: { PredictionEngineV5: {
+      guessTopRoutes: async () => [{ route: '510', confidence: 65 }],
+      guessTopEndStops: async () => [{ stop: 'Strachan', confidence: 50 }],
+    } },
   });
 
   try {
@@ -517,12 +531,72 @@ test('handleTripLog: a firing habit is stored, shown with END instructions, and 
 
   assert.equal(matchArgs.filters.agency, 'TTC');
   assert.equal(calls.createTrip.length, 1);
-  assert.equal(calls.createTrip[0].habitPrediction.endStop, 'Spadina Station');
-  assert.equal(calls.createTrip[0].habitPrediction.version, 'habit_v2');
-  assert.equal(v3Called, false);
+  const trip = calls.createTrip[0];
+  assert.equal(trip.habitPrediction.endStop, 'Spadina Station');
+  assert.equal(trip.habitPrediction.version, 'habit_v2');
+  // V3's own predictions stay separate from the habit.
+  assert.equal(trip.prediction.route, '510');
+  assert.deepEqual(trip.endStopPrediction, v3End);
+  assert.equal(trip.endStopPredictions.length, 2);
+  assert.equal(trip.endStopPredictions[0].stop, 'Bathurst');
+  assert.equal(trip.endStopPredictionV4.stop, 'Bathurst');
+  assert.equal(trip.endStopPredictionV5.stop, 'Strachan');
+  assert.ok(trip.predictionV4);
+  assert.ok(trip.predictionV5);
+  // Only the reply changes: habit instead of V3's numbered list.
   const reply = calls.sendSmsReply[0]?.message || '';
   assert.match(reply, /Usual trip to Spadina Station\./);
   assert.match(reply, /END \[stop\] to finish/);
+  assert.doesNotMatch(reply, /Bathurst/);
+});
+
+function habitActiveTrip(overrides = {}) {
+  return {
+    id: 'trip_h', userId: 'u32', route: '510', direction: 'Westbound', agency: 'TTC',
+    startStopName: 'King / Spadina', startStopCode: '11985',
+    startTime: { toDate: () => new Date(Date.now() - 20 * 60000) },
+    prediction: null, predictionV4: null, predictionV5: null,
+    habitPrediction: { stop: 'King / Spadina', route: '510', direction: 'Westbound', endStop: 'Spadina Station', confidence: 0.8 },
+    endStopPrediction: { stop: 'Bathurst', confidence: 70 },
+    endStopPredictionV4: null, endStopPredictionV5: null,
+    endStopPredictions: [{ stop: 'Bathurst', confidence: 70 }, { stop: 'Dufferin', confidence: 20 }],
+    stop_matched: true,
+    ...overrides,
+  };
+}
+
+async function endWith(input, { admin = true, trip = habitActiveTrip() } = {}) {
+  const looked = [];
+  const { handlers, restore } = loadHandlers({
+    dbModule: {
+      isEmailAdmin: async () => admin,
+      getActiveTrip: async () => trip,
+      lookupStop: async (_code, stopName) => { looked.push(stopName); return null; },
+      findMatchingStops: async (name) => { looked.push(name); return []; },
+    },
+  });
+  try {
+    await handlers.handleEndTrip('+14165550032', { userId: 'u32' }, input);
+  } finally {
+    restore();
+  }
+  return looked;
+}
+
+test('handleEndTrip: admin END 1 on a habit trip resolves to the habit end stop, not V3', async () => {
+  const looked = await endWith('1');
+  assert.ok(looked.includes('Spadina Station'), `looked up: ${looked.join(', ')}`);
+  assert.ok(!looked.includes('Bathurst'));
+});
+
+test('handleEndTrip: admin END 1 on a non-habit trip still uses V3 list', async () => {
+  const looked = await endWith('1', { trip: habitActiveTrip({ habitPrediction: null }) });
+  assert.ok(looked.includes('Bathurst'), `looked up: ${looked.join(', ')}`);
+});
+
+test('handleEndTrip: non-admin END 1 is not resolved from the habit', async () => {
+  const looked = await endWith('1', { admin: false });
+  assert.ok(!looked.includes('Spadina Station'));
 });
 
 test('handleTripLog: direction in a platform name resolves without prompting', async () => {
