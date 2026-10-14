@@ -14,7 +14,14 @@ const LOCATION_ALIASES = new Map([
     ['Toronto- New USBT', 'Union Station Bus Terminal'],
 ]);
 
-function parseCsv(text) {
+export const PDF_ERROR = 'That looks like the PDF version of the report. In PRESTO, open Transit Usage Report, pick a year, click Get Report, then choose Export CSV (not Download PDF) and upload that file.';
+export const DATE_FORMAT_EXAMPLE = '4/1/2026 2:01:25 PM';
+
+function parseCsv(rawText) {
+    // Spreadsheet and browser exports often start with a UTF-8 byte order mark,
+    // which would otherwise glue itself onto the first header ("\uFEFFDate").
+    const text = String(rawText || '').replace(/^\uFEFF/, '');
+    if (text.startsWith('%PDF')) throw new Error(PDF_ERROR);
     const rows = [];
     let row = [];
     let field = '';
@@ -51,7 +58,8 @@ function parseCsv(text) {
         rows.push(row);
     }
 
-    const [headers, ...values] = rows;
+    const [rawHeaders, ...values] = rows;
+    const headers = rawHeaders?.map(header => header.trim());
     if (!headers?.includes('Date') || !headers.includes('Type')) {
         throw new Error('This does not look like a PRESTO Transit Usage Report.');
     }
@@ -119,6 +127,15 @@ async function fingerprint(record) {
     ]);
     const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
     return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+// If NO ride row has a readable date, the export is in a date format we don't
+// handle; say so plainly instead of reporting every row as "needs review".
+export function assertDatesReadable(records) {
+    const fares = records.filter(record => record.type === 'fare_payment');
+    if (fares.length === 0 || fares.some(record => Number.isFinite(record.occurredAtSortKey))) return;
+    const sample = fares[0].occurredAtLocal || 'blank';
+    throw new Error(`We couldn't read the dates in this file (for example "${sample}"). The importer expects dates like ${DATE_FORMAT_EXAMPLE}. Export the Transit Usage Report as CSV straight from PRESTO without opening and re-saving it.`);
 }
 
 function isRecordUsable(record) {
@@ -240,6 +257,7 @@ export function initPrestoImporter({ user }) {
                 return rows.map((row, index) => toRecord(row, index + 2, file.name));
             }));
             pendingRecords = recordsByFile.flat();
+            assertDatesReadable(pendingRecords);
             const summary = summarize(pendingRecords);
             const agencySummary = Object.entries(summary.agencies)
                 .map(([agency, count]) => `${agency} (${count})`)
