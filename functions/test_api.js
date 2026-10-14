@@ -337,6 +337,42 @@ test('parallel wrong guesses cannot exceed the 3-attempt limit, and a correct co
   assert.equal(both.filter(r => r.statusCode === 200).length, 1);
 });
 
+test('phone login is refused for a text-provisioned link until the email owner has signed in', async () => {
+  const phone = '+15192769853';
+  const { handlers, sentMessages } = createOtpHarness({
+    [`phoneNumbers/${phone}`]: { userId: 'user-1', loginConfirmed: false },
+    'profiles/user-1': { isAdmin: false },
+  });
+  const request = new FakeResponse();
+  await handlers.handleRequestOtp({ body: { phoneNumber: phone }, headers: {} }, request, 't1');
+  assert.equal(request.statusCode, 400);
+  assert.match(request.body.error, /Sign in once with the link/);
+  assert.equal(sentMessages.length, 0);
+
+  const { handlers: confirmed, sentMessages: sent } = createOtpHarness({
+    [`phoneNumbers/${phone}`]: { userId: 'user-1', loginConfirmed: true },
+    'profiles/user-1': { isAdmin: false },
+  });
+  const ok = new FakeResponse();
+  await confirmed.handleRequestOtp({ body: { phoneNumber: phone }, headers: {} }, ok, 't2');
+  assert.equal(ok.statusCode, 200);
+  assert.equal(sent.length, 1);
+});
+
+test('verifying a code is also refused for an unconfirmed link', async () => {
+  const phone = '+15192769853';
+  const { handlers } = createOtpHarness({
+    [`phoneNumbers/${phone}`]: { userId: 'user-1', loginConfirmed: false },
+    [`phoneLoginVerification/${phone}`]: {
+      code: '123456', attempts: 0, expiresAt: { toDate: () => new Date(Date.now() + 60000) },
+    },
+  });
+  const response = new FakeResponse();
+  await handlers.handleVerifyOtp({ body: { phoneNumber: phone, code: '123456' } }, response, 't');
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.token, undefined);
+});
+
 test('authenticated command dispatch returns captured replies', async () => {
   const db = createFakeDb({
     'allowedUsers/test@example.com': { isAdmin: false },

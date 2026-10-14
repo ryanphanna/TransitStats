@@ -143,3 +143,12 @@ test('two simultaneous correct submissions link the phone exactly once', async (
   assert.equal(calls.phoneSets.length, 1);
   assert.equal(calls.sms.filter(message => /Phone linked/.test(message)).length, 1);
 });
+
+test('help text never advertises a bare STOP line as a way to end a trip (STOP is a Twilio opt-out keyword)', async () => {
+  const { mod, calls } = load();
+  await mod.handleHelp('+15192769853');
+  const help = calls.sms.at(-1);
+  assert.match(help, /END \[?|END\n/);
+  assert.doesNotMatch(help, /^STOP$/m);
+  assert.doesNotMatch(help, /\bSTOP\b to end|END or STOP|END\/STOP/i);
+});

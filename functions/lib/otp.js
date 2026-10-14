@@ -1,6 +1,7 @@
 const { createHash, randomInt } = require('crypto');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
+const PHONE_LOGIN_UNCONFIRMED = 'Sign in once with the link we emailed you, then you can use text codes too.';
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 const OTP_DAILY_LIMIT = 5;
 const OTP_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -48,6 +49,11 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
         res.status(400).json({
           error: 'This phone number is not registered. Please register your number via SMS first.',
         });
+        return;
+      }
+
+      if (phoneDoc.data()?.loginConfirmed === false) {
+        res.status(400).json({ error: PHONE_LOGIN_UNCONFIRMED });
         return;
       }
 
@@ -208,6 +214,10 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
       const phoneDoc = await db.collection('phoneNumbers').doc(phoneNumber).get();
       if (!phoneDoc.exists) {
         res.status(400).json({ error: 'Registration record not found for this phone number.' });
+        return;
+      }
+      if (phoneDoc.data()?.loginConfirmed === false) {
+        res.status(400).json({ error: PHONE_LOGIN_UNCONFIRMED });
         return;
       }
 

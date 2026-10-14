@@ -596,3 +596,65 @@ describe('firestore.rules: PRESTO import is open to every invited user', () => {
         await assertFails(deleteDoc(doc(db, 'prestoTransactions/theirs')));
     });
 });
+
+describe('firestore.rules: text-provisioned accounts (smsInviteProvisioned)', () => {
+    beforeAll(async () => {
+        testEnv = await initializeTestEnvironment({
+            projectId: PROJECT_ID,
+            firestore: { rules: readFileSync(RULES_PATH, 'utf8') },
+        });
+    });
+    beforeEach(async () => { if (testEnv) await testEnv.clearFirestore(); });
+    afterAll(async () => { if (testEnv) await testEnv.cleanup(); });
+
+    // A phone-code session for an account created from a text: the custom
+    // token carries the account's (still unverified) email and our claim.
+    const provisioned = (uid, email, overrides = {}) => testEnv.authenticatedContext(uid, {
+        email,
+        email_verified: false,
+        smsInviteProvisioned: true,
+        firebase: { sign_in_provider: 'custom' },
+        ...overrides,
+    }).firestore();
+
+    test('a provisioned account on the invite list can write its own data', async () => {
+        await invite('new@example.com');
+        const db = provisioned('uid_1', 'new@example.com');
+        await assertSucceeds(setDoc(doc(db, 'trips/t1'), { userId: 'uid_1' }));
+        await assertSucceeds(setDoc(doc(db, 'profiles/uid_1'), { displayName: 'U', isPublic: false }));
+        await assertSucceeds(setDoc(doc(db, 'prestoTransactions/p1'), { userId: 'uid_1' }));
+    });
+
+    test('the claim alone is not enough: the email must still be on the invite list', async () => {
+        await assertFails(setDoc(doc(provisioned('uid_1', 'stranger@example.com'), 'trips/t1'), { userId: 'uid_1' }));
+    });
+
+    test('an unverified account WITHOUT the claim (e.g. a squatter) is still refused', async () => {
+        await invite('new@example.com');
+        const squatter = provisioned('uid_2', 'new@example.com', { smsInviteProvisioned: false });
+        await assertFails(setDoc(doc(squatter, 'trips/t1'), { userId: 'uid_2' }));
+        const noClaim = testEnv.authenticatedContext('uid_3', { email: 'new@example.com', email_verified: false }).firestore();
+        await assertFails(setDoc(doc(noClaim, 'trips/t2'), { userId: 'uid_3' }));
+    });
+
+    test('the claim only counts for phone-code (custom token) sessions', async () => {
+        await invite('new@example.com');
+        const password = testEnv.authenticatedContext('uid_4', {
+            email: 'new@example.com', email_verified: false, smsInviteProvisioned: true,
+            firebase: { sign_in_provider: 'password' },
+        }).firestore();
+        await assertFails(setDoc(doc(password, 'trips/t1'), { userId: 'uid_4' }));
+    });
+
+    test('it grants no admin powers and no access to other users', async () => {
+        await invite('new@example.com', { isAdmin: true });
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), 'profiles/victim'), { displayName: 'V', isPublic: false });
+            await setDoc(doc(context.firestore(), 'trips/vt'), { userId: 'victim' });
+        });
+        const db = provisioned('uid_1', 'new@example.com');
+        await assertFails(updateDoc(doc(db, 'profiles/victim'), { isPremium: true }));
+        await assertFails(getDoc(doc(db, 'profiles/victim')));
+        await assertFails(getDoc(doc(db, 'trips/vt')));
+    });
+});

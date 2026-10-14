@@ -18,12 +18,20 @@ service cloud.firestore {
     //  - Phone accounts: signed in with a custom token (no email), which only
     //    our functions mint, and only for a phone number registered by an
     //    invited user.
+    //  - Text-provisioned accounts: see the smsInviteProvisioned branch below.
     function isInvited() {
       return request.auth != null && (
         (request.auth.token.email_verified == true &&
          exists(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())))
         ||
         (!('email' in request.auth.token) && request.auth.token.firebase.sign_in_provider == 'custom')
+        ||
+        // Accounts we created from a text (email not yet verified) signing in
+        // with a phone code. The claim can only be set by the Admin SDK, so an
+        // unverified account someone registered for the same address lacks it.
+        (request.auth.token.get('smsInviteProvisioned', false) == true &&
+         request.auth.token.firebase.sign_in_provider == 'custom' &&
+         exists(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())))
       );
     }
 

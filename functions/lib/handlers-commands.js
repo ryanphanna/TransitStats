@@ -59,13 +59,13 @@ To start a trip, send:
 ROUTE STOP DIRECTION
 or on separate lines:
 ROUTE
-STOP
+STOP NAME
 DIRECTION (optional)
 AGENCY (optional)
 
 To end a trip, send:
 END
-STOP
+WHERE YOU GOT OFF
 NOTES (optional)
 
 Commands:

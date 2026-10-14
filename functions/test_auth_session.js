@@ -122,3 +122,37 @@ test('POST with an unverified email is refused even if the address is allowed', 
   assert.equal(res.statusCode, 403);
   assert.equal(res.headers['Set-Cookie'], undefined);
 });
+
+test('a verified-email sign-in confirms text-provisioned phone links; a phone-only session cannot', async () => {
+  const updates = [];
+  const db = {
+    collection: (name) => ({
+      doc: () => ({ get: async () => ({ exists: true }) }),
+      where: (field, _op, value) => ({
+        where: () => ({
+          get: async () => ({
+            docs: name === 'phoneNumbers' && field === 'userId' && value === 'u1'
+              ? [{ ref: { update: async (change) => { updates.push(change); } } }]
+              : [],
+          }),
+        }),
+      }),
+    }),
+    runTransaction: async () => {},
+  };
+  const verified = loadHandler({ adminAuth: okAuth, db });
+  const res = makeRes();
+  await verified(makeReq({ method: 'POST', host: 'transitstats.fyi', headers: { Authorization: 'Bearer tok' } }), res);
+  assert.equal(res.statusCode, 204);
+  assert.deepEqual(updates, [{ loginConfirmed: true }]);
+
+  updates.length = 0;
+  const phoneOnly = loadHandler({
+    adminAuth: { ...okAuth, verifyIdToken: async () => ({ uid: 'u1' }) },
+    db: { ...db, collection: (name) => ({ ...db.collection(name), where: db.collection(name).where }) },
+  });
+  // A phone-only token has no email, so it is judged by phoneNumbers and must not confirm.
+  const res2 = makeRes();
+  await phoneOnly(makeReq({ method: 'POST', host: 'transitstats.fyi', headers: { Authorization: 'Bearer tok' } }), res2);
+  assert.deepEqual(updates, []);
+});
