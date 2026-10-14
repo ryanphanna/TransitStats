@@ -81,12 +81,21 @@ jobs:
         env:
           EXPECTED_BUILD: ${{ github.sha }}
         run: |
-          set -euo pipefail
-          for URL in "https://transitstats.fyi/?build=$EXPECTED_BUILD"; do
-            echo "Checking $URL"
-            curl --fail --silent --show-error --location "$URL" -o /tmp/main.html
-            grep -Fq "name=\"transitstats-build\" content=\"$EXPECTED_BUILD\"" /tmp/main.html
+          set -uo pipefail
+          URL="https://transitstats.fyi/?build=$EXPECTED_BUILD"
+          # A single request can hit a transient error or a stale edge copy even
+          # though the deploy succeeded, so retry before failing.
+          for attempt in 1 2 3 4 5 6; do
+            echo "Checking $URL (attempt $attempt/6)"
+            if curl --fail --silent --show-error --location "$URL" -o /tmp/main.html \
+              && grep -Fq "name=\"transitstats-build\" content=\"$EXPECTED_BUILD\"" /tmp/main.html; then
+              echo "Deployed build verified."
+              exit 0
+            fi
+            [ "$attempt" -lt 6 ] && sleep 10
           done
+          echo "Deployed build $EXPECTED_BUILD was not served after 6 attempts."
+          exit 1
 
   # Separate job so a rules problem never blocks the functions/hosting deploy,
   # and rules only ship after the rules tests pass.
