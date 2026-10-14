@@ -15,7 +15,7 @@ Playwright: `import { launch, signIn, BASE } from './qa/lib.mjs'`, then `signIn(
 to the real Firebase project or Google APIs, so a bug can't leak into production.
 
 How it works without touching app code: `qa/vite.qa.config.js` patches `js/firebase.js` at serve time to connect to the
-emulators, and rewrites the one hardcoded production Cloud Functions URL in `js/public.js`. It refuses to start unless the
+emulators; `up.sh` sets `VITE_PUBLIC_PROFILE_URL` so public profiles use the functions emulator. It refuses to start unless the
 project id starts with `demo-`. `up.sh` also points Google credentials at a missing file so the Functions emulator can't use
 real ones. Ports 5001/8080 are avoided on purpose (other tools use them).
 
