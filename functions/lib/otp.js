@@ -33,21 +33,6 @@ function normalizePhoneNumber(phone) {
 }
 
 function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logger }) {
-  async function isAdminPhone(phoneDoc) {
-    const data = phoneDoc.data() || {};
-    if (data.userId) {
-      const profile = await db.collection('profiles').doc(data.userId).get();
-      if (profile.exists && profile.data()?.isAdmin === true) return true;
-    }
-
-    if (data.email) {
-      const allowedUser = await db.collection('allowedUsers').doc(String(data.email).toLowerCase()).get();
-      return allowedUser.exists && allowedUser.data()?.isAdmin === true;
-    }
-
-    return false;
-  }
-
   async function handleRequestOtp(req, res, traceId) {
     const phoneNumber = normalizePhoneNumber(req.body.phoneNumber);
 
@@ -66,7 +51,6 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
         return;
       }
 
-      const isAdmin = await isAdminPhone(phoneDoc);
       const verificationRef = db.collection('phoneLoginVerification').doc(phoneNumber);
       const limitRef = db.collection('phoneLoginOtpLimits').doc(phoneNumber);
       const code = randomInt(100000, 1000000).toString();
@@ -84,49 +68,47 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
       await db.runTransaction(async transaction => {
         const existingVerification = await transaction.get(verificationRef);
         const lastSentAt = existingVerification.exists ? existingVerification.data().sentAt : null;
-        if (!isAdmin && lastSentAt?.toDate) {
+        if (lastSentAt?.toDate) {
           secondsRemaining = Math.ceil((lastSentAt.toDate().getTime() + OTP_RESEND_COOLDOWN_MS - Date.now()) / 1000);
           if (secondsRemaining > 0) return;
         }
 
-        if (!isAdmin) {
-          const existingLimit = await transaction.get(limitRef);
-          const existingIpLimit = await transaction.get(ipRef);
-          const existingGlobal = await transaction.get(globalRef);
-          const sentAt = existingLimit.exists ? existingLimit.data().sentAt : [];
-          const recentSentAt = Array.isArray(sentAt)
-            ? sentAt.filter(value => Number(value) > Date.now() - OTP_LIMIT_WINDOW_MS)
-            : [];
-          if (recentSentAt.length >= OTP_DAILY_LIMIT) {
-            dailyLimitReached = true;
-            return;
-          }
-
-          const ipSentAt = existingIpLimit.exists ? existingIpLimit.data().sentAt : [];
-          const recentIpSentAt = Array.isArray(ipSentAt)
-            ? ipSentAt.filter(value => Number(value) > Date.now() - OTP_IP_WINDOW_MS)
-            : [];
-          if (recentIpSentAt.length >= OTP_IP_HOURLY_LIMIT) {
-            ipLimitReached = true;
-            return;
-          }
-
-          const globalCount = existingGlobal.exists ? Number(existingGlobal.data().count || 0) : 0;
-          if (globalCount >= OTP_GLOBAL_DAILY_LIMIT) {
-            globalLimitReached = true;
-            return;
-          }
-
-          transaction.set(ipRef, {
-            sentAt: [...recentIpSentAt, reservedSentAt],
-            updatedAt: Timestamp.now(),
-          });
-          transaction.set(globalRef, { count: globalCount + 1, updatedAt: Timestamp.now() });
-          transaction.set(limitRef, {
-            sentAt: [...recentSentAt, reservedSentAt],
-            updatedAt: Timestamp.now(),
-          });
+        const existingLimit = await transaction.get(limitRef);
+        const existingIpLimit = await transaction.get(ipRef);
+        const existingGlobal = await transaction.get(globalRef);
+        const sentAt = existingLimit.exists ? existingLimit.data().sentAt : [];
+        const recentSentAt = Array.isArray(sentAt)
+          ? sentAt.filter(value => Number(value) > Date.now() - OTP_LIMIT_WINDOW_MS)
+          : [];
+        if (recentSentAt.length >= OTP_DAILY_LIMIT) {
+          dailyLimitReached = true;
+          return;
         }
+
+        const ipSentAt = existingIpLimit.exists ? existingIpLimit.data().sentAt : [];
+        const recentIpSentAt = Array.isArray(ipSentAt)
+          ? ipSentAt.filter(value => Number(value) > Date.now() - OTP_IP_WINDOW_MS)
+          : [];
+        if (recentIpSentAt.length >= OTP_IP_HOURLY_LIMIT) {
+          ipLimitReached = true;
+          return;
+        }
+
+        const globalCount = existingGlobal.exists ? Number(existingGlobal.data().count || 0) : 0;
+        if (globalCount >= OTP_GLOBAL_DAILY_LIMIT) {
+          globalLimitReached = true;
+          return;
+        }
+
+        transaction.set(ipRef, {
+          sentAt: [...recentIpSentAt, reservedSentAt],
+          updatedAt: Timestamp.now(),
+        });
+        transaction.set(globalRef, { count: globalCount + 1, updatedAt: Timestamp.now() });
+        transaction.set(limitRef, {
+          sentAt: [...recentSentAt, reservedSentAt],
+          updatedAt: Timestamp.now(),
+        });
 
         transaction.set(verificationRef, {
           code,
@@ -162,18 +144,16 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
       const smsSent = await sendSmsReply(phoneNumber, message);
       if (!smsSent) {
         await verificationRef.delete();
-        if (!isAdmin) {
-          await limitRef.update({ sentAt: FieldValue.arrayRemove(reservedSentAt) }).catch(() => {});
-          await ipRef.update({ sentAt: FieldValue.arrayRemove(reservedSentAt) }).catch(() => {});
-          await globalRef.update({ count: FieldValue.increment(-1) }).catch(() => {});
-        }
+        await limitRef.update({ sentAt: FieldValue.arrayRemove(reservedSentAt) }).catch(() => {});
+        await ipRef.update({ sentAt: FieldValue.arrayRemove(reservedSentAt) }).catch(() => {});
+        await globalRef.update({ count: FieldValue.increment(-1) }).catch(() => {});
         logger.error('OTP Request failed: Twilio send failed', { phoneNumber, traceId }, traceId);
         res.status(500).json({ error: 'Failed to send SMS verification code. Please try again.' });
         return;
       }
 
       logger.info('OTP code sent successfully', { phoneNumber, traceId }, traceId);
-      res.status(200).json({ success: true, isAdmin });
+      res.status(200).json({ success: true });
     } catch (error) {
       logger.error('Error in request_otp handler', { error: error.message, phoneNumber, traceId }, traceId);
       res.status(500).json({ error: 'Internal Server Error', traceId });

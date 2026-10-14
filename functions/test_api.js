@@ -108,7 +108,7 @@ test('normalizePhoneNumber formats North American and international numbers as E
   assert.equal(normalizePhoneNumber('+442071234567'), '+442071234567');
 });
 
-test('admin OTP requests bypass cooldowns', async () => {
+test('admin phone gets no special treatment: cooldown applies and the response hides admin status', async () => {
   const phone = '+15192769853';
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'admin-1' },
@@ -121,8 +121,9 @@ test('admin OTP requests bypass cooldowns', async () => {
   await handlers.handleRequestOtp({ body: { phoneNumber: phone } }, second, 'trace-2');
 
   assert.equal(first.statusCode, 200);
-  assert.equal(second.statusCode, 200);
-  assert.equal(sentMessages.length, 2);
+  assert.deepEqual(first.body, { success: true });
+  assert.equal(second.statusCode, 429);
+  assert.equal(sentMessages.length, 1);
   assert.match(sentMessages[0].message, /This code expires in 10 minutes\./);
 });
 
@@ -245,19 +246,19 @@ test('global daily send cap blocks further sends and logs an error', async () =>
   assert.ok(logged.some(message => /global daily send cap/.test(message)));
 });
 
-test('admin OTP requests bypass the IP and global caps', async () => {
+test('admin phone is subject to the per-IP and global caps', async () => {
+  const day = new Date().toISOString().slice(0, 10);
   const phone = '+15192769853';
   const { handlers, sentMessages } = createOtpHarness({
     [`phoneNumbers/${phone}`]: { userId: 'admin-1' },
     'profiles/admin-1': { isAdmin: true },
+    [`phoneLoginGlobalLimits/${day}`]: { count: 200 },
   });
 
-  for (let i = 0; i < 12; i += 1) {
-    const response = new FakeResponse();
-    await handlers.handleRequestOtp(otpReq(phone, '203.0.113.9'), response, 'trace');
-    assert.equal(response.statusCode, 200);
-  }
-  assert.equal(sentMessages.length, 12);
+  const response = new FakeResponse();
+  await handlers.handleRequestOtp(otpReq(phone, '203.0.113.9'), response, 'trace');
+  assert.equal(response.statusCode, 429);
+  assert.equal(sentMessages.length, 0);
 });
 
 test('OTP verification returns a custom token for a valid code', async () => {
