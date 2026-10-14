@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Negative amounts in the PRESTO import preview read "-$10.05"** instead of "$-10.05".
 - **Fixed "Failed to sync trips" when toggling "Allow others to view your shared stats page".** The switch saved but the trip update threw an error; it now updates your trips too.
 - **Opening Wrapped while signed out now goes to the login page instead of loading forever**, and signing in brings you back to Wrapped. A failed trip load now shows an error instead of spinning.
 - **Signed-out visitors are sent to login right away on every page.** The 60-second wait is now kept only when a saved session might still be restoring, so a visitor who was never signed in no longer waits.
