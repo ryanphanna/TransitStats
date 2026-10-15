@@ -21,7 +21,10 @@ function buildMapPointKey(trip, side, resolution, location, fallbackLabel) {
     return `${agency}:${label}:${lat}:${lng}`;
 }
 
-const MAP_POINTS_CACHE_PREFIX = 'transitstats-map-points:';
+// v2: caches saved before guessed exits became admin-only could contain a
+// guessed exit drawn as real. Bumping the prefix discards them on next load.
+const MAP_POINTS_CACHE_PREFIX = 'transitstats-map-points-v2:';
+const LEGACY_MAP_POINTS_CACHE_PREFIXES = ['transitstats-map-points:'];
 const MAP_POINTS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getMapMarkerLabel(trip = {}, side = 'boarding', resolution = null) {
@@ -147,8 +150,23 @@ export const MapEngine = {
         return userId ? `${MAP_POINTS_CACHE_PREFIX}${userId}:${this.filter}` : null;
     },
 
+    _removeLegacyPointCaches() {
+        const userId = window.currentUser?.uid || auth.currentUser?.uid;
+        if (!userId) return;
+        try {
+            LEGACY_MAP_POINTS_CACHE_PREFIXES.forEach(prefix => {
+                ['boarding', 'exiting'].forEach(filter => {
+                    localStorage.removeItem(`${prefix}${userId}:${filter}`);
+                });
+            });
+        } catch {
+            // Storage can be unavailable (private mode); nothing to clean.
+        }
+    },
+
     _loadCachedPoints() {
         if (!this.map || !this.layers.markers) return false;
+        this._removeLegacyPointCaches();
         const cacheKey = this._getPointsCacheKey();
         if (!cacheKey) return false;
 

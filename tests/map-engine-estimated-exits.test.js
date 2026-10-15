@@ -52,3 +52,25 @@ describe('MapEngine estimated exits', () => {
         expect(admin.exiting.location).toEqual({ lat: 43.66, lng: -79.38 });
     });
 });
+
+describe('MapEngine point cache', () => {
+    it('ignores and removes caches saved before guessed exits became admin-only', () => {
+        window.currentUser = { uid: 'user_1' };
+        const legacyKey = 'transitstats-map-points:user_1:exiting';
+        localStorage.setItem(legacyKey, JSON.stringify({
+            timestamp: Date.now(),
+            points: [{ lat: 43.66, lng: -79.38, type: 'exiting', label: 'Guessed stop' }],
+        }));
+        MapEngine.map = {};
+        MapEngine.layers.markers = { clearLayers: vi.fn(), addLayer: vi.fn() };
+        MapEngine.filter = 'exiting';
+
+        expect(MapEngine._getPointsCacheKey()).not.toBe(legacyKey);
+        expect(MapEngine._loadCachedPoints()).toBe(false);
+        expect(localStorage.getItem(legacyKey)).toBeNull();
+
+        MapEngine.map = null;
+        MapEngine.layers.markers = null;
+        delete window.currentUser;
+    });
+});
