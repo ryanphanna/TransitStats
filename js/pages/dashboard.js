@@ -86,6 +86,8 @@ async function init() {
     }
 
     const { user, isAdmin } = await requireAuth();
+    // Exit guesses for trips with no exit recorded are admin-only.
+    MapEngine.setShowEstimatedExits(isAdmin === true);
     ModalManager.init();
 
     await Profile.load(user);

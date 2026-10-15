@@ -87,12 +87,13 @@ export function groupMapPoints(points = [], getLabel = () => null) {
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
         const type = normalizeType(point.type);
+        const estimated = point.estimated === true;
         const usage = Math.max(1, Number(point.usage ?? point.count ?? 1));
         // Saved coordinates can differ by a few metres for the same stop.
         // Round the fallback identity so those points still become one
         // usage-weighted marker instead of hundreds of overlapping markers.
         const locationKey = point.key || `${lat.toFixed(4)}:${lng.toFixed(4)}`;
-        const key = `${type}:${locationKey}`;
+        const key = `${estimated ? 'estimated:' : ''}${type}:${locationKey}`;
         const label = getLabel(point);
         const existing = grouped.get(key);
         if (existing) {
@@ -107,6 +108,7 @@ export function groupMapPoints(points = [], getLabel = () => null) {
             type,
             usage,
             labels: new Set(label ? [label] : []),
+            ...(estimated ? { estimated: true } : {}),
         });
     });
 
@@ -126,7 +128,9 @@ export function clusterMapPoints(points = [], map, { zoom = map?.getZoom?.() } =
         const projected = map.project([point.lat, point.lng], currentZoom);
         const cellX = Math.floor(projected.x / cellSize);
         const cellY = Math.floor(projected.y / cellSize);
-        const key = `${point.type}:${cellX}:${cellY}`;
+        // Estimated exits cluster on their own so a guess never inflates a
+        // real stop's marker at the city overview.
+        const key = `${point.estimated ? 'estimated:' : ''}${point.type}:${cellX}:${cellY}`;
         const usage = Math.max(1, Number(point.usage) || 1);
         const existing = clusters.get(key);
 
@@ -146,6 +150,7 @@ export function clusterMapPoints(points = [], map, { zoom = map?.getZoom?.() } =
             usage,
             peakUsage: usage,
             labels: new Set(point.labels || []),
+            ...(point.estimated ? { estimated: true } : {}),
         });
     });
 
@@ -164,6 +169,20 @@ export function getUsageMarkerStyle(point, maxUsage, { baseRadius = 4 } = {}) {
     const usageIntensity = Math.pow(Math.max(0, Math.min(1, usageRatio)), 0.65);
     const baseColor = MAP_PIN_COLOR;
 
+    if (point.estimated) {
+        // A guessed exit is an outline only: dashed ring, faint fill, so it
+        // never reads as a stop the rider actually exited at.
+        return {
+            radius: baseRadius,
+            fillColor: '#ffffff',
+            color: MAP_PIN_COLOR,
+            weight: 1.5,
+            opacity: 0.9,
+            fillOpacity: 0.35,
+            dashArray: '2 3',
+        };
+    }
+
     return {
         radius: baseRadius,
         fillColor: blend(MAP_PIN_MIN_COLOR, baseColor, 0.2 + (usageIntensity * 0.8)),
@@ -175,6 +194,9 @@ export function getUsageMarkerStyle(point, maxUsage, { baseRadius = 4 } = {}) {
 }
 
 export function formatStopPopup(value, point = {}) {
+    if (point.type === 'exiting' && point.estimated) {
+        return `Estimated exit (no exit recorded): ${Utils.hide(String(value ?? ''))}`;
+    }
     const context = point.type === 'exiting' ? 'Exit' : 'Boarding';
     return `${context}: ${Utils.hide(String(value ?? ''))}`;
 }
