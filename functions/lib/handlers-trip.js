@@ -47,6 +47,11 @@ const {
 } = require('./gemini');
 const { parseStopInput } = require('./parsing');
 const { getEligibility, artifactSupportsAgency } = require('./intelligence-eligibility');
+
+// V3 votes over a longer window (3.5.0): the eval showed the 100-trip window was V3's main
+// coverage gap. V4/V5 eligibility keeps its original 100-trip window.
+const PREDICTION_HISTORY_LIMIT = 500;
+const ELIGIBILITY_HISTORY_LIMIT = 100;
 const {
   correctPredictionByGtfs,
   agencySuffix,
@@ -54,6 +59,7 @@ const {
   resolveTripAgency,
   maybeHandleStopDisambiguation,
   getPredictionPrompt,
+  getShownEndStopPredictions,
   getAchievementNote,
 } = require('./handlers-utils');
 
@@ -243,7 +249,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
   // Predictions read the owner's history, so an unconfirmed number skips them.
   if (!unconfirmed) try {
     const [history, stopsLibrary, routesAtStop, profile, networkGraph, habits, adminStatus, experimentalIntelligence] = await Promise.all([
-      getRecentCompletedTrips(user.userId, 100),
+      getRecentCompletedTrips(user.userId, PREDICTION_HISTORY_LIMIT),
       getStopsLibrary(),
       getRoutesAtStop(startStopCode, resolvedAgency),
       getUserProfile(user.userId),
@@ -263,7 +269,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
     const mlModels = ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
     const { routeV4Meta, routeV5Meta, endStopV4Meta, endStopV5Meta } = mlModels || {};
     const now = new Date();
-    const eligibility = getEligibility(history, resolvedAgency);
+    const eligibility = getEligibility(history.slice(0, ELIGIBILITY_HISTORY_LIMIT), resolvedAgency);
     const mlRouteReady = eligibility.routeEligible &&
       artifactSupportsAgency(routeV4Meta, resolvedAgency, 'agency::route') &&
       artifactSupportsAgency(routeV5Meta, resolvedAgency, 'agency::route');
@@ -288,9 +294,8 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       endStop: habitMatch.endStop || null,
       confidence: habitMatch.confidence,
       count: habitMatch.count,
-      version: 'habit_v1',
+      version: `habit_v${HabitEngine.VERSION.split('.')[0]}`,
     } : null;
-    const habitFired = habitPrediction !== null;
     const lastTrip = history.length > 0 ? history[0] : null;
     const lastEndStopName = lastTrip?.endStopName || lastTrip?.endStop || null;
     const lastRoute = lastTrip?.route || null;
@@ -346,35 +351,33 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       }, traceId);
     }
 
-    // When a habit fires with sufficient confidence, skip the full ML stack —
-    // the habit is a memorized pattern and is more reliable than inference on routine trips.
-    if (!habitFired) {
-      prediction = PredictionEngine.guess(history, {
-        stopName: startStopName,
-        time: now,
-        routesAtStop: routesAtStop || undefined,
-        lastEndStopName,
-        agency: resolvedAgency,
-      });
-      // Experimental models only run after both clean-history and artifact coverage checks.
-      if (mlReady) {
-        const [rawTopV4, rawTopV5, topEndV4, topEndV5] = await Promise.all([
-          mlRouteReady ? Promise.resolve(PredictionEngineV4.guessTopRoutes(routeContext, 5)) : [],
-          mlRouteReady ? PredictionEngineV5.guessTopRoutes(routeContext, 5) : [],
-          mlEndStopReady ? PredictionEngineV4.guessTopEndStops(endStopContext, 1) : [],
-          mlEndStopReady ? PredictionEngineV5.guessTopEndStops(endStopContext, 1) : [],
-        ]);
-        // Correct: pick best prediction that GTFS confirms serves this stop; floor at 25%
-        predictionV4 = correctPredictionByGtfs(rawTopV4, routesAtStop);
-        predictionV5 = correctPredictionByGtfs(rawTopV5, routesAtStop);
-        if (topEndV4.length > 0) endStopPredictionV4 = topEndV4[0];
-        if (topEndV5.length > 0) endStopPredictionV5 = topEndV5[0];
-      }
-      endStopPrediction = PredictionEngine.guessEndStop(history, endStopContext);
-      if (isAdmin) {
-        const top = PredictionEngine.guessTopEndStops(history, endStopContext, 3);
-        if (top.length > 0) endStopPredictions = top;
-      }
+    // V3/V4/V5 always run and are stored, even when a habit fires, so live
+    // predictionStats stay complete and comparable. Only the SMS reply changes.
+    prediction = PredictionEngine.guess(history, {
+      stopName: startStopName,
+      time: now,
+      routesAtStop: routesAtStop || undefined,
+      lastEndStopName,
+      agency: resolvedAgency,
+    });
+    // Experimental models only run after both clean-history and artifact coverage checks.
+    if (mlReady) {
+      const [rawTopV4, rawTopV5, topEndV4, topEndV5] = await Promise.all([
+        mlRouteReady ? Promise.resolve(PredictionEngineV4.guessTopRoutes(routeContext, 5)) : [],
+        mlRouteReady ? PredictionEngineV5.guessTopRoutes(routeContext, 5) : [],
+        mlEndStopReady ? PredictionEngineV4.guessTopEndStops(endStopContext, 1) : [],
+        mlEndStopReady ? PredictionEngineV5.guessTopEndStops(endStopContext, 1) : [],
+      ]);
+      // Correct: pick best prediction that GTFS confirms serves this stop; floor at 25%
+      predictionV4 = correctPredictionByGtfs(rawTopV4, routesAtStop);
+      predictionV5 = correctPredictionByGtfs(rawTopV5, routesAtStop);
+      if (topEndV4.length > 0) endStopPredictionV4 = topEndV4[0];
+      if (topEndV5.length > 0) endStopPredictionV5 = topEndV5[0];
+    }
+    endStopPrediction = PredictionEngine.guessEndStop(history, endStopContext);
+    if (isAdmin) {
+      const top = PredictionEngine.guessTopEndStops(history, endStopContext, 3);
+      if (top.length > 0) endStopPredictions = top;
     }
   } catch (err) {
     console.error('Error generating prediction at trip start:', err);
@@ -427,8 +430,10 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
   if (resolvedAgency) lookupAgencyTimezone(resolvedAgency, traceId).catch(() => {});
 
   let replyBody = `Started ${routeDisplay} from ${finalStopDisplay}${agencySuffix(resolvedAgency, defaultAgency)}.`;
-  if (habitPrediction?.endStop) {
-    replyBody += `\n\nUsual trip to ${habitPrediction.endStop}.`;
+  // End-stop suggestions are admin-only; non-admins always get the plain END/FORGOT prompt.
+  if (isAdmin && habitPrediction?.endStop) {
+    // Keep the END/FORGOT instructions the normal prompt carries.
+    replyBody += `\n\nUsual trip to ${habitPrediction.endStop}.` + getPredictionPrompt(null);
   } else {
     replyBody += getPredictionPrompt(isAdmin ? endStopPredictions : null);
   }
@@ -469,7 +474,7 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
   let newStopData = null;
   try {
     const [history, stopsLibrary, routesAtStop, confirmProfile, confirmNetworkGraph, confirmAdminStatus, experimentalIntelligence] = await Promise.all([
-      getRecentCompletedTrips(user.userId, 100),
+      getRecentCompletedTrips(user.userId, PREDICTION_HISTORY_LIMIT),
       getStopsLibrary(),
       getRoutesAtStop(newTrip.stopCode, newTrip.agency),
       getUserProfile(user.userId),
@@ -487,7 +492,7 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
     const mlModels = ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
     const { routeV4Meta, routeV5Meta, endStopV4Meta, endStopV5Meta } = mlModels || {};
     const now = new Date();
-    const confirmEligibility = getEligibility(history, newTrip.agency);
+    const confirmEligibility = getEligibility(history.slice(0, ELIGIBILITY_HISTORY_LIMIT), newTrip.agency);
     const confirmMlRouteReady = confirmEligibility.routeEligible &&
       artifactSupportsAgency(routeV4Meta, newTrip.agency, 'agency::route') &&
       artifactSupportsAgency(routeV5Meta, newTrip.agency, 'agency::route');
@@ -644,11 +649,15 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
   ]);
   const endDefaultAgency = getConfiguredPrimaryAgency(endProfile) || activeTrip.agency || null;
 
-  // Resolve numbered shortcut (admin only): END 1/2/3 → predicted stop name
+  // Resolve numbered shortcut (admin only): END 1/2/3 → the stop list shown at boarding.
+  // A habit trip showed "Usual trip to X." instead of V3's list, so END 1 means X there.
   if (/^[123]$/.test((endStopInput || '').trim())) {
-    if (endIsAdmin && activeTrip.endStopPredictions?.length) {
+    const shown = activeTrip.habitPrediction?.endStop
+      ? [{ stop: activeTrip.habitPrediction.endStop }]
+      : getShownEndStopPredictions(activeTrip.endStopPredictions);
+    if (endIsAdmin && shown?.length) {
       const idx = parseInt(endStopInput.trim(), 10) - 1;
-      const predicted = activeTrip.endStopPredictions[idx];
+      const predicted = shown[idx];
       if (predicted) endStopInput = predicted.stop;
     }
   }
