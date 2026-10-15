@@ -5,6 +5,38 @@ function normalizeStopLabel(name) {
     .replace(/\s+at\s+/g, '/');
 }
 
+// Both sides of every comparison are reduced the same way: the plain normalized label, and (when a
+// canonicalizer is supplied, e.g. the stops library) its canonical form. "College" and "College
+// Station" then meet at the library's canonical name instead of only matching literally.
+function labelKeys(label, options = {}) {
+  const keys = new Set();
+  const plain = normalizeStopLabel(label);
+  if (plain) {
+    keys.add(plain);
+    // Subway lines list bare names ("College", "St. Clair West") while trips say "College Station"
+    // or "St.Clair West Station": spacing, punctuation and a trailing "Station" never decide a match.
+    const compact = value => value.replace(/[^a-z0-9/]/g, '');
+    keys.add(compact(plain));
+    const bare = plain.replace(/\s+station$/, '');
+    if (bare && bare !== plain) keys.add(compact(bare));
+  }
+  let canon = null;
+  if (options.canonicalizeStop && label) {
+    // Canonicalizing scans the stops library, so each distinct label is resolved once per call.
+    const cache = options._canonCache || (options._canonCache = new Map());
+    if (!cache.has(label)) cache.set(label, options.canonicalizeStop(label));
+    canon = cache.get(label);
+  }
+  const normalizedCanon = canon ? normalizeStopLabel(canon) : null;
+  if (normalizedCanon && normalizedCanon !== 'unknown') keys.add(normalizedCanon);
+  return keys;
+}
+
+function sharesKey(a, b) {
+  for (const key of a) if (b.has(key)) return true;
+  return false;
+}
+
 function normalizeDirection(direction) {
   if (!direction) return null;
   const dir = direction.toString().toLowerCase().replace(/bound$/, '').trim();
@@ -37,22 +69,17 @@ function getLine(topology, route, options = {}) {
   return null;
 }
 
-function stopIndex(line, stopName) {
+function stopIndex(line, stopName, options = {}) {
   if (!line || !stopName) return -1;
-  const normalized = normalizeStopLabel(stopName);
+  const wanted = labelKeys(stopName, options);
 
   for (let i = 0; i < (line.stops || []).length; i++) {
     const canon = line.stops[i];
-    if (normalizeStopLabel(canon) === normalized) return i;
-
-    const aliases = (line.aliases && line.aliases[canon]) || [];
-    if (aliases.some(alias => normalizeStopLabel(alias) === normalized)) return i;
-
-    const variants = (line.directional_stops && line.directional_stops[canon]) || [];
-    if (variants.some(variant => {
-      const names = [variant.name, ...(variant.aliases || [])].filter(Boolean);
-      return names.some(name => normalizeStopLabel(name) === normalized);
-    })) return i;
+    const names = [canon, ...((line.aliases && line.aliases[canon]) || [])];
+    for (const variant of (line.directional_stops && line.directional_stops[canon]) || []) {
+      names.push(variant.name, ...(variant.aliases || []));
+    }
+    if (names.filter(Boolean).some(name => sharesKey(labelKeys(name, options), wanted))) return i;
   }
 
   return -1;
@@ -77,28 +104,22 @@ function goingHigherForDirection(line, boardingIdx, direction) {
   return normDir === 'Eastbound' || normDir === 'Northbound';
 }
 
-function stopLabels(line, canon, direction) {
+function stopLabels(line, canon, direction, options = {}) {
   const normDir = normalizeDirection(direction);
   const variants = (line.directional_stops && line.directional_stops[canon]) || [];
-  if (variants.length > 0) {
-    return variants
+  const names = variants.length > 0
+    ? variants
       .filter(variant => !variant.directions || variant.directions.includes(normDir))
       .flatMap(variant => [variant.name, ...(variant.aliases || [])])
-      .map(normalizeStopLabel)
-      .filter(Boolean);
-  }
-
-  return [
-    canon,
-    ...((line.aliases && line.aliases[canon]) || []),
-  ].map(normalizeStopLabel).filter(Boolean);
+    : [canon, ...((line.aliases && line.aliases[canon]) || [])];
+  return names.filter(Boolean).flatMap(name => [...labelKeys(name, options)]);
 }
 
-function platformCompatible(line, stopName, direction) {
+function platformCompatible(line, stopName, direction, options = {}) {
   if (!line || !stopName || !direction) return true;
   const normDir = normalizeDirection(direction);
-  const normStop = normalizeStopLabel(stopName);
-  if (!normDir || !normStop) return true;
+  const wanted = labelKeys(stopName, options);
+  if (!normDir || wanted.size === 0) return true;
 
   for (const canon of line.stops || []) {
     const variants = (line.directional_stops && line.directional_stops[canon]) || [];
@@ -107,10 +128,10 @@ function platformCompatible(line, stopName, direction) {
     let matchedVariant = false;
     let compatibleVariant = false;
     for (const variant of variants) {
-      const labels = [variant.name, ...(variant.aliases || [])]
-        .map(normalizeStopLabel)
-        .filter(Boolean);
-      if (labels.includes(normStop)) {
+      const labels = new Set([variant.name, ...(variant.aliases || [])]
+        .filter(Boolean)
+        .flatMap(name => [...labelKeys(name, options)]));
+      if (sharesKey(labels, wanted)) {
         matchedVariant = true;
         if (!variant.directions || variant.directions.includes(normDir)) compatibleVariant = true;
       }
@@ -130,7 +151,7 @@ function getConstraint(topology, context, options = {}) {
   const line = getLine(topology, route, options);
   if (!line) return { source: 'none', legalStops: null };
 
-  const boardingIdx = stopIndex(line, options.canonicalizeStop?.(boardingStop) || boardingStop);
+  const boardingIdx = stopIndex(line, boardingStop, options);
   if (boardingIdx === -1) return { source: 'none', legalStops: null };
 
   const goingHigher = goingHigherForDirection(line, boardingIdx, direction);
@@ -139,7 +160,7 @@ function getConstraint(topology, context, options = {}) {
   const legalStops = new Set();
   for (let i = 0; i < (line.stops || []).length; i++) {
     if (goingHigher ? i > boardingIdx : i < boardingIdx) {
-      for (const label of stopLabels(line, line.stops[i], direction)) {
+      for (const label of stopLabels(line, line.stops[i], direction, options)) {
         legalStops.add(label);
       }
     }
@@ -150,11 +171,7 @@ function getConstraint(topology, context, options = {}) {
 
 function stopAllowedByConstraint(stopName, constraint, options = {}) {
   if (!constraint?.legalStops || !stopName) return false;
-  const labels = [
-    normalizeStopLabel(stopName),
-    options.canonicalizeStop?.(stopName),
-  ].filter(Boolean);
-  return labels.some(label => constraint.legalStops.has(label));
+  return [...labelKeys(stopName, options)].some(label => constraint.legalStops.has(label));
 }
 
 function filterCandidatesByConstraint(candidates, constraint, options = {}) {
@@ -169,7 +186,7 @@ function filterCandidatesByPlatform(candidates, topology, route, direction, opti
   if (!line) return candidates;
   return candidates.filter(candidate => {
     const stopName = options.getStopName ? options.getStopName(candidate) : candidate.stop || candidate.endStop || candidate.endStopName;
-    return platformCompatible(line, stopName, direction);
+    return platformCompatible(line, stopName, direction, options);
   });
 }
 
@@ -178,14 +195,14 @@ function getMask(topology, route, boardingStop, direction, classes, options = {}
   const line = getLine(topology, route, options);
   if (!line) return null;
 
-  const boardingIdx = stopIndex(line, boardingStop);
+  const boardingIdx = stopIndex(line, boardingStop, options);
   const goingHigher = goingHigherForDirection(line, boardingIdx, direction);
   if (boardingIdx === -1 || goingHigher === null) return null;
 
   const mask = classes.map(cls => {
-    const idx = stopIndex(line, cls);
+    const idx = stopIndex(line, cls, options);
     if (idx === -1) return false;
-    return (goingHigher ? idx > boardingIdx : idx < boardingIdx) && platformCompatible(line, cls, direction);
+    return (goingHigher ? idx > boardingIdx : idx < boardingIdx) && platformCompatible(line, cls, direction, options);
   });
 
   return mask.some(Boolean) ? mask : null;
@@ -206,6 +223,7 @@ module.exports = {
   getConstraint,
   getLine,
   getMask,
+  labelKeys,
   normalizeDirection,
   normalizeStopLabel,
   platformCompatible,

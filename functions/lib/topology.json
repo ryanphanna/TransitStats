@@ -30,11 +30,12 @@
         "Spadina Ave at Harbord St": ["Spadina / Harbord"],
         "Spadina Ave at Willcocks St": ["Spadina / Willcocks"],
         "Spadina Ave at College St": ["Spadina / College", "College / Spadina", "Spadina Ave at College St North Side", "Spadina Ave at College St South Side"],
-        "Spadina Ave at Nassau St": ["Spadina / Nassau", "Spadina Ave at Nassau St South Side"],
+        "Spadina Ave at Nassau St": ["Spadina / Nassau", "Nassau / Spadina", "Spadina Ave at Nassau St South Side"],
+        "Spadina Ave at Bremner Blvd": ["Spadina / Bremner", "Bremner / Spadina"],
         "Spadina Ave at Dundas St West": ["Spadina / Dundas"],
         "Spadina Ave at Queen St West": ["Spadina / Queen", "Queen / Spadina", "Spadina Ave at Queen St West North Side", "Spadina Ave at Queen St West South Side"],
         "Spadina Ave at King St West": ["Spadina / King", "King / Spadina"],
-        "Queens Quay West at Lower Spadina Ave": ["Spadina / Queens Quay West", "Queens Quay West at Lower Spadina Ave East Side"],
+        "Queens Quay West at Lower Spadina Ave": ["Spadina / Queens Quay West", "Queens Quay West at Lower Spadina Ave East Side", "Queens Quay Loop at Lower Spadina Ave"],
         "Queens Quay West at Harbourfront Centre": ["Harbourfront Centre", "Queens Quay / Harbourfront Centre"]
       },
       "directional_stops": {
@@ -43,16 +44,16 @@
           { "name": "Spadina Ave at College St South Side", "aliases": ["Spadina / College", "College / Spadina"], "directions": ["Southbound"] }
         ],
         "Spadina Ave at Nassau St": [
-          { "name": "Spadina Ave at Nassau St", "aliases": ["Spadina / Nassau"], "directions": ["Northbound"] },
-          { "name": "Spadina Ave at Nassau St South Side", "aliases": ["Spadina / Nassau"], "directions": ["Southbound"] }
+          { "name": "Spadina Ave at Nassau St", "aliases": ["Spadina / Nassau", "Nassau / Spadina"], "directions": ["Northbound"] },
+          { "name": "Spadina Ave at Nassau St South Side", "aliases": ["Spadina / Nassau", "Nassau / Spadina"], "directions": ["Southbound"] }
         ],
         "Spadina Ave at Queen St West": [
           { "name": "Spadina Ave at Queen St West North Side", "aliases": ["Spadina / Queen", "Queen / Spadina"], "directions": ["Northbound"] },
           { "name": "Spadina Ave at Queen St West South Side", "aliases": ["Spadina / Queen", "Queen / Spadina"], "directions": ["Southbound"] }
         ],
         "Queens Quay West at Lower Spadina Ave": [
-          { "name": "Spadina Ave at Queens Quay West North Side", "aliases": ["Queens Quay West at Lower Spadina Ave", "Spadina / Queens Quay West"], "directions": ["Northbound"] },
-          { "name": "Queens Quay West at Lower Spadina Ave East Side", "aliases": ["Queens Quay West at Lower Spadina Ave", "Spadina / Queens Quay West"], "directions": ["Southbound"] }
+          { "name": "Spadina Ave at Queens Quay West North Side", "aliases": ["Queens Quay West at Lower Spadina Ave", "Spadina / Queens Quay West", "Queens Quay Loop at Lower Spadina Ave"], "directions": ["Northbound"] },
+          { "name": "Queens Quay West at Lower Spadina Ave East Side", "aliases": ["Queens Quay West at Lower Spadina Ave", "Spadina / Queens Quay West", "Queens Quay Loop at Lower Spadina Ave"], "directions": ["Southbound"] }
         ]
       }
     },
@@ -69,6 +70,7 @@
         "College St at Crawford St",
         "College St at Bathurst St",
         "College St at Spadina Ave",
+        "College St at St George St",
         "College St at University Ave - Queen's Park Station",
         "College St at Yonge St - College Station",
         "Carlton St at Church St",
@@ -83,6 +85,7 @@
       ],
       "aliases": {
         "College St at Spadina Ave": ["College / Spadina", "Spadina / College"],
+        "College St at St George St": ["College / St George", "College / St. George", "St George / College"],
         "College St at University Ave - Queen's Park Station": ["Queen's Park Station", "College / University"],
         "College St at Yonge St - College Station": ["College Station", "College / Yonge"],
         "Carlton St at Church St": ["Carlton / Church", "Church / Carlton"],
@@ -93,6 +96,7 @@
       "name": "King",
       "network": "TTC",
       "route_aliases": ["504A", "504B", "504a", "504b"],
+      "direction_order": { "forward": "Westbound", "reverse": "Eastbound" },
       "stops": [
         "Broadview Ave at Langley Ave-Hennick Bridgepoint Hospital",
         "King St East at Sumach St",
@@ -200,6 +204,7 @@
     "41": {
       "name": "Keele",
       "network": "TTC",
+      "direction_order": { "forward": "Southbound", "reverse": "Northbound" },
       "stops": [
         "Pioneer Village Station",
         "Keele St at Finch Ave West - Finch West Station",
@@ -226,6 +231,7 @@
     "511": {
       "name": "Bathurst",
       "network": "TTC",
+      "direction_order": { "forward": "Southbound", "reverse": "Northbound" },
       "stops": [
         "Bathurst Station",
         "Bathurst St at Harbord St",
@@ -257,7 +263,7 @@
       "color": "#FFD700",
       "direction_labels": ["southbound", "northbound"],
       "route_aliases": ["Line 1", "1 Line", "Yonge", "University", "Yonge-University", "YU"],
-      "note": "U-shaped: Finch(0)→Union(16)→VMC(35). Direction logic is branch-aware in predict.js — Union is the turning point. Boarding at Union skips topology filtering entirely (either branch is valid from there).",
+      "note": "U-shaped: Finch(0)→Union(16)→VMC(36). Direction logic is branch-aware in predict.js — Union is the turning point. Boarding at Union skips topology filtering entirely (either branch is valid from there).",
       "stops": [
         "Finch",
         "North York Centre",
@@ -278,6 +284,7 @@
         "Union",
         "St. Andrew",
         "Osgoode",
+        "St. Patrick",
         "Queen's Park",
         "Museum",
         "St. George",
@@ -300,6 +307,8 @@
         "Bloor-Yonge": ["Bloor/Yonge", "Bloor Yonge", "Bloor-Yonge Station", "Yonge/Bloor"],
         "St. George": ["St George", "St. George Station", "St George Station"],
         "Sheppard-Yonge": ["Sheppard/Yonge", "Sheppard Yonge"],
+        "St. Patrick": ["St Patrick", "St. Patrick Station", "St Patrick Station"],
+        "Dundas": ["TMU", "TMU Station", "Dundas Station"],
         "Queen's Park": ["Queens Park", "Queen's Park Station"],
         "St. Clair": ["St Clair", "St. Clair Station"],
         "St. Clair West": ["St Clair West", "St. Clair West Station"],
@@ -441,6 +450,7 @@
       "direction_labels": ["southbound", "northbound"],
       "route_aliases": ["B Line", "Red Line", "Metro B", "B", "LA Metro B", "LA-Red"],
       "note": "Linear: North Hollywood(0)→Union Station(13). Southbound = toward Union Station.",
+      "direction_order": { "forward": "Southbound", "reverse": "Northbound" },
       "stops": [
         "North Hollywood",
         "Universal City/Studio City",
@@ -515,6 +525,7 @@
       "direction_labels": ["southbound", "northbound"],
       "route_aliases": ["A Line", "Blue Line", "Metro A", "A", "LA Metro A", "LA-Blue"],
       "note": "Linear: 7th St/Metro Center(0)→Long Beach Transit Mall(22). Southbound = toward Long Beach.",
+      "direction_order": { "forward": "Southbound", "reverse": "Northbound" },
       "stops": [
         "7th St/Metro Center",
         "Pico",
@@ -555,6 +566,7 @@
       "direction_labels": ["westbound", "eastbound"],
       "route_aliases": ["E Line", "Expo Line", "Metro E", "E", "LA Metro E", "LA-Expo"],
       "note": "Linear: 7th St/Metro Center(0)→Santa Monica(18). Westbound = toward Santa Monica.",
+      "direction_order": { "forward": "Westbound", "reverse": "Eastbound" },
       "stops": [
         "7th St/Metro Center",
         "LATTC/Ortho Institute",
@@ -588,6 +600,7 @@
       "direction_labels": ["westbound", "eastbound"],
       "route_aliases": ["G Line", "Orange Line", "Metro G", "G", "LA Metro G", "LA-Orange"],
       "note": "Linear: North Hollywood(0)→Chatsworth(16). Westbound = toward Chatsworth.",
+      "direction_order": { "forward": "Westbound", "reverse": "Eastbound" },
       "stops": [
         "North Hollywood",
         "Laurel Canyon",
@@ -623,6 +636,7 @@
       "direction_labels": ["northbound", "southbound"],
       "route_aliases": ["J Line", "Silver Line", "Metro J", "J", "LA Metro J", "LA-Silver"],
       "note": "Linear: El Monte(0)→Harbor Gateway Transit Center(22). Northbound = toward El Monte.",
+      "direction_order": { "forward": "Southbound", "reverse": "Northbound" },
       "stops": [
         "El Monte",
         "Cal State LA",
@@ -658,6 +672,7 @@
       "direction_labels": ["westbound", "eastbound"],
       "route_aliases": ["N Judah", "N-Judah", "N Line", "Muni N", "N"],
       "note": "Linear: 4th & King/Caltrain(0)→Ocean Beach/La Playa(31). Westbound = toward Ocean Beach. Shares downtown tunnel (Embarcadero→Van Ness) with other Muni Metro lines.",
+      "direction_order": { "forward": "Westbound", "reverse": "Eastbound" },
       "stops": [
         "4th and King",
         "2nd and King",
