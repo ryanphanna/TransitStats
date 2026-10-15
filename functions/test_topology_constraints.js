@@ -116,7 +116,7 @@ test('504 King: Westbound goes toward King Station, Eastbound toward Broadview',
 test('Line 1 stop labels match however the subway station is written (Station suffix, punctuation)', () => {
   assert.equal(allowed('1', 'Davisville', 'Southbound', 'College Station'), true);
   assert.equal(allowed('1', 'Davisville', 'Southbound', 'Wellesley Station'), true);
-  assert.equal(allowed('1', "Queen's Park Station", 'Southbound', 'St Patrick Station'), true);
+  assert.equal(allowed('1', 'Queen\'s Park Station', 'Southbound', 'St Patrick Station'), true);
   assert.equal(allowed('1', 'Eglinton Station', 'Southbound', 'TMU Station'), true);
   assert.equal(allowed('1', 'Davisville', 'Southbound', 'Finch Station'), false); // still a real constraint
   assert.equal(allowed('1', 'St. George Station', 'Northbound', 'St.Clair West Station'), true);
