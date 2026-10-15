@@ -6,7 +6,8 @@
  *
  * Usage (TZ controls getHours()/getDay(), exactly as in Cloud Functions):
  *   TZ=UTC node ml/eval/replay_js.js --trips <trips.jsonl> --stops <stops.json> --out <out.jsonl> [--from 2026-01-01]
- *     [--limit 100]          history window (newest N completed trips; 0 = all). Default = serving.
+ *     [--limit N]            history window (newest N completed trips; 0 = all).
+ *                            Default = serving's PREDICTION_HISTORY_LIMIT (functions/lib/constants.js).
  *     [--config '{"K":v}']   override PredictionEngineV3.CONFIG keys (tuning experiments only)
  *
  * Inputs and outputs contain private trip data: keep them under ml/artifacts/.
@@ -17,6 +18,7 @@ const path = require('path');
 const LIB = path.join(__dirname, '..', '..', 'functions', 'lib');
 const { PredictionEngineV3 } = require(path.join(LIB, 'predict_v3.js'));
 const { HabitEngine } = require(path.join(LIB, 'habit.js'));
+const { PREDICTION_HISTORY_LIMIT } = require(path.join(LIB, 'constants.js'));
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(`--${name}`);
@@ -41,7 +43,7 @@ function main() {
   const fromMs = ms(arg('from', '2026-01-01'));
   const out = fs.createWriteStream(arg('out'));
 
-  const limitArg = Number(arg('limit', '100'));
+  const limitArg = Number(arg('limit', String(PREDICTION_HISTORY_LIMIT)));
   const limit = limitArg > 0 ? limitArg : Infinity;
   if (arg('config')) Object.assign(PredictionEngineV3.CONFIG, JSON.parse(arg('config')));
 

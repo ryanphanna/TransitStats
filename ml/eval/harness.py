@@ -50,7 +50,20 @@ EVAL_SNAPSHOT = "78a4265b1519"                               # sha256[:12] of th
 FOLD_DAYS = 14
 EVAL_SOURCES = {"sms", "sms_fallback", "mms"}
 LOCAL_TZ = ZoneInfo("America/Toronto")
-HISTORY_LIMIT = 100           # getRecentCompletedTrips(userId, 100)
+SERVING_CONSTANTS = os.path.join(os.path.dirname(__file__), "..", "..", "functions", "lib", "constants.js")
+
+
+def read_serving_constant(name, path=SERVING_CONSTANTS):
+    """Integer `exports.NAME = N;` from functions/lib/constants.js, so the harness never drifts from serving."""
+    with open(path, encoding="utf-8") as f:
+        m = re.search(rf"^exports\.{re.escape(name)}\s*=\s*(\d+)\s*;", f.read(), re.M)
+    if not m:
+        raise RuntimeError(f"{name} not found in {path}")
+    return int(m.group(1))
+
+
+HISTORY_LIMIT = read_serving_constant("PREDICTION_HISTORY_LIMIT")              # getRecentCompletedTrips(userId, N)
+ELIGIBILITY_HISTORY_LIMIT = read_serving_constant("ELIGIBILITY_HISTORY_LIMIT")  # getEligibility(history.slice(0, N))
 ROUTE_MIN_CLEAN = 10          # intelligence-eligibility DEFAULT_THRESHOLDS
 ENDSTOP_MIN_CLEAN = 15
 ROUTE_CONF_FLOOR = 25         # floor of the former correctPredictionByGtfs (route models removed from serving)
@@ -91,6 +104,31 @@ def end_stop_of(t):
 
 def start_stop_of(t):
     return (t.get("startStopName") or t.get("startStop") or t.get("startStopCode") or "").strip()
+
+
+def eligibility_clean_count(history, agency):
+    """intelligence-eligibility.js cleanTripsForAgency(history, agency).length."""
+    key = str(agency).strip().lower() if agency is not None else ""
+    if not key:
+        return 0
+    n = 0
+    for t in history:
+        if str(t.get("agency") or "").strip().lower() != key or not t.get("route"):
+            continue
+        if not (t.get("startStopName") or t.get("startStopCode") or t.get("startStop")):
+            continue
+        if not (t.get("endStopName") or t.get("endStopCode") or t.get("endStop")):
+            continue
+        if t.get("incomplete") or t.get("discarded") or t.get("needs_review"):
+            continue
+        if t.get("needs_reprocess") or t.get("exclude_from_training") or t.get("exclude_from_accuracy"):
+            continue
+        if isinstance(t.get("correctedFields"), list) and t["correctedFields"]:
+            continue
+        if not (bool(t["stop_matched"]) if t.get("stop_matched") is not None else bool(t.get("verified"))):
+            continue
+        n += 1
+    return n
 
 
 def is_clean(t):
@@ -590,7 +628,9 @@ def _ml_rows(env, fm, kind, label, x_mode):
     data, t, rp, ctx = env["data"], env["trip"], env["replay"], env["ctx"]
     time_mode, = x_mode
     out = []
-    clean_same_agency = sum(1 for h in ctx["hist"] if (h.get("agency") or "").lower() == (t.get("agency") or "").lower())
+    # getEligibility(history.slice(0, ELIGIBILITY_HISTORY_LIMIT), agency): the first N trips of the
+    # already-filtered serving history, counted with cleanTripsForAgency's rules.
+    clean_same_agency = eligibility_clean_count(ctx["hist"][:ELIGIBILITY_HISTORY_LIMIT], t.get("agency"))
     legal = set(rp["legalStops"]) if rp.get("constraintSource") in ("topology", "topology+network") and rp.get("legalStops") else None
     for which in ("v4", "v5"):
         name = f"{which.upper()} ({label})"

@@ -49,8 +49,7 @@ const { getEligibility, artifactSupportsAgency } = require('./intelligence-eligi
 
 // V3 votes over a longer window (3.5.0): the eval showed the 100-trip window was V3's main
 // coverage gap. V4/V5 eligibility keeps its original 100-trip window.
-const PREDICTION_HISTORY_LIMIT = 500;
-const ELIGIBILITY_HISTORY_LIMIT = 100;
+const { PREDICTION_HISTORY_LIMIT, ELIGIBILITY_HISTORY_LIMIT } = require('./constants');
 const {
   agencySuffix,
   isStopMatched,

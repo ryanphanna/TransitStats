@@ -14,12 +14,27 @@ One shared offline harness scores every predictor on the same trips. Aggregates 
 | Eval rows | clean SMS trips (`sms`, `sms_fallback`, `mms`) starting 2026-05-01 to 2026-10-15: **409** rows out of 548 completed SMS trips in the window |
 | Clean | the same filter as `getRecentCompletedTrips` (not incomplete/discarded/needs_review, no blocking correction, stop matched), plus route, start stop and end stop present |
 | Folds | 12 walk-forward folds of 14 days. V4/V5 are refit at each fold start on clean trips that ended before it. Count filters (≥3 per route, ≥5 per route+stop, ≥10 per end-stop class) use training rows only |
-| History-based predictors | each trip sees exactly what serving loads at its start: the newest 100 completed trips by end time, then the clean filter. Sequence features (last end stop, last route, gap) come from `history[0]` |
+| History-based predictors | each trip sees exactly what serving loads at its start: the newest `PREDICTION_HISTORY_LIMIT` completed trips by end time (500 since V3 3.5.0; 100 when the baseline tables below were scored), then the clean filter. V4/V5 eligibility counts the first `ELIGIBILITY_HISTORY_LIMIT` (100) of those with `cleanTripsForAgency`'s rules. Both limits are read from `functions/lib/constants.js`. Sequence features (last end stop, last route, gap) come from `history[0]` |
 | Grading | end stop: V3's `_stopMatch` canonicalization, as `finalization.js` grades. Route: `normalizeRouteForGrading`, route only for every predictor (live `predictionStats` checked direction for V3 until route grading was removed, so historical live V3 route numbers differ) |
 | Abstentions | count as misses; coverage is reported separately |
 | Promotion rule | beat both V3 (as served) and the best baseline on the paired last-90-day slice (160 rows), with the 95% bootstrap CI of the difference above 0 |
 
 Pinned: `EVAL_START`, `EVAL_END`, `FOLD_DAYS` and the snapshot hash. Re-exports print a warning and are not comparable. Any change to the definition bumps `EVAL_VERSION`.
+
+## Current live (as of 8ce7ae2)
+
+What serves today, end stop, n=409. V3, habit and served rows are from `harness.py --task end --only v3,habit,combo` on a fresh default replay (`replay_js.js`, 500-trip window) of 8ce7ae2. V4/V5 rows are copied from "V4/V5 end stop" below (scored with the 100-trip window and the old eligibility count, not re-scored).
+
+| Predictor | Top-1 [95% CI] | Top-3 | Coverage | Conf ≥75 cov / prec |
+|---|---|---|---|---|
+| V3 3.5.0 (with the topology fix) | 50.6% [45.8–55.4] | 61.1% | 98.3% | 60% / 70% |
+| Habit engine v2 | 10.5% | 10.5% | 12.5% | 8% / 82% |
+| Served to admin (habit, else V3 list) | 50.6% [45.8–55.4] | 60.4% | 98.3% | 61% / 69% |
+| V4 4.6 refit (shadow) | 40.8% [36.2–45.7] | 49.4% | 88.0% | |
+| V5 5.6 refit (shadow) | 38.1% [33.6–42.9] | 48.9% | 88.0% | |
+
+- The admin view shows "Usual trip to X." when the habit fires, else V3 guesses with confidence ≥75. Its ≥75 column is that gate: a suggestion is shown on 61% of rows and is right 69% of the time.
+- Non-admins see no end-stop suggestion.
 
 ## Baseline results (v1)
 
