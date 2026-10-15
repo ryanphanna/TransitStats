@@ -293,7 +293,10 @@ async function findMatchingStops(stopName, agency) {
 function _findStopCandidates(stopName, docs) {
   const lowerName = stopName.toLowerCase();
   const inputKey = stopNameKey(stopName);
-  const inputGroup = getConnectionGroup(stopName);
+  // Texted variants (typos, stop-code prefixes) live as aliases in the stops library, so
+  // connection groups resolve through the candidate docs' names and aliases.
+  const library = docs.map(doc => doc.data()).filter(data => data && data.name);
+  const inputGroup = getConnectionGroup(stopName, library);
   const normalizedInput = normalizeStopName(stopName);
   const literalMatches = [];
   const keyedMatches = [];
@@ -325,8 +328,8 @@ function _findStopCandidates(stopName, docs) {
     }
     if (!inputGroup) continue;
     const connected = names.some(name =>
-      getConnectionGroup(name) === inputGroup ||
-      areConnectedStops(name, stopName) ||
+      getConnectionGroup(name, library) === inputGroup ||
+      areConnectedStops(name, stopName, library) ||
       normalizeStopName(name) === normalizedInput
     );
     if (connected && !seen.has(doc.id)) {

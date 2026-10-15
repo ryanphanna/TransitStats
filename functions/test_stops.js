@@ -443,3 +443,15 @@ test('lookupStopCheck: { atlas: false } never consults Atlas', async () => {
     assert.equal(fetches, 0);
   } finally { global.fetch = original; }
 });
+
+test('_findStopCandidates: a texted typo alias still reaches its transfer-complex siblings', () => {
+  const { _findStopCandidates } = loadStopsModule();
+  const doc = (id, data) => ({ id, data: () => data });
+  const docs = [
+    doc('station', { name: 'Union Station', aliases: ['Uniun Stn'], agencies: ['TTC'] }),
+    doc('platform', { name: 'Union', aliases: [], agencies: ['TTC'] }),
+    doc('other', { name: 'King Station', aliases: [], agencies: ['TTC'] }),
+  ];
+  const ids = _findStopCandidates('Uniun Stn', docs).map(c => c.id);
+  assert.deepEqual(ids, ['station', 'platform']);
+});

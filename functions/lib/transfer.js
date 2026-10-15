@@ -162,9 +162,12 @@ const TransferEngine = {
    * @param {Array} history - Recent completed trips to learn from (ideally 50+)
    * @param {Object|null} networkConnections - Transfer index for nextTrip's boarding stop
    *   ({ [fromRoute_to_toRoute]: count }) from NetworkEngine.getConnectionsAtStop()
+   * @param {Array|null} [stopsLibrary] - Stops library ({ name, aliases }) so texted stop
+   *   variants resolve to the canonical names in transfer-connections.js. Only used for stop
+   *   name matching (not hub resolution).
    * @returns {number} Confidence score 0–1
    */
-  score(prevTrip, nextTrip, history, networkConnections = null) {
+  score(prevTrip, nextTrip, history, networkConnections = null, stopsLibrary = null) {
     if (!prevTrip.endTime || !nextTrip.startTime) return 0;
 
     const prevEnd = prevTrip.endTime?.toDate ? prevTrip.endTime.toDate() : new Date(prevTrip.endTime);
@@ -208,8 +211,8 @@ const TransferEngine = {
       const hubMatch = (prevEndHubId && t.endHubId && prevEndHubId === t.endHubId) &&
                        (nextStartHubId && t.startHubId && nextStartHubId === t.startHubId);
       
-      const nameMatch = this._stopMatch(t.endStop, prevEndStop) &&
-                        this._stopMatch(t.startStop, nextStartStop);
+      const nameMatch = this._stopMatch(t.endStop, prevEndStop, stopsLibrary) &&
+                        this._stopMatch(t.startStop, nextStartStop, stopsLibrary);
                         
       return hubMatch || nameMatch;
     });
@@ -296,12 +299,13 @@ const TransferEngine = {
 
   /**
    * Normalize and compare two stop names.
-   * Strips punctuation/spaces before comparing.
+   * Strips punctuation/spaces before comparing. With a stops library, texted variants
+   * (aliases) of a connected stop resolve to its canonical name.
    */
-  _stopMatch(a, b) {
+  _stopMatch(a, b, stopsLibrary = null) {
     if (!a || !b) return false;
     const normalize = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-    return normalize(a) === normalize(b) || areConnectedStops(a, b);
+    return normalize(a) === normalize(b) || areConnectedStops(a, b, stopsLibrary);
   },
 };
 

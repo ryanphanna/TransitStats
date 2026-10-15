@@ -186,28 +186,28 @@ test('_stopMatch: keelesdale complex connected stops match', () => {
 
 test('_stopMatch: st george complex connected stops match', () => {
   assert.equal(
-    TransferEngine._stopMatch('St George Station', 'Stgeorge'),
+    TransferEngine._stopMatch('St George Station', 'St. George'),
     true
   );
 });
 
 test('_stopMatch: lawrence west complex connected stops match', () => {
   assert.equal(
-    TransferEngine._stopMatch('LAWRENCE W STATION', 'Lawrence West'),
+    TransferEngine._stopMatch('LAWRENCE WEST STATION', 'Lawrence West'),
     true
   );
 });
 
 test('_stopMatch: sheppard-yonge complex connected stops match', () => {
   assert.equal(
-    TransferEngine._stopMatch('SHEPPARD-YONGE', 'Sheppard-Yonge Station'),
+    TransferEngine._stopMatch('sheppard yonge', 'Sheppard-Yonge Station'),
     true
   );
 });
 
 test('_stopMatch: osgoode complex connected stops match', () => {
   assert.equal(
-    TransferEngine._stopMatch('OSGOODE', 'Osgoode Station'),
+    TransferEngine._stopMatch('osgoode', 'Osgoode Station'),
     true
   );
 });
@@ -247,13 +247,6 @@ test('_stopMatch: dufferin lawrence pair matches', () => {
   );
 });
 
-test('_stopMatch: harbord spadina pair matches', () => {
-  assert.equal(
-    TransferEngine._stopMatch('Harbord / Spadina', '8124 Spadina and Harbord'),
-    true
-  );
-});
-
 test('_stopMatch: spadina harbord reverse pair matches', () => {
   assert.equal(
     TransferEngine._stopMatch('Spadina / Harbord', 'Harbord / Spadina'),
@@ -261,39 +254,75 @@ test('_stopMatch: spadina harbord reverse pair matches', () => {
   );
 });
 
-test('_stopMatch: spadina king numbered stop pair matches', () => {
+test('_stopMatch: carlaw queen corner pair matches', () => {
   assert.equal(
-    TransferEngine._stopMatch('Spadina / King', '13161 Spadina / King'),
+    TransferEngine._stopMatch('Queen St E / Carlaw', 'Carlaw / Queen St E'),
     true
   );
 });
 
-test('_stopMatch: carlaw queen numbered stop pair matches', () => {
+test('_stopMatch: dufferin college corner pair matches', () => {
   assert.equal(
-    TransferEngine._stopMatch('Queen St E / Carlaw Av', '4858 Carlaw & Queen St E'),
+    TransferEngine._stopMatch('Dufferin / College', 'College / Dufferin'),
     true
   );
 });
 
-test('_stopMatch: dufferin college drift matches', () => {
-  assert.equal(
-    TransferEngine._stopMatch('Dufferin&college', '826 College & Dufferin'),
-    true
-  );
+// ─── _stopMatch: texted variants resolve through the stops library ───────────
+// Synthetic library: fake stop codes (9xxxx) and invented misspellings, standing in for the
+// aliases real stop records carry.
+
+const FAKE_LIBRARY = [
+  { name: 'Spadina / King', aliases: ['90001 Spadina / King'] },
+  { name: 'Spadina / Harbord', aliases: ['Harbord / Spadina', '90002 Spadina and Harbord'] },
+  { name: 'Queen St E / Carlaw', aliases: ['Queen St E / Carlaw Avenue'] },
+  { name: 'Carlaw / Queen St E', aliases: ['90003 Carlaw & Queen St E'] },
+  { name: 'Dufferin / College', aliases: ['College / Dufferin', '90004 College & Dufferin'] },
+  { name: 'Dundas / Sterling', aliases: ['Dundas/Sterlingg'] },
+  { name: 'Keelesdale Station', aliases: ['Keelesdael'] },
+  { name: 'Lawrence West Station', aliases: ['Lawrence Wset'] },
+  { name: 'Bay / Wellesley', aliases: ['90005 Bay / Wellesley'] },
+];
+
+test('_stopMatch: code-prefixed alias matches its canonical stop via library', () => {
+  assert.equal(TransferEngine._stopMatch('Spadina / King', '90001 Spadina / King', FAKE_LIBRARY), true);
+  assert.equal(TransferEngine._stopMatch('Harbord / Spadina', '90002 Spadina and Harbord', FAKE_LIBRARY), true);
+  assert.equal(TransferEngine._stopMatch('Queen St E / Carlaw Avenue', '90003 Carlaw & Queen St E', FAKE_LIBRARY), true);
+  assert.equal(TransferEngine._stopMatch('Dufferin / College', '90004 College & Dufferin', FAKE_LIBRARY), true);
 });
 
-test('_stopMatch: dundas sterling typo matches', () => {
-  assert.equal(
-    TransferEngine._stopMatch('Dundas/Sterling', 'Dundas/Sterlingp'),
-    true
-  );
+test('_stopMatch: typo alias matches its canonical stop via library', () => {
+  assert.equal(TransferEngine._stopMatch('Dundas / Sterling', 'Dundas/Sterlingg', FAKE_LIBRARY), true);
+  assert.equal(TransferEngine._stopMatch('Keelesdael', 'Keelesdale', FAKE_LIBRARY), true);
+  assert.equal(TransferEngine._stopMatch('Lawrence Wset', 'Lawrence West', FAKE_LIBRARY), true);
 });
 
-test('_stopMatch: keelsdale typo matches keelesdale', () => {
-  assert.equal(
-    TransferEngine._stopMatch('Keelsdale', 'Keelesdale'),
-    true
-  );
+test('_stopMatch: texted variants do not match without a library', () => {
+  assert.equal(TransferEngine._stopMatch('Spadina / King', '90001 Spadina / King'), false);
+  assert.equal(TransferEngine._stopMatch('Keelesdael', 'Keelesdale'), false);
+});
+
+test('_stopMatch: library alias is not general equality outside the connection tables', () => {
+  assert.equal(TransferEngine._stopMatch('Bay / Wellesley', '90005 Bay / Wellesley', FAKE_LIBRARY), false);
+});
+
+test('_stopMatch: library resolution keeps pair direction (pairs are not transitive)', () => {
+  // Spadina / Harbord <-> Harbord / Spadina is a pair; a code-prefixed alias of the
+  // Spadina / Harbord record still doesn't connect to the record's own name.
+  assert.equal(TransferEngine._stopMatch('Spadina / Harbord', '90002 Spadina and Harbord', FAKE_LIBRARY), false);
+});
+
+test('score: library-resolved variant in history counts as the same stop pair', () => {
+  const history = [
+    ...linkedPair({ routeA: '510', routeB: '504', endStop: 'Spadina / King', startStop: 'Spadina / King', gap: 4 }),
+    ...linkedPair({ routeA: '510', routeB: '504', endStop: 'Spadina / King', startStop: 'Spadina / King', gap: 6 }),
+  ];
+  const prev = trip({ route: '72', endStop: '90001 Spadina / King', endTime: new Date('2026-04-15T20:10:00Z') });
+  const next = trip({ route: '504', startStop: 'Spadina / King', startTime: new Date('2026-04-15T20:15:00Z') });
+  const without = TransferEngine.score(prev, next, history);
+  const withLibrary = TransferEngine.score(prev, next, history, null, FAKE_LIBRARY);
+  assert.ok(without < TransferEngine.CONFIDENCE_THRESHOLD, `Unresolved variant should not link, got ${without}`);
+  assert.ok(withLibrary >= TransferEngine.CONFIDENCE_THRESHOLD, `Library-resolved variant should link, got ${withLibrary}`);
 });
 
 // ─── score: NetworkEngine signal (v1.1) ──────────────────────────────────────
@@ -380,14 +409,14 @@ test('score: sheppard-yonge complex stop pair links from history', () => {
     ...linkedPair({
       routeA: '1',
       routeB: '84A',
-      endStop: 'SHEPPARD-YONGE',
+      endStop: 'sheppard-yonge',
       startStop: 'Sheppard-Yonge Station',
       gap: 6,
     }),
   ];
   const prev = trip({
     route: '1',
-    endStop: 'SHEPPARD-YONGE',
+    endStop: 'sheppard-yonge',
     endTime: new Date('2026-04-15T20:10:00Z'),
   });
   const next = trip({
@@ -526,14 +555,14 @@ test('score: typo-cleaned stop pair links from history', () => {
     ...linkedPair({
       routeA: '41',
       routeB: '5',
-      endStop: 'Keelsdale',
+      endStop: 'Keelesdale Station',
       startStop: 'Keelesdale',
       gap: 6,
     }),
   ];
   const prev = trip({
     route: '41',
-    endStop: 'Keelsdale',
+    endStop: 'Keelesdael',
     endTime: new Date('2026-04-15T20:10:00Z'),
   });
   const next = trip({
@@ -541,6 +570,6 @@ test('score: typo-cleaned stop pair links from history', () => {
     startStop: 'Keelesdale',
     startTime: new Date('2026-04-15T20:16:00Z'),
   });
-  const confidence = TransferEngine.score(prev, next, history);
+  const confidence = TransferEngine.score(prev, next, history, null, FAKE_LIBRARY);
   assert.ok(confidence >= TransferEngine.CONFIDENCE_THRESHOLD, `Expected typo-cleaned stop pair to link, got ${confidence}`);
 });
