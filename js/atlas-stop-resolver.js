@@ -167,7 +167,15 @@ function predictedExitLabels(trip) {
         .filter((prediction, index, all) => all.findIndex(item => normalizeStopLabel(item.label) === normalizeStopLabel(prediction.label)) === index);
 }
 
-export function resolveStopLocation(trip, side, index) {
+/**
+ * Resolve a trip endpoint to GTFS coordinates.
+ *
+ * `allowPredicted` opts in to drawing a high-confidence exit GUESS for trips
+ * that have no exit recorded at all. Guesses are an admin-only suggestion, so
+ * the default is off; when on, the result is flagged `estimated: true` so it
+ * can never be drawn or counted like a real exit.
+ */
+export function resolveStopLocation(trip, side, index, { allowPredicted = false } = {}) {
     const stopCode = side === 'boarding' ? trip.startStopCode : trip.endStopCode;
     const stopName = side === 'boarding'
         ? (trip.startStopName || trip.startStop)
@@ -185,10 +193,17 @@ export function resolveStopLocation(trip, side, index) {
     // A high-confidence prediction is only an input label. Coordinates still
     // come exclusively from the agency's GTFS stop index, and raw stop data
     // wins whenever it is present.
-    if (side === 'exiting' && !stopCode && !stopName) {
+    if (allowPredicted && side === 'exiting' && !stopCode && !stopName) {
         for (const prediction of predictedExitLabels(trip)) {
             const match = lookup(index, agency, prediction.label) || fuzzyLookup(index, agency, prediction.label);
-            if (match) return { ...match, match: 'prediction-gtfs', predictionConfidence: prediction.confidence };
+            if (match) {
+                return {
+                    ...match,
+                    match: 'prediction-gtfs',
+                    estimated: true,
+                    predictionConfidence: prediction.confidence,
+                };
+            }
         }
     }
 

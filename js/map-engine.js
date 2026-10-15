@@ -21,7 +21,10 @@ function buildMapPointKey(trip, side, resolution, location, fallbackLabel) {
     return `${agency}:${label}:${lat}:${lng}`;
 }
 
-const MAP_POINTS_CACHE_PREFIX = 'transitstats-map-points:';
+// v2: caches saved before guessed exits became admin-only could contain a
+// guessed exit drawn as real. Bumping the prefix discards them on next load.
+const MAP_POINTS_CACHE_PREFIX = 'transitstats-map-points-v2:';
+const LEGACY_MAP_POINTS_CACHE_PREFIXES = ['transitstats-map-points:'];
 const MAP_POINTS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getMapMarkerLabel(trip = {}, side = 'boarding', resolution = null) {
@@ -56,6 +59,9 @@ export const MapEngine = {
     _deferInitialView: false,
     _isDragging: false,
     _renderQueued: false,
+    // Exit guesses for trips with no recorded exit are an admin-only
+    // suggestion. Off by default so a page that never sets this stays safe.
+    _showEstimatedExits: false,
 
     init(initialTrips = [], initialCenter = null, { deferInitialView = false } = {}) {
         console.log("MapEngine.init: Started", { tripsCount: initialTrips.length });
@@ -144,8 +150,23 @@ export const MapEngine = {
         return userId ? `${MAP_POINTS_CACHE_PREFIX}${userId}:${this.filter}` : null;
     },
 
+    _removeLegacyPointCaches() {
+        const userId = window.currentUser?.uid || auth.currentUser?.uid;
+        if (!userId) return;
+        try {
+            LEGACY_MAP_POINTS_CACHE_PREFIXES.forEach(prefix => {
+                ['boarding', 'exiting'].forEach(filter => {
+                    localStorage.removeItem(`${prefix}${userId}:${filter}`);
+                });
+            });
+        } catch {
+            // Storage can be unavailable (private mode); nothing to clean.
+        }
+    },
+
     _loadCachedPoints() {
         if (!this.map || !this.layers.markers) return false;
+        this._removeLegacyPointCaches();
         const cacheKey = this._getPointsCacheKey();
         if (!cacheKey) return false;
 
@@ -245,6 +266,17 @@ export const MapEngine = {
         });
     },
 
+    /**
+     * Admins see a guessed exit (drawn as an estimate) for trips with no exit
+     * recorded; everyone else sees no exit at all for those trips.
+     */
+    setShowEstimatedExits(enabled) {
+        const next = enabled === true;
+        if (next === this._showEstimatedExits) return Promise.resolve();
+        this._showEstimatedExits = next;
+        return this.map && this._stopSourcesReady ? this.renderMarkers() : Promise.resolve();
+    },
+
     setStopSources({ atlasStops = [], firestoreStops = [] } = {}) {
         PredictionEngine.stopsLibrary = firestoreStops;
         this._stopIndex = buildStopIndex({ atlasStops, normalizedStops: firestoreStops });
@@ -330,7 +362,11 @@ export const MapEngine = {
                 : { source: 'unresolved', location: null, matchStatus: 'not_applicable', candidates: [] };
         }
 
-        if (this._stopSourcesReady) return resolveStopLocation(trip, side, this._stopIndex);
+        if (this._stopSourcesReady) {
+            return resolveStopLocation(trip, side, this._stopIndex, {
+                allowPredicted: this._showEstimatedExits,
+            });
+        }
 
         const saved = side === 'boarding'
             ? (trip.boardingLocation || trip.boardLocation)
@@ -437,12 +473,16 @@ export const MapEngine = {
             if (showExiting) {
                 const eLoc = exiting.location;
                 if (eLoc && eLoc.lat !== 0 && eLoc.lng !== 0 && !isNaN(eLoc.lat)) {
+                    const estimated = exiting.estimated === true;
+                    const exitKey = buildMapPointKey(trip, 'exiting', exiting, eLoc, getMapMarkerLabel(trip, 'exiting', exiting));
                     points.push({
                         lat: eLoc.lat,
                         lng: eLoc.lng,
                         type: 'exiting',
-                        key: buildMapPointKey(trip, 'exiting', exiting, eLoc, getMapMarkerLabel(trip, 'exiting', exiting)),
-                        label: getMapMarkerLabel(trip, 'exiting', exiting)
+                        // Estimated exits never merge into a real exit marker.
+                        key: estimated ? `estimated:${exitKey}` : exitKey,
+                        label: getMapMarkerLabel(trip, 'exiting', exiting),
+                        ...(estimated ? { estimated: true } : {}),
                     });
                 }
             }

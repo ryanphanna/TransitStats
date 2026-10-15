@@ -143,3 +143,27 @@ it('formats stop names with boarding or exit context and escapes HTML', () => {
     expect(formatStopPopup('Spadina & Bloor', { type: 'exiting' }))
         .toBe('Exit: Spadina &amp; Bloor');
 });
+
+describe('estimated exits', () => {
+    it('keeps an estimated exit apart from a real exit at the same stop', () => {
+        const grouped = groupMapPoints([
+            { lat: 43.66, lng: -79.38, type: 'exiting', key: 'ttc:college', label: 'College' },
+            { lat: 43.66, lng: -79.38, type: 'exiting', key: 'ttc:college', label: 'College', estimated: true },
+        ]);
+
+        expect(grouped).toHaveLength(2);
+        expect(grouped.filter(point => point.estimated)).toHaveLength(1);
+        expect(grouped.find(point => !point.estimated).usage).toBe(1);
+    });
+
+    it('draws an estimated exit as a dashed outline', () => {
+        const style = getUsageMarkerStyle({ usage: 5, estimated: true }, 5);
+        expect(style.dashArray).toBeTruthy();
+        expect(getUsageMarkerStyle({ usage: 5 }, 5).dashArray).toBeUndefined();
+    });
+
+    it('labels an estimated exit in the popup and escapes the stop name', () => {
+        expect(formatStopPopup('Spadina & Bloor', { type: 'exiting', estimated: true }))
+            .toBe('Estimated exit (no exit recorded): Spadina &amp; Bloor');
+    });
+});

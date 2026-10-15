@@ -31,7 +31,11 @@ export function aggregateTripCorridors(endpointTrips = []) {
     return [...corridors.values()].sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
 }
 
-export function getCorridorStyle(count, maxCount = count) {
+export function getCorridorStyle(count, maxCount = count, { estimated = false } = {}) {
+    if (estimated) {
+        // Guessed exit (admin-only): dashed, faint, never shaded by usage.
+        return { color: '#066b4b', weight: 3, opacity: 0.55, dashArray: '6 8' };
+    }
     const ratio = Math.log1p(Math.max(0, count)) / Math.log1p(Math.max(1, maxCount));
     const low = [166, 224, 202];
     const high = [6, 107, 75];
@@ -50,6 +54,7 @@ export function buildCorridorPopup({
     count = 0,
     startLabel = 'Boarding stop',
     endLabel = 'Exit stop',
+    estimated = false,
 } = {}) {
     const safe = value => Utils.hide(String(value ?? '').trim());
     const tripCount = Number(count) === 1 ? '1 trip' : `${Number(count) || 0} trips`;
@@ -58,7 +63,7 @@ export function buildCorridorPopup({
         `<strong>${safe(agency)} · Route ${safe(route)}</strong>`,
         tripCount,
         `From ${safe(startLabel)}`,
-        `To ${safe(endLabel)}`,
+        estimated ? `To ${safe(endLabel)} (estimated, no exit recorded)` : `To ${safe(endLabel)}`,
     ].join('<br>');
 }
 
