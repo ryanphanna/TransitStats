@@ -15,7 +15,7 @@ One shared offline harness scores every predictor on the same trips. Aggregates 
 | Clean | the same filter as `getRecentCompletedTrips` (not incomplete/discarded/needs_review, no blocking correction, stop matched), plus route, start stop and end stop present |
 | Folds | 12 walk-forward folds of 14 days. V4/V5 are refit at each fold start on clean trips that ended before it. Count filters (≥3 per route, ≥5 per route+stop, ≥10 per end-stop class) use training rows only |
 | History-based predictors | each trip sees exactly what serving loads at its start: the newest 100 completed trips by end time, then the clean filter. Sequence features (last end stop, last route, gap) come from `history[0]` |
-| Grading | end stop: V3's `_stopMatch` canonicalization, as `finalization.js` grades. Route: `normalizeRouteForGrading`, route only for every predictor (live `predictionStats` also checks direction for V3, so live V3 route numbers differ) |
+| Grading | end stop: V3's `_stopMatch` canonicalization, as `finalization.js` grades. Route: `normalizeRouteForGrading`, route only for every predictor (live `predictionStats` checked direction for V3 until route grading was removed, so historical live V3 route numbers differ) |
 | Abstentions | count as misses; coverage is reported separately |
 | Promotion rule | beat both V3 (as served) and the best baseline on the paired last-90-day slice (160 rows), with the 95% bootstrap CI of the difference above 0 |
 
@@ -113,7 +113,7 @@ What changed in `functions/lib/habit.js`:
 - **Stale rule:** a habit seen in the last 30 days is never marked stale. With weekday-wide slots, two routes ridden from the same stop marked each other stale. Coverage rose from 11.7% to 12.5%; the Served row is unchanged.
 - History window unchanged (200 trips at rebuild).
 - **Serving (`handlers-trip.js`):** the habit reply keeps the standard END/FORGOT line, which it used to drop, and the stored version is `habit_v2`.
-- **Serving, follow-up:** when a habit fires, V3/V4/V5 still run and are stored and graded as on any other trip, so live `predictionStats` stay complete. Admin "END 1" on a habit trip maps to the habit's end stop; V3's stored list is untouched, and a non-admin END 1 never resolves.
+- **Serving, follow-up:** when a habit fires, V3/V4/V5 end-stop guesses still run and are stored and graded as on any other trip, so live `predictionStats` stay complete. Admin "END 1" on a habit trip maps to the habit's end stop; V3's stored list is untouched, and a non-admin END 1 never resolves.
 - **Admin-only (Ryan's decision):** "Usual trip to X." is shown to admins only, gated like V3's list. Non-admin replies are byte-for-byte unchanged. The habit still runs, and is stored and graded, for everyone.
 
 Tuning: a sweep over the real habit.js (threshold 0) covered day grouping (exact day / weekday-weekend), bucket width (2/3/4 h), history (200/500/2000 trips), minimum trips, smoothing, half-life and threshold. Picked on the 249 rows before the last 90 days only.
@@ -299,3 +299,16 @@ The pre-v4v5 pipeline was loaded from `git show origin/main:ml/train_endstop.py`
 - **First-run margin, 5 points:** the baseline is strong on this window. V4 is 0.6 below it and V5 is 2.9 below it, so V5 clears the floor by only 2.1 points (1.5 on the 7-day held-back export). Monday's first run will likely pass, but by a few rows. A first-run reject means "no better than a lookup table", not a regression.
 
 **Runtime:** 42–49 s wall for the gate on a laptop under `nice -n 15` (the pre-v4v5 pipeline takes about 20 s). That adds about a minute to a job that took about 1 minute, far inside the Actions limits.
+
+## V3/V4/V5 route: removed from serving
+
+Route predictions were never shown to users (the route arrives in the texted message), so the V4/V5 route models, V3's route guess at trip start, and all route grading (`predictionStats` route rows, `predictionAccuracy` route counters) were removed. The harness keeps `--task route` and its baselines so a future "did you mean 510?" typo-check can be scored; `PredictionEngineV3.guess` stays in `predict_v3.js` for the replay.
+
+Reference, `--task route --only v3,baseline,combo` on the eval_v1 snapshot (n=409):
+
+| Predictor | Top-1 | Top-3 | Coverage | d vs V3 last90 | d vs B3-full last90 |
+|---|---|---|---|---|---|
+| B3 on full history | 66.5% | 73.8% | 99.3% | +28.7 [+20.6, +36.9] | 0.0 |
+| V3 (as served until now) | 45.5% | 45.5% | 57.0% | 0.0 | -28.7 [-36.9, -20.6] |
+
+Decision: removal, not a model change; no promotion rule applies.

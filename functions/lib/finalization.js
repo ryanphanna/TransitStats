@@ -20,52 +20,15 @@ const { HabitEngine } = require('./habit');
 const { TransferEngine } = require('./transfer.js');
 const {
   getRouteDisplay,
-  normalizeRouteForGrading,
 } = require('./utils');
 const logger = require('./logger');
 
 async function gradeAllPredictions(activeTrip, user, endStopData, duration) {
   const actualEndStop = endStopData ? endStopData.stopName : (activeTrip.endStopName || '');
-  const inc = FieldValue.increment;
-  const normalize = normalizeRouteForGrading;
 
   try {
-    // V3
-    const s = activeTrip.prediction;
-    if (s) {
-      const hit = normalize(s.route, activeTrip.agency) === normalize(activeTrip.route, activeTrip.agency) &&
-        (!s.direction || !activeTrip.direction || PredictionEngine._normalizeDirection(s.direction) === PredictionEngine._normalizeDirection(activeTrip.direction));
-      const partial = !hit && /* simplified */ false;
-
-      await db.collection('predictionStats').add({
-        tripId: activeTrip.id, userId: user.userId, isHit: !!hit, isPartialHit: !!partial,
-        predicted: s.route + (s.direction ? ' ' + s.direction : '') + ' from ' + s.stop,
-        actual: activeTrip.route + (activeTrip.direction ? ' ' + activeTrip.direction : '') + ' from ' + (activeTrip.startStopName || '?'),
-        confidence: s.confidence, version: s.version, route: activeTrip.route, agency: activeTrip.agency, source: 'sms',
-        timestamp: FieldValue.serverTimestamp()
-      });
-      await db.collection('predictionAccuracy').doc(user.userId).set({
-        total: inc(1), hits: inc(hit ? 1 : 0), partialHits: inc(partial ? 1 : 0), lastUpdated: FieldValue.serverTimestamp()
-      }, { merge: true });
-    }
-
-    // V4
-    const v4 = activeTrip.predictionV4;
-    if (v4) {
-      const hit = normalize(v4.route, activeTrip.agency) === normalize(activeTrip.route, activeTrip.agency);
-      await db.collection('predictionStats').add({ tripId: activeTrip.id, userId: user.userId, isHit: hit, version: v4.version, route: activeTrip.route, agency: activeTrip.agency, source: 'sms', timestamp: FieldValue.serverTimestamp() });
-      await db.collection('predictionAccuracy').doc(user.userId).set({ v4Total: inc(1), v4Hits: inc(hit ? 1 : 0), lastUpdated: FieldValue.serverTimestamp() }, { merge: true });
-    }
-
-    // V5 (similar pattern)
-    const v5 = activeTrip.predictionV5;
-    if (v5) {
-      const hit = normalize(v5.route, activeTrip.agency) === normalize(activeTrip.route, activeTrip.agency);
-      await db.collection('predictionStats').add({ tripId: activeTrip.id, userId: user.userId, isHit: hit, version: v5.version, route: activeTrip.route, agency: activeTrip.agency, source: 'sms', timestamp: FieldValue.serverTimestamp() });
-      await db.collection('predictionAccuracy').doc(user.userId).set({ v5Total: inc(1), v5Hits: inc(hit ? 1 : 0), lastUpdated: FieldValue.serverTimestamp() }, { merge: true });
-    }
-
-    // End stop predictions (V3/V4/V5/Habit)
+    // Route guesses are no longer made (the route arrives in the texted message), so only
+    // end stops are graded (V3/V4/V5/Habit). Route guesses already stored on older trips are left ungraded.
     const es = async (pred, version) => {
       if (!pred) return;
       const hit = PredictionEngine._stopMatch(pred.stop, actualEndStop);

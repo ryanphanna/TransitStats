@@ -21,17 +21,15 @@ const REFRESH_MS = 60 * 60 * 1000;
 const RETRY_AFTER_FAILURE_MS = 5 * 60 * 1000;
 
 const JSON_FILES = {
-  routeV4: 'model_v4.json',
-  routeV4Meta: 'model_v4_meta.json',
   endStopV4: 'model_v4_endstop.json',
   endStopV4Meta: 'model_v4_endstop_meta.json',
-  routeV5Meta: 'model_v5_meta.json',
   endStopV5Meta: 'model_v5_endstop_meta.json',
 };
 const BINARY_FILES = {
-  routeV5Onnx: 'model_v5.onnx',
   endStopV5Onnx: 'model_v5_endstop.onnx',
 };
+// End-stop models only. The route models were removed; a published set that still holds their
+// files loads fine, because only the files named here are read.
 const MODEL_FILE_NAMES = [...Object.values(JSON_FILES), ...Object.values(BINARY_FILES)];
 // models/<version>/ also holds eval_rows.json (the retrain gate's per-trip results). It is not a
 // model file: it is deliberately absent from these lists, so serving never downloads it.
@@ -124,21 +122,18 @@ function isUserAllowed(userId) {
 
 // ONNX sessions are built from the loaded buffers and dropped when the models refresh.
 const _session = {
-  route: null,
   endStop: null,
   reset() {
-    this.route = null;
     this.endStop = null;
   },
 };
 
-async function getOnnxSession(kind) {
+async function getOnnxSession(kind = 'endStop') {
   const models = _models;
-  if (!models) return null;
+  if (!models || kind !== 'endStop') return null;
   const ort = require('onnxruntime-node');
-  const key = kind === 'route' ? 'routeV5Onnx' : 'endStopV5Onnx';
-  if (!_session[kind]) _session[kind] = await ort.InferenceSession.create(models[key]);
-  return _session[kind];
+  if (!_session.endStop) _session.endStop = await ort.InferenceSession.create(models.endStopV5Onnx);
+  return _session.endStop;
 }
 
 function resetForTests() {

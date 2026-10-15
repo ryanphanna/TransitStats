@@ -25,13 +25,13 @@ This family handles route and end-stop inference at trip start.
 - **V3** — `functions/lib/predict_v3.js`
   Live heuristic weighted-voting model for route and end-stop guesses. (See [detailed history subpage](./intelligence/V3.md) for the v1–v3.3 archive.)
 - **V4** — `functions/lib/predict_v4.js`
-  Candidate logistic-regression route and end-stop models trained from trip history.
+  Candidate logistic-regression end-stop model trained from trip history (the route model was removed).
 - **V5** — `functions/lib/predict_v5.js`
-  Candidate XGBoost route and end-stop models exported to ONNX for live inference.
+  Candidate XGBoost end-stop model exported to ONNX for live inference (the route model was removed).
 - **V6** — (in design)
   Next-generation model focused on journey/sequence context. See the [V6 design spike](./V6_DESIGN_SPIKE.md).
 
-**Retraining:** V4 and V5 retrain from the Python pipeline in `ml/export_trips.py`, `ml/train_routes.py`, and `ml/train_endstop.py`. See `ml/CLAUDE.md` for the retrain workflow.
+**Retraining:** V4 and V5 retrain from the Python pipeline in `ml/export_trips.py` and `ml/train_endstop.py`. See `ml/CLAUDE.md` for the retrain workflow.
 
 ### 2. Habit Intelligence
 

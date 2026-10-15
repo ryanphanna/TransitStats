@@ -21,14 +21,11 @@ const {
   parseStopSignImage,
 } = require('./gemini');
 const logger = require('./logger');
-const {
-  correctPredictionByGtfs,
-} = require('./handlers-utils');
 const { handleTripLog } = require('./handlers-trip');
 const { isModelReady } = require('./intelligence-eligibility');
 
 /**
- * Run V4/V5 predictions for a trip that was created during stop disambiguation
+ * Run V4/V5 end-stop predictions for a trip that was created during stop disambiguation
  * (predictions are null at create time because the stop wasn't known yet).
  * Fire-and-forget — errors are logged but never surface to the user.
  */
@@ -46,26 +43,15 @@ async function fillPredictions(user, tripId, stopName, route, direction, agency,
 
     // Models are private and only trained on allowlisted users; everyone else gets rule-based predictions.
     const mlModels = ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
-    const { routeV4Meta, routeV5Meta, endStopV4Meta, endStopV5Meta } = mlModels || {};
+    const { endStopV4Meta, endStopV5Meta } = mlModels || {};
     const now = new Date();
-    const routeReady = isModelReady(history, agency, routeV4Meta, routeV5Meta);
-    const endStopReady = isModelReady(history, agency, endStopV4Meta, endStopV5Meta, 'endStop');
-    if (!routeReady && !endStopReady) return;
+    if (!isModelReady(history, agency, endStopV4Meta, endStopV5Meta)) return;
     const lastTrip = history.length > 0 ? history[0] : null;
     const lastEndStopName = lastTrip?.endStopName || null;
     const lastRoute = lastTrip?.route || null;
     const minutesSinceLastTrip = lastTrip?.startTime?.toDate
       ? Math.max(0, Math.round((now.getTime() - lastTrip.startTime.toDate().getTime()) / 60000))
       : null;
-    const routeContext = {
-      stopName,
-      time: now,
-      lastEndStopName,
-      lastRoute,
-      agency,
-      stopsLibrary,
-      primaryAgency: defaultAgency,
-    };
     const endStopContext = {
       route,
       startStopName: stopName,
@@ -80,20 +66,12 @@ async function fillPredictions(user, tripId, stopName, route, direction, agency,
       networkGraph,
     };
 
-    const [rawTopV4, rawTopV5, topV4, topV5] = await Promise.all([
-      routeReady ? Promise.resolve(PredictionEngineV4.guessTopRoutes(routeContext, 5)) : [],
-      routeReady ? PredictionEngineV5.guessTopRoutes(routeContext, 5) : [],
-      endStopReady ? PredictionEngineV4.guessTopEndStops(endStopContext, 1) : [],
-      endStopReady ? PredictionEngineV5.guessTopEndStops(endStopContext, 1) : [],
+    const [topV4, topV5] = await Promise.all([
+      PredictionEngineV4.guessTopEndStops(endStopContext, 1),
+      PredictionEngineV5.guessTopEndStops(endStopContext, 1),
     ]);
 
-    // No routesAtStop available here — apply confidence floor only
-    const predictionV4 = correctPredictionByGtfs(rawTopV4, null);
-    const predictionV5 = correctPredictionByGtfs(rawTopV5, null);
-
     const update = {};
-    if (predictionV4) update.predictionV4 = predictionV4;
-    if (predictionV5) update.predictionV5 = predictionV5;
     if (topV4.length > 0) update.endStopPredictionV4 = topV4[0];
     if (topV5.length > 0) update.endStopPredictionV5 = topV5[0];
 

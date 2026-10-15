@@ -27,26 +27,6 @@ const { AGENCY_CITY } = require('./constants');
 const { phoneTag } = require('./phone-confirmation');
 
 /**
- * Pick the best V4/V5 route prediction that GTFS confirms actually serves this stop.
- * If routesAtStop is empty/null (no GTFS data), fall back to the top prediction.
- * Suppresses predictions below 25% confidence regardless.
- *
- * @param {Array} topRoutes - Sorted [{route, confidence, version}] from guessTopRoutes()
- * @param {Array|null} routesAtStop - Routes known to serve this stop from GTFS, or null
- * @returns {Object|null}
- */
-function correctPredictionByGtfs(topRoutes, routesAtStop) {
-  if (!topRoutes || topRoutes.length === 0) return null;
-  const baseRoute = r => r.toString().replace(/[a-zA-Z]+$/, '').trim();
-  if (routesAtStop && routesAtStop.length > 0) {
-    const known = new Set(routesAtStop.map(r => baseRoute(r)));
-    return topRoutes.find(p => p.confidence >= 25 && known.has(baseRoute(p.route))) || null;
-  }
-  const top = topRoutes[0];
-  return top.confidence >= 25 ? top : null;
-}
-
-/**
  * Returns " via [Agency]" if the trip agency differs from the user's default, otherwise "".
  * @param {string} tripAgency
  * @param {string} defaultAgency
@@ -259,9 +239,6 @@ async function maybeHandleStopDisambiguation({
         startTime: options.startTime || null,
         source: options.source || null,
         timing_reliability: options.timing_reliability || null,
-        prediction: null,
-        predictionV4: null,
-        predictionV5: null,
         endStopPrediction: null,
         endStopPredictions: null,
         endStopPredictionV4: null,
@@ -364,7 +341,6 @@ async function getAchievementNote(userId) {
 }
 
 module.exports = {
-  correctPredictionByGtfs,
   agencySuffix,
   getDisambiguationLabel,
   promptAgencyChoice,
