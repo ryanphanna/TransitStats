@@ -383,3 +383,20 @@ Code: `ml/eval/predictors/v6.py`, plus the tuning and extra checks in `ml/eval/v
     - The decay is by rank within a bucket, so each bucket updates incrementally: multiply its weights by exp(-λ), then add 1.
     - The rich buckets multiply keys, so it needs a split, for example one document per agency, route and start stop, to stay under the 1 MB limit. That is 1–2 reads per prediction.
     - The scorer itself is a 7-candidate dot product, so latency is negligible.
+
+### V6 rerank re-scored against V3 as served on main (3.5.0, 500-trip window)
+
+Same eval definition v1 (snapshot `78a4265b1519`, 409 rows, last 90 days n=160). Replay: `TZ=UTC node ml/eval/replay_js.js ... --limit 500` on main at `8ce7ae2`, passed as `--replay`, so both "V3 (as served)" and the rerank's V3 candidates and features come from current serving. Scored with `harness.py --task end --only v6,combo`.
+
+| Predictor | Top-1 [95% CI] | Top-3 | Coverage | Pre-90 / last 90d | vs V3 (90d) | vs B3 full (90d) | Conf ≥50 cov / prec | Conf ≥75 cov / prec |
+|---|---|---|---|---|---|---|---|---|
+| V3 (as served, main) | 50.6% [45.8–55.4] | 61.1% | 98.3% | 47.4% / 55.6% | 0 | +5.6 [-0.6, +11.2] | 80% / 60% | 60% / 70% |
+| B3 on full history | 45.2% [40.5–50.1] | 51.6% | 99.3% | 42.2% / 50.0% | -5.6 [-11.2, +0.6] | 0 | 70% / 60% | 51% / 64% |
+| V6 backoff, tuned (full history) | 49.9% [45.1–54.7] | 64.1% | 99.3% | 47.8% / 53.1% | -2.5 [-10.0, +5.0] | +3.1 [-3.1, +9.4] | | |
+| **V6 rerank (walk-forward logistic)** | **52.3% [47.5–57.1]** | 67.5% | 100% | 48.6% / 58.1% | **+2.5 [-1.9, +6.9]** | +8.1 [+3.8, +13.1] | 80% / 61% | 59% / 70% |
+
+- **Why V3 moved from 46.0% to 50.6%:** `predict_v3.js` is unchanged since 3.5.0, but the topology-constraint label matching (and `topology.json`) merged to main after it was scored. Replaying with the 3.5.0-era topology files reproduces 46.0%, and against that V3 the rerank still scores +7.5 [+1.9, +13.1].
+- **Retune on pre-90 folds:** rerank C in {0.1, 0.3, 1, 3, 10} spans 48.6–49.0% on the 249 tune rows (one row apart). C stays 1; nothing else was changed.
+- Most of the rerank's old margin was V3's coverage gap, which 3.5.0's backoff and the topology fix have since closed.
+
+**Decision:** the V6 rerank no longer passes the promotion rule. It beats B3 full (CI above 0) but not V3 as served now (+2.5, CI [-1.9, +6.9]). Shadow serving was not built. Re-check on the next snapshot; a larger last-90-day slice could settle a gain of this size.
