@@ -277,13 +277,15 @@ def decide(cand, published=None, n_classes=None):
             failures.append(f"{m}: only {classes[m]} end-stop classes (minimum {MIN_CLASSES})")
 
     pub_rows = published.get("rows", []) if published else []
-    overlap = paired(rows, pub_rows, MODELS[0])["n"] if published else 0
+    # Rows graded by another gate version are not comparable: fall back to the floors.
+    same_version = bool(published) and published.get("gate_version", GATE_VERSION) == cand.get("gate_version", GATE_VERSION)
+    overlap = paired(rows, pub_rows, MODELS[0])["n"] if same_version else 0
     if published:
         pub_n = int(published.get("summary", {}).get("n_rows", len(pub_rows)))
         if pub_n and n < (1 - MAX_ROW_DROP) * pub_n:
             failures.append(f"eval rows fell from {pub_n} to {n} (more than {MAX_ROW_DROP:.0%}): broken export?")
 
-    if published and overlap >= MIN_OVERLAP_PAIRED:
+    if same_version and overlap >= MIN_OVERLAP_PAIRED:
         report["path"] = "paired"
         for m in MODELS:
             pr = paired(rows, pub_rows, m)
@@ -295,7 +297,9 @@ def decide(cand, published=None, n_classes=None):
             if pr["cov_diff"] < -MAX_COVERAGE_DROP:
                 failures.append(f"{m}: coverage dropped {-pr['cov_diff']:.1%} (limit {MAX_COVERAGE_DROP:.0%})")
     else:
-        report["path"] = "first-run" if not published else f"floors (overlap {overlap} < {MIN_OVERLAP_PAIRED})"
+        report["path"] = ("first-run" if not published else
+                          f"floors (published gate v{published.get('gate_version')})" if not same_version else
+                          f"floors (overlap {overlap} < {MIN_OVERLAP_PAIRED})")
         s = summarize(rows)
         if n < MIN_ROWS:
             failures.append(f"only {n} eval rows (minimum {MIN_ROWS})")

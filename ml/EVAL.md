@@ -274,7 +274,7 @@ First run (no published `eval_rows.json`, including sets published before this g
 - Walk-forward top-1 must be at least the baseline's top-1 minus 5 points.
 - At least 50 eval rows and at least 3 classes.
 
-Any exception exits 2 and prints only the exception type and file:line, because the Actions logs are public. Any non-zero exit fails the job before upload, so `models/latest.json` is untouched.
+A published `eval_rows.json` from another `GATE_VERSION` is not paired, so the floors apply instead; bump it whenever grading or folds change. Any exception exits 2 and prints only the exception type and file:line, because the Actions logs are public. Any non-zero exit fails the job before upload, so `models/latest.json` is untouched.
 
 **Measured on the v1 snapshot** (the snapshot through `export_trips.build_rows`: 876 export rows; 174 eval rows in 7 folds; "held back" = the newest fold's trips removed before export, as if exported two weeks earlier; 169 rows):
 
@@ -289,7 +289,7 @@ Any exception exits 2 and prints only the exception type and file:line, because 
 The pre-v4v5 pipeline was loaded from `git show origin/main:ml/train_endstop.py` with one local-only patch: its inline count filters were moved into `apply_count_filters` so the gate can apply them per fold.
 
 **Why these thresholds.**
-- **Week-to-week noise of the paired comparison is zero** on this data. With a fixed calendar, an overlapping row has the same training rows every week, and both models are deterministic. Both pipelines gave 0 discordant rows between the full and held-back exports. Any discordance in production therefore comes from a real pipeline change, or from corrections to past trips.
+- **Week-to-week noise of the paired comparison is zero** on this data. With a fixed calendar, an overlapping row has the same training rows every week, and both models are deterministic. Both pipelines gave 0 discordant rows between the full and held-back exports. Any discordance in production therefore comes from a real pipeline change, or from retroactive data changes. Those are not covered by this measurement: a trip repaired or matched later lands in an old fold and changes that fold's training rows. **When the gate rejects, check first for data repairs since the published run.** With zero noise the CI rule is sensitive: at 150 overlapping rows, 4 one-sided losses (-2.7 points) reject and 3 pass (`test_ci_rule_boundary_at_150_rows`).
 - **The old gate's metric is noise.** The same unchanged pipeline's 80/20 numbers moved V4 top-1 63.5% → 61.2% and top-3 79.1% → 74.4% between the 7-day held-back and full exports, because the newest 20% is a different set of rows each week. That is within 0.3 points of its 5-point limit. Even the gate's own unpaired top-1 moved +1.5 points between those exports while the paired difference was exactly 0.
 - **One-run sampling error is about ±7 points** (95%, n≈170). So the floors and absolute numbers are coarse, and only the paired rules are sharp.
 - **5 points at ≥100 rows:** at about 150 overlapping rows, that is a net loss of 8 rows. The whole v4v5 rewrite (filters, features, canonicalization, class weights) moved only 9–15 rows, with a net of ±1. A drop past 5 points is well outside what even a large deliberate change produced, and the CI rule catches smaller consistent losses.

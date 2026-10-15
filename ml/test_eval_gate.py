@@ -139,6 +139,20 @@ class PairedRulesTest(unittest.TestCase):
         self.assertTrue(rep["path"].startswith("floors"), rep["path"])
         self.assertEqual(failures, [])
 
+    def test_other_gate_version_falls_back_to_floors(self):
+        r = rows_with([1] * 200, base=[1] * 200)
+        pub = dict(doc(rows_with([0] * 200)), gate_version=0)
+        failures, rep = g.decide(dict(doc(r), gate_version=1), pub)
+        self.assertIn("published gate v0", rep["path"])
+        self.assertEqual(failures, [])
+
+    def test_ci_rule_boundary_at_150_rows(self):
+        pub = rows_with([1] * 150)
+        three = rows_with([0] * 3 + [1] * 147)
+        four = rows_with([0] * 4 + [1] * 146)
+        self.assertEqual(g.decide(doc(three), doc(pub))[0], [])
+        self.assertTrue(g.decide(doc(four), doc(pub))[0])
+
     def test_bootstrap_is_reproducible(self):
         pub = rows_with([random.Random(i).randint(0, 1) for i in range(150)])
         cand = rows_with([random.Random(i + 7).randint(0, 1) for i in range(150)])
