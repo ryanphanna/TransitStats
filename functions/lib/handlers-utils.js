@@ -301,11 +301,24 @@ async function maybeHandleStopDisambiguation({
   return false;
 }
 
+// Admin SMS only lists end-stop guesses this confident. Weaker guesses (mostly V3 backoff
+// tiers) are still stored and graded, but never shown, so END n can't pick one either.
+const SHOWN_END_STOP_MIN_CONFIDENCE = 75;
+
+/**
+ * The stored end-stop guesses an admin is shown, in stored order. END 1/2/3 resolve
+ * against this same list, so the numbers always match the SMS.
+ */
+function getShownEndStopPredictions(predictions) {
+  return (predictions || []).filter(p => p && p.confidence >= SHOWN_END_STOP_MIN_CONFIDENCE);
+}
+
 /**
  * Build a conversational prediction prompt for the user.
  */
-function getPredictionPrompt(predictions) {
-  if (!predictions || predictions.length === 0) {
+function getPredictionPrompt(rawPredictions) {
+  const predictions = getShownEndStopPredictions(rawPredictions);
+  if (predictions.length === 0) {
     return '\n\nEND [stop] to finish. FORGOT if forgot to end.';
   }
 
@@ -360,5 +373,7 @@ module.exports = {
   isStopMatched,
   maybeHandleStopDisambiguation,
   getPredictionPrompt,
+  getShownEndStopPredictions,
+  SHOWN_END_STOP_MIN_CONFIDENCE,
   getAchievementNote,
 };

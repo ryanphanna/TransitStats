@@ -47,6 +47,11 @@ const {
 } = require('./gemini');
 const { parseStopInput } = require('./parsing');
 const { getEligibility, artifactSupportsAgency } = require('./intelligence-eligibility');
+
+// V3 votes over a longer window (3.5.0): the eval showed the 100-trip window was V3's main
+// coverage gap. V4/V5 eligibility keeps its original 100-trip window.
+const PREDICTION_HISTORY_LIMIT = 500;
+const ELIGIBILITY_HISTORY_LIMIT = 100;
 const {
   correctPredictionByGtfs,
   agencySuffix,
@@ -54,6 +59,7 @@ const {
   resolveTripAgency,
   maybeHandleStopDisambiguation,
   getPredictionPrompt,
+  getShownEndStopPredictions,
   getAchievementNote,
 } = require('./handlers-utils');
 
@@ -243,7 +249,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
   // Predictions read the owner's history, so an unconfirmed number skips them.
   if (!unconfirmed) try {
     const [history, stopsLibrary, routesAtStop, profile, networkGraph, habits, adminStatus, experimentalIntelligence] = await Promise.all([
-      getRecentCompletedTrips(user.userId, 100),
+      getRecentCompletedTrips(user.userId, PREDICTION_HISTORY_LIMIT),
       getStopsLibrary(),
       getRoutesAtStop(startStopCode, resolvedAgency),
       getUserProfile(user.userId),
@@ -263,7 +269,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
     const mlModels = ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
     const { routeV4Meta, routeV5Meta, endStopV4Meta, endStopV5Meta } = mlModels || {};
     const now = new Date();
-    const eligibility = getEligibility(history, resolvedAgency);
+    const eligibility = getEligibility(history.slice(0, ELIGIBILITY_HISTORY_LIMIT), resolvedAgency);
     const mlRouteReady = eligibility.routeEligible &&
       artifactSupportsAgency(routeV4Meta, resolvedAgency, 'agency::route') &&
       artifactSupportsAgency(routeV5Meta, resolvedAgency, 'agency::route');
@@ -468,7 +474,7 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
   let newStopData = null;
   try {
     const [history, stopsLibrary, routesAtStop, confirmProfile, confirmNetworkGraph, confirmAdminStatus, experimentalIntelligence] = await Promise.all([
-      getRecentCompletedTrips(user.userId, 100),
+      getRecentCompletedTrips(user.userId, PREDICTION_HISTORY_LIMIT),
       getStopsLibrary(),
       getRoutesAtStop(newTrip.stopCode, newTrip.agency),
       getUserProfile(user.userId),
@@ -486,7 +492,7 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
     const mlModels = ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
     const { routeV4Meta, routeV5Meta, endStopV4Meta, endStopV5Meta } = mlModels || {};
     const now = new Date();
-    const confirmEligibility = getEligibility(history, newTrip.agency);
+    const confirmEligibility = getEligibility(history.slice(0, ELIGIBILITY_HISTORY_LIMIT), newTrip.agency);
     const confirmMlRouteReady = confirmEligibility.routeEligible &&
       artifactSupportsAgency(routeV4Meta, newTrip.agency, 'agency::route') &&
       artifactSupportsAgency(routeV5Meta, newTrip.agency, 'agency::route');
@@ -648,7 +654,7 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
   if (/^[123]$/.test((endStopInput || '').trim())) {
     const shown = activeTrip.habitPrediction?.endStop
       ? [{ stop: activeTrip.habitPrediction.endStop }]
-      : activeTrip.endStopPredictions;
+      : getShownEndStopPredictions(activeTrip.endStopPredictions);
     if (endIsAdmin && shown?.length) {
       const idx = parseInt(endStopInput.trim(), 10) - 1;
       const predicted = shown[idx];

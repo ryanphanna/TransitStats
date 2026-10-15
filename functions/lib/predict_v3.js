@@ -9,6 +9,8 @@
  *   v2 - Stop-first filtering with multiplicative weighted voting.
  *   v3 - Stop canonicalization, distance-based day similarity, trip validity filter.
  *   topology filter - Post-inference for subway/LRT end stop predictions.
+ *   v3.5 - End-stop backoff tiers (route, stop, agency) when no exact route+stop history,
+ *          library stops with direction words are valid, 500-trip history window.
  */
 
 let _topology = null;
@@ -18,13 +20,20 @@ const { NetworkEngine } = require('./network');
 const TopologyConstraints = require('./topology-constraints');
 
 const PredictionEngineV3 = {
-  VERSION: '3.4.1',
+  VERSION: '3.5.0',
 
   CONFIG: {
     TIME_SIGMA_HOURS: 1.5,
     DECAY_HALFLIFE_RIDES: 100, // rides on same agency at which a trip's weight halves
     SEQUENCE_WINDOW_HOURS: 3,
     SEQUENCE_BOOST: 1.5,
+    // 3.5.0: a library stop name containing a direction word is a real stop, not a bad parse.
+    LIBRARY_STOPS_VALID: true,
+    // 3.5.0: when no past trip matches route + boarding stop, back off to the same route from
+    // any boarding stop, then the same boarding stop on any route, then the whole agency.
+    BACKOFF: true,
+    BACKOFF_ORDER: ['route', 'stop', 'agency'],
+    BACKOFF_CONFIDENCE: { route: 0.6, stop: 0.5, agency: 0.3 },
   },
 
   /**
@@ -156,33 +165,74 @@ const PredictionEngineV3 = {
     const normDir = context.direction ? this._normalizeDirection(context.direction) : null;
     const startStopName = context.startStopName ? context.startStopName.trim().toLowerCase() : null;
 
-    let candidates = history.filter(t => {
+    // Every tier votes over valid, same-agency trips that have an end stop.
+    const pool = history.filter(t => {
       if (!this._isValidTrip(t)) return false;
       if (!t.endStopName) return false;
       if (context.agency && !this._sameAgency(t.agency, context.agency)) return false;
-      return this._baseRoute(t.route) === routeFamily &&
-        this._stopMatch(t.startStopName, startStopName);
+      return true;
     });
 
-    if (candidates.length === 0) return [];
-
-    if (normDir) {
-      const withDir = candidates.filter(t => {
+    const sameStart = t => this._stopMatch(t.startStopName, startStopName);
+    const sameFamily = t => this._baseRoute(t.route) === routeFamily;
+    const preferDirection = list => {
+      if (!normDir) return list;
+      const withDir = list.filter(t => {
         const tDir = this._normalizeDirection(t.direction);
         return !tDir || tDir === normDir;
       });
-      if (withDir.length > 0) candidates = withDir;
+      return withDir.length > 0 ? withDir : list;
+    };
+    const notBoardingStop = t => !this._stopMatch(t.endStopName, startStopName);
+
+    // Tier 1 (exact, the only tier before 3.5.0): same route family from the same boarding stop.
+    // Backoff tiers fill in only when an earlier tier has no topology-legal candidates, so
+    // exact-tier predictions are unchanged. Confidence is scaled down per tier.
+    const tiers = [{ tier: 'exact', select: () => preferDirection(pool.filter(t => sameFamily(t) && sameStart(t))) }];
+    if (this.CONFIG.BACKOFF) {
+      const backoff = {
+        route: () => preferDirection(pool.filter(t => sameFamily(t) && notBoardingStop(t))),
+        stop: () => preferDirection(pool.filter(t => sameStart(t) && notBoardingStop(t))),
+        agency: () => pool.filter(notBoardingStop),
+      };
+      for (const tier of this.CONFIG.BACKOFF_ORDER) tiers.push({ tier, select: backoff[tier] });
     }
 
-    // Determine sequence context
-    const atTransferPoint = context.lastEndStopName 
-      ? this._stopMatch(context.lastEndStopName, startStopName)
-      : (this._getLastRecentTrip(history, now) && this._stopMatch(this._getLastRecentTrip(history, now).endStopName, startStopName));
+    let atTransferPoint = null;
+    let ridesAfterMap = null;
+    for (const { tier, select } of tiers) {
+      let candidates = select();
+      if (candidates.length === 0) continue;
+      // Pre-filter: remove trips that ended at a physically impossible stop.
+      candidates = this._preFilterCandidatesByTopology(candidates, context.route, startStopName, context.direction);
+      if (candidates.length === 0) continue;
 
-    // Pre-filter: remove trips that ended at a physically impossible stop.
-    candidates = this._preFilterCandidatesByTopology(candidates, context.route, startStopName, context.direction);
+      if (atTransferPoint === null) {
+        // Determine sequence context
+        const lastRecent = context.lastEndStopName ? null : this._getLastRecentTrip(history, now);
+        atTransferPoint = context.lastEndStopName
+          ? this._stopMatch(context.lastEndStopName, startStopName)
+          : !!(lastRecent && this._stopMatch(lastRecent.endStopName, startStopName));
+        ridesAfterMap = this._computeRidesAfter(history);
+      }
 
-    const ridesAfterMap = this._computeRidesAfter(history);
+      const ranked = this._voteEndStops(candidates, context, now, atTransferPoint, ridesAfterMap);
+      if (ranked.length === 0) continue;
+      const scale = tier === 'exact' ? 1 : this.CONFIG.BACKOFF_CONFIDENCE[tier];
+      return ranked.slice(0, topN).map(v => ({
+        stop: v.stop,
+        confidence: Math.round(v.share * 100 * scale),
+        tier,
+        version: this.VERSION,
+      }));
+    }
+    return [];
+  },
+
+  /**
+   * Weighted vote over candidate trips' end stops. Returns [{ stop, share }] best first.
+   */
+  _voteEndStops: function (candidates, context, now, atTransferPoint, ridesAfterMap) {
     const votes = {};
     let totalWeight = 0;
 
@@ -206,12 +256,9 @@ const PredictionEngineV3 = {
 
     if (totalWeight === 0) return [];
 
-    const sorted = Object.values(votes).sort((a, b) => b.weight - a.weight);
-    return sorted.slice(0, topN).map(v => ({
-      stop: v.stop,
-      confidence: Math.round((v.weight / totalWeight) * 100),
-      version: this.VERSION,
-    }));
+    return Object.values(votes)
+      .sort((a, b) => b.weight - a.weight)
+      .map(v => ({ stop: v.stop, share: v.weight / totalWeight }));
   },
 
   /**
@@ -249,7 +296,9 @@ const PredictionEngineV3 = {
     const stopStr = stop.toString();
     if (stopStr.length > 60) return false;
     const sentenceWords = /\b(i'm|i am|just|boarded|headed|northbound|southbound|eastbound|westbound)\b/i;
-    if (sentenceWords.test(stopStr)) return false;
+    // Real stops can carry a direction word (e.g. a "... Northbound Platform" entry), so a name
+    // found in the stops library is never treated as a bad sentence parse.
+    if (sentenceWords.test(stopStr) && !(this.CONFIG.LIBRARY_STOPS_VALID && this._isLibraryStop(stopStr))) return false;
 
     const routeStr = route.toString().trim();
     if (routeStr.length <= 4 && !/\d/.test(routeStr) && !/^line\s*\d/i.test(routeStr)) return false;
@@ -257,24 +306,51 @@ const PredictionEngineV3 = {
     return true;
   },
 
+  _normStopName: function (name) {
+    return name.trim().toLowerCase()
+      .replace(/\s*[/&@]\s*/g, '/')
+      .replace(/\s+at\s+/g, '/');
+  },
+
+  /**
+   * Normalized name/alias -> canonical name for the current stops library. Rebuilt whenever
+   * stopsLibrary is replaced; the first library entry that lists a name wins, as a linear
+   * find() over the library would.
+   */
+  _stopIndex: function () {
+    if (this._stopIndexFor !== this.stopsLibrary) {
+      const index = new Map();
+      for (const s of this.stopsLibrary || []) {
+        if (!s || !s.name) continue;
+        const canonical = this._normStopName(s.name);
+        for (const c of [s.name, ...(s.aliases || [])]) {
+          if (!c) continue;
+          const key = this._normStopName(c);
+          if (!index.has(key)) index.set(key, canonical);
+        }
+      }
+      this._stopIndexCache = index;
+      this._stopIndexFor = this.stopsLibrary;
+    }
+    return this._stopIndexCache;
+  },
+
+  /**
+   * True when the name (or one of its aliases) is an entry in the stops library.
+   */
+  _isLibraryStop: function (name) {
+    if (!name) return false;
+    return this._stopIndex().has(this._normStopName(name.toString()));
+  },
+
   /**
    * Resolve a stop name to its canonical form using the stops library.
    */
   _canonicalizeStop: function (name) {
     if (!name) return null;
-    const lower = name.trim().toLowerCase()
-      .replace(/\s*[/&@]\s*/g, '/')
-      .replace(/\s+at\s+/g, '/');
-    if (this.stopsLibrary && this.stopsLibrary.length > 0) {
-      const match = this.stopsLibrary.find(s => {
-        const candidates = [s.name, ...(s.aliases || [])];
-        return candidates.some(c => c.trim().toLowerCase()
-          .replace(/\s*[/&@]\s*/g, '/')
-          .replace(/\s+at\s+/g, '/') === lower);
-      });
-      if (match) return match.name.toLowerCase().replace(/\s*[/&@]\s*/g, '/').replace(/\s+at\s+/g, '/');
-    }
-    return lower;
+    const lower = this._normStopName(name);
+    const index = this._stopIndex();
+    return index.has(lower) ? index.get(lower) : lower;
   },
 
   _stopMatch: function (a, b) {
