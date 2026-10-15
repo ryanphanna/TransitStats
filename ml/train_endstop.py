@@ -190,7 +190,11 @@ def clean(df, lib, apply_filters=True):
     df["end_stop_key"] = df.apply(lambda row: f"{row['agency_id']}::{row['end_stop']}", axis=1)
     if not apply_filters:
         return df
+    return apply_count_filters(df)
 
+
+def apply_count_filters(df):
+    """The training-set count filters. ml/eval_gate.py applies them to each fold's training rows."""
     if MIN_ROUTE_STOP_TRIPS > 1:
         counts = df.groupby(["route_key", "start_stop"])["end_stop"].count()
         valid  = counts[counts >= MIN_ROUTE_STOP_TRIPS].reset_index()[["route_key", "start_stop"]]

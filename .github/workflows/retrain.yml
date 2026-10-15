@@ -28,49 +28,61 @@ jobs:
       - name: Install dependencies
         run: pip install -r ml/requirements.txt
 
-      - name: Save current model metrics
-        env:
-          FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
-        run: |
-          printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
-          trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
-          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
-          mkdir -p /tmp/transitstats-model-baseline
-          python3 - <<'EOF'
-          import json, os, firebase_admin
-          from firebase_admin import credentials, storage
-          key = os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
-          firebase_admin.initialize_app(credentials.Certificate(key), {"projectId": "transitstats-21ba4"})
-          bucket = storage.bucket(os.environ.get("ML_MODEL_BUCKET") or "transitstats-21ba4.firebasestorage.app")
-          pointer = bucket.blob("models/latest.json")
-          if not pointer.exists():
-              print("No published models yet (first run): skipping baseline")
-          else:
-              version = json.loads(pointer.download_as_bytes())["version"]
-              for name in ["model_v4_meta.json", "model_v4_endstop_meta.json", "model_v5_meta.json", "model_v5_endstop_meta.json"]:
-                  bucket.blob(f"models/{version}/{name}").download_to_filename("/tmp/transitstats-model-baseline/" + name)
-          EOF
-
-      - name: Export trips from Firestore
+      - name: Export trips and the stops library from Firestore
         env:
           TRANSITSTATS_PROJECT_ID: transitstats-21ba4
           # Only these users' trips are ever used for training (set as a repository secret).
           TRAIN_USER_IDS: ${{ secrets.TRAIN_USER_IDS }}
           FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
         run: |
+          set -euo pipefail
           printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
           trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
           GRPC_DNS_RESOLVER=native python3 ml/export_trips.py
+          # The training scripts and the gate read the stops library from this file: the key only
+          # exists inside this step. Same shape as train_endstop.load_stops_library().
+          python3 - <<'EOF'
+          import json, os, firebase_admin
+          from firebase_admin import credentials, firestore
+          firebase_admin.initialize_app(credentials.Certificate(os.environ["GOOGLE_APPLICATION_CREDENTIALS"]), {"projectId": "transitstats-21ba4"})
+          lib = [{"name": d.get("name"), "aliases": d.get("aliases", [])}
+                 for d in (doc.to_dict() for doc in firestore.client().collection("stops").stream())]
+          json.dump(lib, open(os.path.join(os.environ["RUNNER_TEMP"], "stops.json"), "w"))
+          print(f"Stops library: {len(lib)} stops")
+          EOF
 
       - name: Retrain end-stop models (V4 + V5)
-        run: GRPC_DNS_RESOLVER=native python3 ml/train_endstop.py
+        run: |
+          set -euo pipefail
+          python3 ml/train_endstop.py --stops-json "$RUNNER_TEMP/stops.json"
 
+      # Route models are not gated (they are being removed); they still train and upload as before.
       - name: Retrain route models (V4 + V5)
-        run: GRPC_DNS_RESOLVER=native python3 ml/train_routes.py
+        run: |
+          set -euo pipefail
+          STOPS_JSON="$RUNNER_TEMP/stops.json" python3 ml/train_routes.py
 
-      - name: Reject material model regressions
-        run: python3 ml/check_model_regression.py --baseline-dir /tmp/transitstats-model-baseline --candidate-dir ml
+      - name: Choose the model version
+        id: version
+        run: echo "version=$(date -u +%Y%m%dT%H%M%SZ)" >> "$GITHUB_OUTPUT"
+
+      # End-stop gate (ml/eval_gate.py, EVAL.md "Retrain gate v1"): walk-forward on a fixed fold
+      # calendar, paired against the published set's eval_rows.json. Any non-zero exit (rejected = 1,
+      # error = 2) fails the job here, so nothing below runs: no upload, models/latest.json untouched.
+      - name: End-stop retrain gate
+        env:
+          TRAIN_USER_IDS: ${{ secrets.TRAIN_USER_IDS }}
+          EVAL_ROW_SALT: ${{ secrets.EVAL_ROW_SALT }}
+          FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
+          trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          python3 ml/eval_gate.py --csv ml/trips.csv --stops-json "$RUNNER_TEMP/stops.json" \
+            --candidate-dir ml --out ml/eval_rows.json --version "${{ steps.version.outputs.version }}" \
+            --fetch-published
 
       - name: Set up Node
         uses: actions/setup-node@v7
@@ -84,10 +96,12 @@ jobs:
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
         run: |
+          set -euo pipefail
           printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
           trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
-          node functions/scripts/upload-models.js --dir ml
+          # eval_rows.json is next week's paired baseline; the pointer is written last.
+          node functions/scripts/upload-models.js --dir ml --require-eval-rows --version "${{ steps.version.outputs.version }}"
 
       - name: Append retrain results to MODEL_LOG
         run: |

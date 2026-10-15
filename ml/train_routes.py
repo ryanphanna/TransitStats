@@ -298,7 +298,9 @@ def main():
     load_policies()
 
     df = load_data()
-    lib = load_stops_library()
+    # CI dumps the stops library in the export step (which has the key); local runs read Firestore.
+    stops_json = os.environ.get("STOPS_JSON")
+    lib = json.load(open(stops_json)) if stops_json else load_stops_library()
     df = clean(df, lib)
     features, stop_columns = build_features(df)
     feature_names = features.columns.tolist()

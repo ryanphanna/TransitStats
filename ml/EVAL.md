@@ -247,3 +247,55 @@ V3 has 43% coverage at 66% precision.
    - The gate compares each run's own 80/20 top-1, which drops from about 79% to 61% on the same export once the filters are relaxed, because the holdout now keeps the rare-stop rows the old filters hid. The gate's limit is a 5-point drop.
    - **Needs** either a one-time baseline reset or the harness-based gate proposed above.
    - **Deploy order:** functions must deploy before the first retrain with this script. Old serving ignores `time_basis` and would feed UTC hours to a local-time model.
+
+## Retrain gate v1
+
+`ml/eval_gate.py` replaces `check_model_regression.py` (retired with its test) in `retrain.yml`. It gates the END-STOP models (V4, V5) only. Route models still train and upload as before, ungated, since they are being removed. Tests: `python3 -m unittest ml/test_eval_gate.py`.
+
+**What it scores.** It runs on the CI export (`export_trips.py`, `TRAIN_USER_IDS` allowlist), never a local CSV, and calls `train_endstop.py`'s own `clean` / `apply_count_filters` / `build_features` / `train_v4` / `train_v5`.
+- Folds: fixed 14-day calendar anchored at 2026-05-01 (the harness anchor). A trip's fold never depends on the export date.
+- Window: the last 90 days before the export's newest trip.
+- Per fold: fit on rows that started before the fold, with count filters, ride-count weights, feature columns and classes from those training rows only. The fold's rows are reindexed to the training columns, as serving does.
+- Grading is owned by the gate: the exported end stop and the model's label (agency prefix dropped) both go through the stops library with `ml_utils` canonicalization, so a pipeline can't grade itself better by changing its own labels.
+- An unseen class is a miss. Covered = the fold model fit and the trip's agency is in its training agencies. Top-1, top-3 and coverage are over all rows.
+- Baseline, same rows: most frequent end stop at (route, start stop) in the fold's training rows.
+- Known drift sources: retroactive trip corrections, and `compute_primary_agency_map`, which runs over the whole export.
+
+**Week to week.** On a pass it writes `eval_rows.json`: per row, an HMAC of the trip id (salt `EVAL_ROW_SALT`, else an HMAC of the `TRAIN_USER_IDS` secret; no salt fails closed), the fold, and [top-1, top-3, covered] for V4, V5 and the baseline. It goes only to private `models/<version>/` with the models, never to git or logs (`ml/eval_rows.json` is gitignored). The next run fetches the published one via `models/latest.json` and pairs rows on (key, fold).
+
+**Rule.** Reject (exit 1) if, for V4 or V5:
+- Paired top-1 difference has a 95% bootstrap CI (2,000 resamples, fixed seed) upper bound below 0.
+- Paired top-1 drops more than 5 points with at least 100 overlapping rows.
+- Paired coverage drops more than 5 points.
+- Eval rows fall more than 20% vs the published run (a broken export).
+- The shipped model has fewer than 3 end-stop classes.
+
+First run (no published `eval_rows.json`, including sets published before this gate), or fewer than 50 overlapping rows (the salt or allowlist changed):
+- Walk-forward top-1 must be at least the baseline's top-1 minus 5 points.
+- At least 50 eval rows and at least 3 classes.
+
+Any exception exits 2 and prints only the exception type and file:line, because the Actions logs are public. Any non-zero exit fails the job before upload, so `models/latest.json` is untouched.
+
+**Measured on the v1 snapshot** (the snapshot through `export_trips.build_rows`: 876 export rows; 174 eval rows in 7 folds; "held back" = the newest fold's trips removed before export, as if exported two weeks earlier; 169 rows):
+
+| Run | V4 top-1 / top-3 / cov | V5 top-1 / top-3 / cov | Baseline top-1 | Path, result |
+|---|---|---|---|---|
+| v4v5-fresh, first run | 47.7% / 60.9% / 98.3% | 45.4% / 61.5% / 98.3% | 48.3% (floor 43.3%) | first-run, pass |
+| Pre-v4v5 (origin/main) pipeline, held back ("published") | 43.8% / 53.8% / 97.6% | 43.8% / 56.2% / 97.6% | 44.4% | first-run, pass |
+| v4v5-fresh vs that published run | +0.7 [-3.4, +4.7], n=148, 9 discordant | -0.7 [-6.1, +4.7], 15 discordant | | paired, pass |
+| Same pipeline, full vs one fold held back (noise) | 0.0 [0.0, 0.0], n=148, 0 discordant | 0.0, 0 discordant | | paired, pass |
+| Same pipeline, full vs 7 days held back (noise) | 0.0, n=152, 0 discordant | 0.0, 0 discordant | | paired, pass |
+
+The pre-v4v5 pipeline was loaded from `git show origin/main:ml/train_endstop.py` with one local-only patch: its inline count filters were moved into `apply_count_filters` so the gate can apply them per fold.
+
+**Why these thresholds.**
+- **Week-to-week noise of the paired comparison is zero** on this data. With a fixed calendar, an overlapping row has the same training rows every week, and both models are deterministic. Both pipelines gave 0 discordant rows between the full and held-back exports. Any discordance in production therefore comes from a real pipeline change, or from corrections to past trips.
+- **The old gate's metric is noise.** The same unchanged pipeline's 80/20 numbers moved V4 top-1 63.5% → 61.2% and top-3 79.1% → 74.4% between the 7-day held-back and full exports, because the newest 20% is a different set of rows each week. That is within 0.3 points of its 5-point limit. Even the gate's own unpaired top-1 moved +1.5 points between those exports while the paired difference was exactly 0.
+- **One-run sampling error is about ±7 points** (95%, n≈170). So the floors and absolute numbers are coarse, and only the paired rules are sharp.
+- **5 points at ≥100 rows:** at about 150 overlapping rows, that is a net loss of 8 rows. The whole v4v5 rewrite (filters, features, canonicalization, class weights) moved only 9–15 rows, with a net of ±1. A drop past 5 points is well outside what even a large deliberate change produced, and the CI rule catches smaller consistent losses.
+- **Coverage, 5 points:** the coverage difference was 0.0 in every comparison.
+- **Rows, 20%:** natural change is a few rows a week (169 → 174 here); 20% is about 35 rows.
+- **Classes, 3:** the candidate ships 26 classes, the pre-v4v5 pipeline 9.
+- **First-run margin, 5 points:** the baseline is strong on this window. V4 is 0.6 below it and V5 is 2.9 below it, so V5 clears the floor by only 2.1 points (1.5 on the 7-day held-back export). Monday's first run will likely pass, but by a few rows. A first-run reject means "no better than a lookup table", not a regression.
+
+**Runtime:** 42–49 s wall for the gate on a laptop under `nice -n 15` (the pre-v4v5 pipeline takes about 20 s). That adds about a minute to a job that took about 1 minute, far inside the Actions limits.
