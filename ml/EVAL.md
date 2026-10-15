@@ -202,3 +202,100 @@ Segments (end-stop top-1), V3 3.5.0 vs 3.4.1:
 - **Admin display gate (applied):** the admin SMS list and END 1/2/3 only use guesses with confidence ≥75. All guesses are still stored and graded. Per the harness, a shown guess appears on 61.1% of the 409 rows and is right 62.0% of the time, vs 40.8% / 66.5% for 3.4.1 at the same gate.
 
 **Decision:** V3 3.5.0 beats V3 as served by +22.5 points (CI above 0), so it ships on this branch. It does **not** meet the promotion rule against B3 on full history: +3.8, CI [-3.1, +10.6]. It's at parity with B3 or slightly ahead, but not significantly. Merging is for the manager to decide. The validity fix (item 1) stands alone as a correctness fix that doesn't regress (+8.8 at the 100 window).
+
+## V4/V5 end stop: fresh fit, relaxed filters, serve-parity features
+
+Scored by `ml/eval/predictors/v45.py` (`--only v45`). "Weekly" rows refit at each Monday 04:00 UTC retrain, as `retrain.yml` does. The shipped row is the exact config the training script now uses. End stop, n=409; deltas are paired top-1 on the last 90 days (n=160), with 95% CIs.
+
+| Predictor | Top-1 [95% CI] | Top-3 | Coverage | vs V3 (90d) | vs B3 full (90d) |
+|---|---|---|---|---|---|
+| V4 as deployed (80% fit, weekly; before) | 28.6% | 34.5% | 88.0% | +10.6 | -8.1 |
+| V5 as deployed (80% fit, weekly; before) | 27.9% | 34.5% | 88.0% | +8.1 | -10.6 |
+| H1 V4 weekly, 100% fit, shipped features | 34.5% | 41.1% | 88.0% | +12.5 | -6.2 |
+| H1 V5 weekly, 100% fit, shipped features | 35.5% | 41.3% | 88.0% | +13.8 | -5.0 |
+| V4 per fold, skew fixed + local, balanced (ref) | 34.0% | 40.8% | 88.0% | +13.8 | -5.0 |
+| H2 V4 ref, no class weight | 35.5% | 40.6% | 88.0% | +17.5 | -1.2 |
+| H2 V5 ref, regularized XGB (depth 3, 150 trees) | 34.0% (ref 34.2%) | 40.6% | 88.0% | +13.1 | -5.6 |
+| V4 no class weight + relaxed filters | 40.1% | 50.1% | 88.0% | +16.2 | -2.5 |
+| V5 relaxed filters | 37.4% | 47.9% | 88.0% | +14.4 | -4.4 |
+| H4 V4 relaxed + unseen-stop augmentation | 41.3% | 50.4% | 88.0% | +18.8 | 0.0 [-6.9, +6.9] |
+| H4 V5 relaxed + unseen-stop augmentation | 38.4% | 47.7% | 88.0% | +16.9 | -1.9 |
+| **V4 shipped (after): weekly, 100% fit, serve-parity + local time, no class weight, relaxed** | **40.8% [36.2–45.7]** | 49.4% | 88.0% | **+18.1 [+10.0, +26.2]** | -0.6 [-7.5, +6.2] |
+| **V5 shipped (after)** | **38.1% [33.6–42.9]** | 48.9% | 88.0% | **+15.6 [+8.8, +23.1]** | -3.1 [-10.0, +4.4] |
+| V4 shipped, topology-masked | 40.6% | 46.5% | 82.9% | +22.5 | +3.8 [-3.1, +10.6] |
+| V5 shipped, topology-masked | 39.4% | 46.5% | 82.9% | +21.2 | +2.5 [-4.4, +10.0] |
+
+"Relaxed filters" drops the route+start-stop ≥ 5 rule and lowers the end-stop class minimum from 10 to 5. Minimums of 3 and 2 scored within a point of 5. Shipped V4 thresholds:
+- Confidence ≥ 50: coverage 46%, precision 72%.
+- Confidence ≥ 75: coverage 21%, precision 87%.
+
+V3 has 43% coverage at 66% precision.
+
+1. **Freshness (H1) is real:** +6 to +8 points from fitting on 100% instead of holding back the newest 20%. The training script still measures top-1/top-3 on an 80/20 split for the regression gate, then refits on 100% for the shipped model.
+2. **The count filters were the biggest lever:** +5 points. They threw away most rare route+stop rows.
+3. **Class weights (H2):** dropping `balanced` gives V4 +1.5. A regularized XGB is neutral (not shipped).
+4. **Skews and local time (H3)** are shipped as correctness fixes; their accuracy effect stays within noise, as in v1.
+   - `export_trips.py` now builds `serve_prev_route`, `serve_last_end_stop` and `serve_minutes_since_last_trip` from serving's `history[0]`: the newest 100 completed trips by end time, with the serving filter.
+   - It also adds `local_hour` / `local_day_of_week` in the trip's agency zone (DST-aware).
+   - `train_endstop.py` scopes the route and the previous route with the current agency and the primary agency.
+   - Stop canonicalization now uses the same regex steps as `ml_utils.canonicalizeStop`.
+   - **Parity:** on the v1 snapshot, the training features equal the harness's serve-faithful features on 876/876 clean trips. `ml/test_feature_parity.py` and `functions/test_ml_feature_parity.js` check both sides against one synthetic fixture, which includes a DST fall-back, a late-evening weekday shift, LA and unmapped agencies, and unclean history.
+5. **Unseen start stops (H4):** training copies of each row without the stop one-hot gave +1 for both models. That is within noise and not shipped.
+6. **Promotion:** both models beat V3 as served with a CI above 0. Neither beats B3 on full history: V4 is -0.6, CI [-7.5, +6.2]. Serving them to users therefore isn't justified by this eval.
+   - **Decision:** ship the training and serving changes as freshness and correctness fixes for the shadow models, not as a user-facing switch.
+7. **The current regression gate will reject the first retrain.** It isn't a real regression.
+   - The gate compares each run's own 80/20 top-1, which drops from about 79% to 61% on the same export once the filters are relaxed, because the holdout now keeps the rare-stop rows the old filters hid. The gate's limit is a 5-point drop.
+   - **Needs** either a one-time baseline reset or the harness-based gate proposed above.
+   - **Deploy order:** functions must deploy before the first retrain with this script. Old serving ignores `time_basis` and would feed UTC hours to a local-time model.
+
+## Retrain gate v1
+
+`ml/eval_gate.py` replaces `check_model_regression.py` (retired with its test) in `retrain.yml`. It gates the END-STOP models (V4, V5) only. Route models still train and upload as before, ungated, since they are being removed. Tests: `python3 -m unittest ml/test_eval_gate.py`.
+
+**What it scores.** It runs on the CI export (`export_trips.py`, `TRAIN_USER_IDS` allowlist), never a local CSV, and calls `train_endstop.py`'s own `clean` / `apply_count_filters` / `build_features` / `train_v4` / `train_v5`.
+- Folds: fixed 14-day calendar anchored at 2026-05-01 (the harness anchor). A trip's fold never depends on the export date.
+- Window: the last 90 days before the export's newest trip.
+- Per fold: fit on rows that started before the fold, with count filters, ride-count weights, feature columns and classes from those training rows only. The fold's rows are reindexed to the training columns, as serving does.
+- Grading is owned by the gate: the exported end stop and the model's label (agency prefix dropped) both go through the stops library with `ml_utils` canonicalization, so a pipeline can't grade itself better by changing its own labels.
+- An unseen class is a miss. Covered = the fold model fit and the trip's agency is in its training agencies. Top-1, top-3 and coverage are over all rows.
+- Baseline, same rows: most frequent end stop at (route, start stop) in the fold's training rows.
+- Known drift sources: retroactive trip corrections, and `compute_primary_agency_map`, which runs over the whole export.
+
+**Week to week.** On a pass it writes `eval_rows.json`: per row, an HMAC of the trip id (salt `EVAL_ROW_SALT`, else an HMAC of the `TRAIN_USER_IDS` secret; no salt fails closed), the fold, and [top-1, top-3, covered] for V4, V5 and the baseline. It goes only to private `models/<version>/` with the models, never to git or logs (`ml/eval_rows.json` is gitignored). The next run fetches the published one via `models/latest.json` and pairs rows on (key, fold).
+
+**Rule.** Reject (exit 1) if, for V4 or V5:
+- Paired top-1 difference has a 95% bootstrap CI (2,000 resamples, fixed seed) upper bound below 0.
+- Paired top-1 drops more than 5 points with at least 100 overlapping rows.
+- Paired coverage drops more than 5 points.
+- Eval rows fall more than 20% vs the published run (a broken export).
+- The shipped model has fewer than 3 end-stop classes.
+
+First run (no published `eval_rows.json`, including sets published before this gate), or fewer than 50 overlapping rows (the salt or allowlist changed):
+- Walk-forward top-1 must be at least the baseline's top-1 minus 5 points.
+- At least 50 eval rows and at least 3 classes.
+
+A published `eval_rows.json` from another `GATE_VERSION` is not paired, so the floors apply instead; bump it whenever grading or folds change. Any exception exits 2 and prints only the exception type and file:line, because the Actions logs are public. Any non-zero exit fails the job before upload, so `models/latest.json` is untouched.
+
+**Measured on the v1 snapshot** (the snapshot through `export_trips.build_rows`: 876 export rows; 174 eval rows in 7 folds; "held back" = the newest fold's trips removed before export, as if exported two weeks earlier; 169 rows):
+
+| Run | V4 top-1 / top-3 / cov | V5 top-1 / top-3 / cov | Baseline top-1 | Path, result |
+|---|---|---|---|---|
+| v4v5-fresh, first run | 47.7% / 60.9% / 98.3% | 45.4% / 61.5% / 98.3% | 48.3% (floor 43.3%) | first-run, pass |
+| Pre-v4v5 (origin/main) pipeline, held back ("published") | 43.8% / 53.8% / 97.6% | 43.8% / 56.2% / 97.6% | 44.4% | first-run, pass |
+| v4v5-fresh vs that published run | +0.7 [-3.4, +4.7], n=148, 9 discordant | -0.7 [-6.1, +4.7], 15 discordant | | paired, pass |
+| Same pipeline, full vs one fold held back (noise) | 0.0 [0.0, 0.0], n=148, 0 discordant | 0.0, 0 discordant | | paired, pass |
+| Same pipeline, full vs 7 days held back (noise) | 0.0, n=152, 0 discordant | 0.0, 0 discordant | | paired, pass |
+
+The pre-v4v5 pipeline was loaded from `git show origin/main:ml/train_endstop.py` with one local-only patch: its inline count filters were moved into `apply_count_filters` so the gate can apply them per fold.
+
+**Why these thresholds.**
+- **Week-to-week noise of the paired comparison is zero** on this data. With a fixed calendar, an overlapping row has the same training rows every week, and both models are deterministic. Both pipelines gave 0 discordant rows between the full and held-back exports. Any discordance in production therefore comes from a real pipeline change, or from retroactive data changes. Those are not covered by this measurement: a trip repaired or matched later lands in an old fold and changes that fold's training rows. **When the gate rejects, check first for data repairs since the published run.** With zero noise the CI rule is sensitive: at 150 overlapping rows, 4 one-sided losses (-2.7 points) reject and 3 pass (`test_ci_rule_boundary_at_150_rows`).
+- **The old gate's metric is noise.** The same unchanged pipeline's 80/20 numbers moved V4 top-1 63.5% → 61.2% and top-3 79.1% → 74.4% between the 7-day held-back and full exports, because the newest 20% is a different set of rows each week. That is within 0.3 points of its 5-point limit. Even the gate's own unpaired top-1 moved +1.5 points between those exports while the paired difference was exactly 0.
+- **One-run sampling error is about ±7 points** (95%, n≈170). So the floors and absolute numbers are coarse, and only the paired rules are sharp.
+- **5 points at ≥100 rows:** at about 150 overlapping rows, that is a net loss of 8 rows. The whole v4v5 rewrite (filters, features, canonicalization, class weights) moved only 9–15 rows, with a net of ±1. A drop past 5 points is well outside what even a large deliberate change produced, and the CI rule catches smaller consistent losses.
+- **Coverage, 5 points:** the coverage difference was 0.0 in every comparison.
+- **Rows, 20%:** natural change is a few rows a week (169 → 174 here); 20% is about 35 rows.
+- **Classes, 3:** the candidate ships 26 classes, the pre-v4v5 pipeline 9.
+- **First-run margin, 5 points:** the baseline is strong on this window. V4 is 0.6 below it and V5 is 2.9 below it, so V5 clears the floor by only 2.1 points (1.5 on the 7-day held-back export). Monday's first run will likely pass, but by a few rows. A first-run reject means "no better than a lookup table", not a regression.
+
+**Runtime:** 42–49 s wall for the gate on a laptop under `nice -n 15` (the pre-v4v5 pipeline takes about 20 s). That adds about a minute to a job that took about 1 minute, far inside the Actions limits.

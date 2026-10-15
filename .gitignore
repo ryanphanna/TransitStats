@@ -72,3 +72,6 @@ ml/trips.csv
 ml/v6_*.json
 functions/lib/model_v*
 Tools/undo/
+
+# Retrain gate per-trip results (private: uploaded only to models/<version>/)
+ml/eval_rows.json

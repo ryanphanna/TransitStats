@@ -6,7 +6,7 @@
  */
 
 const ModelStore = require('./model-store');
-const { canonicalizeStop, getStopFeature, scopedRouteKey, normalizeDirectionForMl, displayScopedRouteLabel, displayScopedStopLabel, getGapFeatures, loadPolicies } = require('./ml_utils');
+const { canonicalizeStop, getStopFeature, scopedRouteKey, displayScopedRouteLabel, displayScopedStopLabel, loadPolicies, buildEndStopFeatures, toFeatureVector } = require('./ml_utils');
 const logger = require('./logger');
 const TopologyConstraints = require('./topology-constraints');
 
@@ -28,7 +28,7 @@ try {
 }
 
 const PredictionEngineV4 = {
-  VERSION: '4.5',
+  VERSION: '4.6',
 
   /**
    * Guess the next route given the current stop and time.
@@ -104,44 +104,8 @@ const PredictionEngineV4 = {
     if (!endStopModel) return [];
     if (!context || !context.time || !context.startStopName) return [];
 
-    const date = context.time instanceof Date ? context.time : new Date(context.time);
-    const hour  = date.getHours();
-    const pyDay = (date.getDay() + 6) % 7;
-
-    const hour_sin = Math.sin(2 * Math.PI * hour / 24);
-    const hour_cos = Math.cos(2 * Math.PI * hour / 24);
-    const day_sin  = Math.sin(2 * Math.PI * pyDay / 7);
-    const day_cos  = Math.cos(2 * Math.PI * pyDay / 7);
-
-    const cleanRoute = scopedRouteKey(context.route, context.agency, context.primaryAgency || context.defaultAgency).toString().toLowerCase();
-    const prevRoute = scopedRouteKey(context.lastRoute, context.agency, context.primaryAgency || context.defaultAgency) || 'none';
-    const stopFeature = getStopFeature(context.startStopName, context.stopsLibrary);
-    const lastStopKey = context.lastEndStopName
-      ? getStopFeature(context.lastEndStopName, context.stopsLibrary).replace('stop_', '')
-      : 'none';
-    const lastStopFeature = `last_stop_${lastStopKey}`;
-    const prevRouteFeature = `prev_route_${prevRoute.toString().toLowerCase()}`;
-    const { gapLog, gapMissing } = getGapFeatures(context.minutesSinceLastTrip);
-    const dirNorm = normalizeDirectionForMl(context.direction);
-    const dirFeature = dirNorm ? `dir_${dirNorm}` : null;
-    const agencyFeature = `agency_${String(context.agency || 'unknown').toLowerCase().trim().replace(/[^a-z0-9]/g, '_')}`;
-
-    const x = new Array(endStopModel.feature_names.length).fill(0);
-    for (let i = 0; i < endStopModel.feature_names.length; i++) {
-      const fn = endStopModel.feature_names[i];
-      if      (fn === 'hour_sin')            x[i] = hour_sin;
-      else if (fn === 'hour_cos')            x[i] = hour_cos;
-      else if (fn === 'day_sin')             x[i] = day_sin;
-      else if (fn === 'day_cos')             x[i] = day_cos;
-      else if (fn === 'gap_log')             x[i] = gapLog;
-      else if (fn === 'gap_missing')         x[i] = gapMissing;
-      else if (fn === agencyFeature)         x[i] = 1.0;
-      else if (fn === stopFeature)           x[i] = 1.0;
-      else if (fn === `route_${cleanRoute}`) x[i] = 1.0;
-      else if (fn === prevRouteFeature)      x[i] = 1.0;
-      else if (fn === lastStopFeature)       x[i] = 1.0;
-      else if (dirFeature && fn === dirFeature) x[i] = 1.0;
-    }
+    // Shared with training's feature parity test; local time when the artifact was trained on it.
+    const x = toFeatureVector(buildEndStopFeatures(context, endStopModel.time_basis), endStopModel.feature_names, Array);
 
     const logits = endStopModel.classes.map((_, c) => {
       let z = endStopModel.intercept[c];

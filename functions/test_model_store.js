@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const ModelStore = require('./lib/model-store');
-const { uploadModels } = require('./scripts/upload-models');
+const { uploadModels, parseArgs, EVAL_ROWS_FILE } = require('./scripts/upload-models');
 
 function writeFixtureModels(dir) {
   for (const name of ModelStore.MODEL_FILE_NAMES) {
@@ -116,4 +116,40 @@ test('upload script: fails loudly when the bucket does not exist', async () => {
   const bucket = { name: 'nope', exists: async () => [false], upload: async () => { throw new Error('should not upload'); } };
   await assert.rejects(() => uploadModels({ dir, bucket, bucketLabel: 'nope', log: () => {} }), /does not exist.*Firebase Storage/);
   await assert.rejects(() => uploadModels({ dir, bucket, bucketLabel: 'nope', dryRun: true, log: () => {} }), /does not exist/);
+});
+
+test('upload script: eval_rows.json goes with the set, pointer still last; required when asked', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'models-up5-'));
+  writeFixtureModels(dir);
+  const events = [];
+  const bucket = {
+    name: 'b',
+    upload: async (src, opts) => events.push(opts.destination),
+    file: name => ({ save: async body => events.push(`${name}=${body}`) }),
+  };
+  await assert.rejects(() => uploadModels({ dir, bucket, requireEvalRows: true, log: () => {} }), /Missing model files.*eval_rows\.json/);
+  assert.equal(events.length, 0);
+
+  fs.writeFileSync(path.join(dir, EVAL_ROWS_FILE), JSON.stringify({ rows: [] }));
+  await uploadModels({ dir, bucket, version: 'v2', requireEvalRows: true, log: () => {} });
+  assert.ok(events.includes(`models/v2/${EVAL_ROWS_FILE}`));
+  assert.equal(events.length, ModelStore.MODEL_FILE_NAMES.length + 2);
+  assert.match(events.at(-1), /^models\/latest\.json=.*"version":"v2"/);
+});
+
+test('eval_rows.json is never a model file, so serving never loads it', async () => {
+  assert.ok(!ModelStore.MODEL_FILE_NAMES.includes(EVAL_ROWS_FILE));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'models-up6-'));
+  writeFixtureModels(dir);
+  fs.writeFileSync(path.join(dir, EVAL_ROWS_FILE), 'not json at all');
+  process.env.ML_MODEL_DIR = dir;
+  const models = await ModelStore.ensure();
+  assert.ok(models);
+  assert.ok(!Object.values(models).some(v => v && v.rows));
+});
+
+test('upload script: --version and --require-eval-rows parse', () => {
+  const a = parseArgs(['--dir', 'ml', '--version', '20261019T040000Z', '--require-eval-rows']);
+  assert.equal(a.version, '20261019T040000Z');
+  assert.equal(a.requireEvalRows, true);
 });

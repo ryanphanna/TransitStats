@@ -33,6 +33,8 @@ const BINARY_FILES = {
   endStopV5Onnx: 'model_v5_endstop.onnx',
 };
 const MODEL_FILE_NAMES = [...Object.values(JSON_FILES), ...Object.values(BINARY_FILES)];
+// models/<version>/ also holds eval_rows.json (the retrain gate's per-trip results). It is not a
+// model file: it is deliberately absent from these lists, so serving never downloads it.
 
 let _models = null;
 let _checkedAt = 0;

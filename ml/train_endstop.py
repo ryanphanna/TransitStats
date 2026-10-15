@@ -56,6 +56,17 @@ KEY_PATH = os.path.expanduser("~/Desktop/Dev/Credentials/Firebase for Transit St
 CSV_PATH = os.path.join(os.path.dirname(__file__), "trips.csv")
 OUT_DIR  = os.path.dirname(__file__)
 
+# Scored in ml/eval (EVAL.md, "V4/V5: fresh fit, serve-parity features").
+# Was route+stop >= 5 and end class >= 10, which threw away rows the model needs (+5 points top-1
+# when relaxed); class_weight="balanced" cost V4 about 1.5 points.
+MIN_ROUTE_STOP_TRIPS = 1    # 1 = keep every route+start-stop combo
+MIN_END_STOP_TRIPS = 5      # end-stop classes with fewer trips are dropped
+V4_CLASS_WEIGHT = None
+V5_PARAMS = dict(n_estimators=200, max_depth=4, learning_rate=0.1)
+# Serving reads this to build hour/day features in local time (ml_utils.getHourAndDay).
+TIME_BASIS = "local"
+EVALUATION_METHOD = "chronological_holdout_20_percent; shipped model refit on 100%"
+
 
 # ---------------------------------------------------------------------------
 # 1. Data Prep
@@ -95,11 +106,11 @@ def normalize_direction(d):
     return _DIRECTION_MAP.get(s, s or None)
 
 def _normalize_stop_str(s):
+    """Same steps, in the same order, as canonicalizeStop() in functions/lib/ml_utils.js."""
     s = str(s).strip().lower()
     s = re.sub(r"\s+and\s+", "/", s)
-    s = s.replace(" & ", "/").replace(" @ ", "/")
+    s = re.sub(r"\s*[/&@]\s*", "/", s)
     s = re.sub(r"\s+at\s+", "/", s)
-    s = re.sub(r"\s*/\s*", "/", s)
     return s
 
 def canonicalize_stop(name, lib):
@@ -134,57 +145,63 @@ def compute_ride_count_weights(df, halflife_rides=100):
     weight_series = df_sorted.set_index("index")["_weight"]
     return df.index.map(weight_series).values
 
-def clean(df, lib):
+def clean(df, lib, apply_filters=True):
+    """Features match serving (predict_v4/v5.js guessTopEndStops): the route and previous route are
+    both scoped with the CURRENT trip's agency and the user's primary agency, and the sequence
+    columns (prev_route, last_end_stop, minutes_since_last_trip) come from export_trips.py, which
+    builds them from serving's history[0]."""
     df = df.copy()
     df["route"]      = df["route"].astype(str).str.strip()
-    df["prev_route"] = df["prev_route"].fillna("").astype(str).str.strip()
+    # Serve-faithful columns from export_trips.py (the plain prev_route/hour columns are the route
+    # models' and keep their old meaning).
+    df["prev_route"] = df["serve_prev_route"].fillna("").astype(str).str.strip()
+    df["last_end_stop"] = df["serve_last_end_stop"].fillna("").astype(str).str.strip()
     df["start_stop"] = df["start_stop"].str.strip()
     df["end_stop"]   = df["end_stop"].str.strip()
-    df["hour"]       = df["hour_of_day"].astype(int)
-    df["day"]        = df["day_of_week"].astype(int)
+    df["hour"]       = df["local_hour"].astype(int)
+    df["day"]        = df["local_day_of_week"].astype(int)
     df["minutes_since_last_trip"] = pd.to_numeric(
-        df.get("minutes_since_last_trip"), errors="coerce"
+        df.get("serve_minutes_since_last_trip"), errors="coerce"
     )
 
     primary_map = compute_primary_agency_map(df)
 
-    def _normalize_route(row, col):
-        agency = row.get('prev_agency') if col == 'prev_route' else row.get(col)
-        agency = agency or row.get('agency')
+    def _primary(row):
         user_id = row.get('user_id')
-        primary = primary_map.get(user_id) if user_id else None
-        return normalize_route_for_ml(route=row.get(col), agency=agency, primary_agency=primary)
+        return primary_map.get(user_id) if user_id else None
 
-    df["route_base"] = df.apply(lambda row: _normalize_route(row, "route"), axis=1)
-    df["prev_route_base"] = df.apply(lambda row: _normalize_route(row, "prev_route"), axis=1)
     df["agency_id"] = df["agency"].map(agency_id)
-    df["route_key"] = df.apply(lambda row: scoped_route_key(row["route"], row["agency"]), axis=1)
+    df["route_key"] = df.apply(lambda row: scoped_route_key(row["route"], row["agency"], _primary(row)), axis=1)
     df["prev_route_key"] = df.apply(
-        lambda row: scoped_route_key(row["prev_route"], row.get("prev_agency") or row["agency"]),
+        lambda row: (scoped_route_key(row["prev_route"], row["agency"], _primary(row)) or "none")
+        if row["prev_route"] else "none",
         axis=1,
     )
     df["start_stop"] = df["start_stop"].apply(lambda x: canonicalize_stop(x, lib))
     df["end_stop"] = df["end_stop"].apply(lambda x: canonicalize_stop(x, lib))
+    df["last_end_stop"] = df["last_end_stop"].apply(lambda x: canonicalize_stop(x, lib) if x else "none")
     df["direction_norm"] = df["direction"].apply(normalize_direction)
-
-    # Add sequence feature: last_end_stop
     df = df.sort_values(["user_id", "start_time"])
-    df["last_end_stop"] = df.groupby("user_id")["end_stop"].shift(1).fillna("none")
-    df["prev_route_base"] = df["prev_route_base"].replace("", "none").fillna("none")
     df["minutes_since_last_trip"] = df["minutes_since_last_trip"].fillna(-1)
     df["gap_missing"] = (df["minutes_since_last_trip"] < 0).astype(int)
     df["gap_minutes_capped"] = df["minutes_since_last_trip"].clip(lower=0, upper=720)
     df["gap_log"] = np.log1p(df["gap_minutes_capped"]) / math.log1p(720)
 
-    # Filter to combos with >= 5 trips
-    counts = df.groupby(["route_key", "start_stop"])["end_stop"].count()
-    valid  = counts[counts >= 5].reset_index()[["route_key", "start_stop"]]
-    df = df.merge(valid, on=["route_key", "start_stop"], how="inner")
-
-    # Filter to end_stop classes with >= 10 occurrences
     df["end_stop_key"] = df.apply(lambda row: f"{row['agency_id']}::{row['end_stop']}", axis=1)
+    if not apply_filters:
+        return df
+    return apply_count_filters(df)
+
+
+def apply_count_filters(df):
+    """The training-set count filters. ml/eval_gate.py applies them to each fold's training rows."""
+    if MIN_ROUTE_STOP_TRIPS > 1:
+        counts = df.groupby(["route_key", "start_stop"])["end_stop"].count()
+        valid  = counts[counts >= MIN_ROUTE_STOP_TRIPS].reset_index()[["route_key", "start_stop"]]
+        df = df.merge(valid, on=["route_key", "start_stop"], how="inner")
+
     end_counts = df["end_stop_key"].value_counts()
-    df = df[df["end_stop_key"].isin(end_counts[end_counts >= 10].index)]
+    df = df[df["end_stop_key"].isin(end_counts[end_counts >= MIN_END_STOP_TRIPS].index)]
 
     print(f"After cleaning: {len(df)} trips, {df['end_stop'].nunique()} end stop classes")
     return df
@@ -229,7 +246,7 @@ def train_v4(X_train, y_train, classes, weights_train=None):
     le = LabelEncoder()
     le.fit(classes)
     y_enc = le.transform(y_train)
-    model = LogisticRegression(max_iter=1000, class_weight="balanced")
+    model = LogisticRegression(max_iter=1000, class_weight=V4_CLASS_WEIGHT)
     model.fit(X_train, y_enc, sample_weight=weights_train)
     return model, le
 
@@ -239,10 +256,7 @@ def train_v5(X_train, y_train, classes, weights_train=None):
     le = LabelEncoder()
     le.fit(classes)
     y_enc = le.transform(y_train)
-    model = XGBClassifier(
-        n_estimators=200, max_depth=4, learning_rate=0.1,
-        use_label_encoder=False, eval_metric="mlogloss", verbosity=0,
-    )
+    model = XGBClassifier(**V5_PARAMS, eval_metric="mlogloss", verbosity=0, random_state=42)
     model.fit(X_train.values, y_enc, sample_weight=weights_train)
     return model, le
 
@@ -280,7 +294,7 @@ def export_v4(model, le, feature_names, top1, top3, n_trips, agencies):
         "feature_schema_version": 2,
         "agencies": sorted(agencies),
         "label_schema": "agency::end_stop",
-        "evaluation_method": "chronological_holdout_20_percent",
+        "evaluation_method": EVALUATION_METHOD, "time_basis": TIME_BASIS,
     }
     path = os.path.join(OUT_DIR, "model_v4_endstop.json")
     with open(path, "w") as f: json.dump(out, f)
@@ -291,7 +305,7 @@ def export_v4(model, le, feature_names, top1, top3, n_trips, agencies):
         "classes": le.classes_.tolist(), "feature_names": feature_names,
         "top1_accuracy": round(top1, 4), "top3_accuracy": round(top3, 4), "n_trips": n_trips,
         "feature_schema_version": 2, "agencies": sorted(agencies),
-        "label_schema": "agency::end_stop", "evaluation_method": "chronological_holdout_20_percent",
+        "label_schema": "agency::end_stop", "evaluation_method": EVALUATION_METHOD, "time_basis": TIME_BASIS,
     }
     with open(os.path.join(OUT_DIR, "model_v4_endstop_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
@@ -313,7 +327,7 @@ def export_v5(model, le, feature_names, top1, top3, n_trips, agencies):
         "feature_names": feature_names, "top1_accuracy": round(top1, 4),
         "top3_accuracy": round(top3, 4), "n_trips": n_trips,
         "feature_schema_version": 2, "agencies": sorted(agencies),
-        "label_schema": "agency::end_stop", "evaluation_method": "chronological_holdout_20_percent",
+        "label_schema": "agency::end_stop", "evaluation_method": EVALUATION_METHOD, "time_basis": TIME_BASIS,
     }
     with open(os.path.join(OUT_DIR, "model_v5_endstop_meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
@@ -329,10 +343,20 @@ def mirror_to_lib():
             print(f"  {fname} → functions/lib/")
 
 def main():
+    import argparse
+    global CSV_PATH, OUT_DIR
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--csv", help="trips CSV (default ml/trips.csv)")
+    ap.add_argument("--stops-json", help="stops library JSON instead of Firestore (offline runs)")
+    ap.add_argument("--out-dir", help="write models here and skip the functions/lib mirror")
+    args = ap.parse_args()
+    CSV_PATH = args.csv or CSV_PATH
+    OUT_DIR = args.out_dir or OUT_DIR
+
     load_policies()
 
     df = load_data()
-    lib = load_stops_library()
+    lib = json.load(open(args.stops_json)) if args.stops_json else load_stops_library()
     df = clean(df, lib)
     if len(df) < 20: sys.exit(1)
     weights = compute_ride_count_weights(df)
@@ -349,13 +373,25 @@ def main():
     weight_series = pd.Series(weights, index=df.index)
     w_train, w_test = weight_series.loc[train_index].values, weight_series.loc[test_index].values
     agencies = sorted(df['agency_id'].dropna().unique().tolist())
-    v4_m, v4_le = train_v4(X_train, y_train, classes, weights_train=w_train)
+    # The 80/20 split only measures accuracy (the regression gate reads it). The shipped model is
+    # refit on 100% of trips: holding back the newest 20% cost about 6 points top-1 (EVAL.md).
+    # With small class minimums an end stop can appear only in the newest 20%; XGBoost needs every
+    # encoded class in training, so the metric fit uses the training classes and skips those test rows.
+    metric_classes = sorted(y_train.unique())
+    seen = y_test.isin(metric_classes)
+    if not seen.all():
+        print(f"  [warn] {(~seen).sum()} test trips whose end stop only appears in the newest 20% skipped in metrics")
+    X_test, y_test = X_test[seen.values], y_test[seen.values]
+    v4_m, v4_le = train_v4(X_train, y_train, metric_classes, weights_train=w_train)
     v4_t1, v4_t3 = evaluate(v4_m, X_test, y_test, v4_le, "V4")
+    v4_m, v4_le = train_v4(X, y, classes, weights_train=weights)
     export_v4(v4_m, v4_le, feature_names, v4_t1, v4_t3, len(df), agencies)
-    v5_m, v5_le = train_v5(X_train, y_train, classes, weights_train=w_train)
+    v5_m, v5_le = train_v5(X_train, y_train, metric_classes, weights_train=w_train)
     v5_t1, v5_t3 = evaluate(v5_m, X_test, y_test, v5_le, "V5")
+    v5_m, v5_le = train_v5(X, y, classes, weights_train=weights)
     export_v5(v5_m, v5_le, feature_names, v5_t1, v5_t3, len(df), agencies)
-    mirror_to_lib()
+    if not args.out_dir:
+        mirror_to_lib()
     print("\nDone. Models copied to functions/lib/.")
 
 if __name__ == "__main__":

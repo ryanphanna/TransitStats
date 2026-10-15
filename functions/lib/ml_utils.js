@@ -239,6 +239,83 @@ function normalizeDirectionForMl(dir) {
   return d || null;
 }
 
+// ---------------------------------------------------------------------------
+// End-stop feature construction shared by predict_v4.js and predict_v5.js. Training builds the same
+// end-stop features in ml/train_endstop.py; test_ml_feature_parity.js and
+// ml/test_feature_parity.py check both sides against one fixture.
+// ---------------------------------------------------------------------------
+
+const { AGENCY_TIMEZONE } = require('./constants');
+const DEFAULT_TIMEZONE = 'America/Toronto';
+const WEEKDAY_INDEX = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
+const _formatters = new Map();
+
+/**
+ * Hour (0-23) and Python-style weekday (Mon=0) of `date`.
+ * timeBasis 'local' uses the agency's timezone (DST-aware), as trips store it (db/trips.js), with
+ * America/Toronto for unmapped agencies; anything else keeps the old UTC features, so artifacts
+ * trained before local time keep matching until the next retrain.
+ */
+function getHourAndDay(date, agency, timeBasis) {
+  if (timeBasis !== 'local') {
+    return { hour: date.getUTCHours(), pyDay: (date.getUTCDay() + 6) % 7 };
+  }
+  const timeZone = AGENCY_TIMEZONE[agency] || DEFAULT_TIMEZONE;
+  let fmt = _formatters.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', hour: '2-digit', weekday: 'short' });
+    _formatters.set(timeZone, fmt);
+  }
+  const parts = Object.fromEntries(fmt.formatToParts(date).map(p => [p.type, p.value]));
+  return { hour: Number(parts.hour) % 24, pyDay: WEEKDAY_INDEX[parts.weekday] };
+}
+
+function sanitizeFeature(value) {
+  return String(value).toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
+}
+
+/**
+ * Named features for the end-stop models (one-hots are 1.0; absent names are 0). The route models
+ * still build their own features in predict_v4/v5.js (UTC, unchanged).
+ */
+function buildEndStopFeatures(context, timeBasis) {
+  const date = context.time instanceof Date ? context.time : new Date(context.time);
+  const { hour, pyDay } = getHourAndDay(date, context.agency, timeBasis);
+  const primary = context.primaryAgency || context.defaultAgency;
+  const lastStopKey = context.lastEndStopName
+    ? getStopFeature(context.lastEndStopName, context.stopsLibrary).replace('stop_', '')
+    : 'none';
+  const prevRoute = scopedRouteKey(context.lastRoute, context.agency, primary) || 'none';
+  const route = String(scopedRouteKey(context.route, context.agency, primary)).toLowerCase();
+  const { gapLog, gapMissing } = getGapFeatures(context.minutesSinceLastTrip);
+  const dirNorm = normalizeDirectionForMl(context.direction);
+  const f = {
+    hour_sin: Math.sin(2 * Math.PI * hour / 24),
+    hour_cos: Math.cos(2 * Math.PI * hour / 24),
+    day_sin: Math.sin(2 * Math.PI * pyDay / 7),
+    day_cos: Math.cos(2 * Math.PI * pyDay / 7),
+    gap_log: gapLog,
+    gap_missing: gapMissing,
+    [`agency_${sanitizeFeature(context.agency || 'unknown')}`]: 1.0,
+    [getStopFeature(context.startStopName, context.stopsLibrary)]: 1.0,
+    [`route_${route}`]: 1.0,
+    [`prev_route_${prevRoute.toString().toLowerCase()}`]: 1.0,
+    [`last_stop_${lastStopKey}`]: 1.0,
+  };
+  if (dirNorm) f[`dir_${dirNorm}`] = 1.0;
+  return f;
+}
+
+/** Dense vector in the artifact's feature order. */
+function toFeatureVector(features, featureNames, ArrayType = Array) {
+  const x = new ArrayType(featureNames.length).fill(0);
+  for (let i = 0; i < featureNames.length; i++) {
+    const v = features[featureNames[i]];
+    if (v !== undefined) x[i] = v;
+  }
+  return x;
+}
+
 module.exports = {
   canonicalizeStop,
   getStopFeature,
@@ -249,6 +326,9 @@ module.exports = {
   displayScopedRouteLabel,
   displayScopedStopLabel,
   getGapFeatures,
+  getHourAndDay,
+  buildEndStopFeatures,
+  toFeatureVector,
   // Policy configuration (full parity with Python side)
   registerPolicy,
   configurePolicies,
