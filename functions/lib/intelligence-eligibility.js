@@ -1,5 +1,4 @@
 const DEFAULT_THRESHOLDS = Object.freeze({
-  routeTrips: 10,
   endStopTrips: 15,
 });
 
@@ -35,18 +34,16 @@ function getEligibility(history, agency, thresholds = DEFAULT_THRESHOLDS) {
   return {
     agency,
     cleanTripCount: clean.length,
-    routeEligible: clean.length >= thresholds.routeTrips,
     endStopEligible: clean.length >= thresholds.endStopTrips,
     thresholds: { ...thresholds },
   };
 }
 
-function isModelReady(history, agency, metaA, metaB, kind = 'route', thresholds = DEFAULT_THRESHOLDS) {
+/** End-stop models only (the route models were removed). */
+function isModelReady(history, agency, metaA, metaB, thresholds = DEFAULT_THRESHOLDS) {
   const eligibility = getEligibility(history, agency, thresholds);
-  const countReady = kind === 'endStop' ? eligibility.endStopEligible : eligibility.routeEligible;
-  const labelSchema = kind === 'endStop' ? 'agency::end_stop' : 'agency::route';
-  return countReady && artifactSupportsAgency(metaA, agency, labelSchema) &&
-    artifactSupportsAgency(metaB, agency, labelSchema);
+  return eligibility.endStopEligible && artifactSupportsAgency(metaA, agency, 'agency::end_stop') &&
+    artifactSupportsAgency(metaB, agency, 'agency::end_stop');
 }
 
 module.exports = {

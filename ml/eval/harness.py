@@ -53,7 +53,7 @@ LOCAL_TZ = ZoneInfo("America/Toronto")
 HISTORY_LIMIT = 100           # getRecentCompletedTrips(userId, 100)
 ROUTE_MIN_CLEAN = 10          # intelligence-eligibility DEFAULT_THRESHOLDS
 ENDSTOP_MIN_CLEAN = 15
-ROUTE_CONF_FLOOR = 25         # correctPredictionByGtfs floor
+ROUTE_CONF_FLOOR = 25         # floor of the former correctPredictionByGtfs (route models removed from serving)
 HABIT_THRESHOLD = 0.75
 HIGH_IMPACT = {"route", "direction", "agency", "startStop", "startStopCode", "startStopName",
                "endStop", "endStopCode", "endStopName"}
@@ -313,7 +313,7 @@ def build_training_rows(data, cutoff, kind, time_mode, skew_fixed):
                 "last_route": prev.get("route") if prev else None,
                 "gap": max(0.0, (t["_start"] - prev["_start"]).total_seconds() / 60) if prev else None,
             }
-            primary_scope = kind == "route"  # train_routes passes primary; train_endstop does not
+            primary_scope = kind == "route"  # the removed train_routes passed primary; train_endstop does not
         x = feature_dict(data, t, ctx, kind, time_mode, primary_scope)
         if not skew_fixed and kind == "end" and ctx["last_route"]:
             # train_endstop scopes prev_route with the previous trip's agency and no primary.
@@ -604,7 +604,7 @@ def _ml_rows(env, fm, kind, label, x_mode):
         order = np.argsort(-p)
         if kind == "route":
             ranked = [(fm.classes[i].split("::", 1)[1], round(100 * p[i])) for i in order[:5]]
-            floor_ok = ranked[0][1] >= ROUTE_CONF_FLOOR  # correctPredictionByGtfs without routesAtStop
+            floor_ok = ranked[0][1] >= ROUTE_CONF_FLOOR  # former correctPredictionByGtfs without routesAtStop
             out += [Pred(kind, name, ranked if floor_ok else [], not floor_ok), Pred(kind, alt, ranked)]
         else:
             disp = [fm.classes[i].split("::", 1)[1] for i in range(len(fm.classes))]

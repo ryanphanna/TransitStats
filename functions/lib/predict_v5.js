@@ -2,21 +2,13 @@
  * TransitStats Prediction Engine V5 (XGBoost via ONNX)
  *
  * Runs in parallel with V3 and V4 (Shadow Mode).
- * Uses models trained via ml/train_routes.py and ml/train_endstop.py.
+ * End-stop model only (trained by ml/train_endstop.py); the route model was removed.
  */
 
 const ModelStore = require('./model-store');
-const { canonicalizeStop, getStopFeature, scopedRouteKey, displayScopedRouteLabel, displayScopedStopLabel, loadPolicies, buildEndStopFeatures, toFeatureVector } = require('./ml_utils');
+const { canonicalizeStop, displayScopedStopLabel, loadPolicies, buildEndStopFeatures, toFeatureVector } = require('./ml_utils');
 const logger = require('./logger');
 const TopologyConstraints = require('./topology-constraints');
-
-// Transfer rarity lookup: rare transfers (e.g., 506→510B) get higher weight
-let _transferRarity = null;
-try {
-  _transferRarity = require('./transfer_rarity.json');
-} catch (e) {
-  logger.warn('[V5] Transfer rarity not loaded (degraded mode)');
-}
 
 loadPolicies();
 
@@ -29,71 +21,6 @@ try {
 
 const PredictionEngineV5 = {
   VERSION: '5.6',
-
-  /**
-   * Guess top N routes using the V5 XGBoost model.
-   * @param {Object} context - { stopName, time, lastEndStopName, stopsLibrary }
-   */
-  guessTopRoutes: async function (context, topN = 5) {
-    if (!context || !context.time) return [];
-    const meta = ModelStore.current()?.routeV5Meta;
-    if (!meta) return [];
-
-    const date = context.time instanceof Date ? context.time : new Date(context.time);
-    const hour = date.getHours();
-    const pyDay = (date.getDay() + 6) % 7;
-
-    const hour_sin = Math.sin(2 * Math.PI * hour / 24);
-    const hour_cos = Math.cos(2 * Math.PI * hour / 24);
-    const day_sin  = Math.sin(2 * Math.PI * pyDay / 7);
-    const day_cos  = Math.cos(2 * Math.PI * pyDay / 7);
-
-    const stopFeature = getStopFeature(context.stopName, context.stopsLibrary);
-    const lastStopKey = context.lastEndStopName
-      ? getStopFeature(context.lastEndStopName, context.stopsLibrary).replace('stop_', '')
-      : 'none';
-    const lastStopFeature = `last_stop_${lastStopKey}`;
-    const prevRoute = scopedRouteKey(context.lastRoute, context.agency, context.primaryAgency || context.defaultAgency) || 'none';
-    const prevRouteFeature = `prev_route_${prevRoute.toString().toLowerCase()}`;
-    const agencyFeature = `agency_${String(context.agency || 'unknown').toLowerCase().trim().replace(/[^a-z0-9]/g, '_')}`;
-
-    const rarities = _transferRarity
-      ? meta.classes.map(r => _transferRarity[`${prevRoute}→${r}`]).filter(v => v !== undefined)
-      : [];
-    const transferRarity = rarities.length > 0
-      ? rarities.reduce((s, r) => s + r, 0) / rarities.length
-      : 0.5;
-
-    const x = new Float32Array(meta.feature_names.length);
-    for (let i = 0; i < meta.feature_names.length; i++) {
-      const fn = meta.feature_names[i];
-      if      (fn === 'hour_sin')         x[i] = hour_sin;
-      else if (fn === 'hour_cos')         x[i] = hour_cos;
-      else if (fn === 'day_sin')          x[i] = day_sin;
-      else if (fn === 'day_cos')          x[i] = day_cos;
-      else if (fn === agencyFeature)      x[i] = 1.0;
-      else if (fn === 'transfer_rarity')  x[i] = transferRarity;
-      else if (fn === stopFeature)        x[i] = 1.0;
-      else if (fn === lastStopFeature)    x[i] = 1.0;
-      else if (fn === prevRouteFeature)   x[i] = 1.0;
-    }
-
-    try {
-      const ort = require('onnxruntime-node');
-      const session = await ModelStore.getOnnxSession('route');
-      const tensor = new ort.Tensor('float32', x, [1, meta.feature_names.length]);
-      const results = await session.run({ float_input: tensor });
-      const probs = results.probabilities.data;
-
-      return Array.from(probs)
-        .map((p, i) => ({ route: displayScopedRouteLabel(meta.classes[i]), confidence: Math.round(p * 100), version: this.VERSION }))
-        .sort((a, b) => b.confidence - a.confidence)
-        .slice(0, topN);
-    } catch (err) {
-      console.error('[V5] guessTopRoutes error:', err.message);
-      return [];
-    }
-  },
 
   /**
    * Predict top N exit stops using the V5 XGBoost model.

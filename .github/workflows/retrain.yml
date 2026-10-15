@@ -62,12 +62,6 @@ jobs:
           set -euo pipefail
           python3 ml/train_endstop.py --stops-json "$RUNNER_TEMP/stops.json"
 
-      # Route models are not gated (they are being removed); they still train and upload as before.
-      - name: Retrain route models (V4 + V5)
-        run: |
-          set -euo pipefail
-          STOPS_JSON="$RUNNER_TEMP/stops.json" python3 ml/train_routes.py
-
       - name: Choose the model version
         id: version
         run: echo "version=$(date -u +%Y%m%dT%H%M%SZ)" >> "$GITHUB_OUTPUT"
@@ -124,8 +118,6 @@ jobs:
 
           es_v4 = json.loads(pathlib.Path("ml/model_v4_endstop_meta.json").read_text())
           es_v5 = json.loads(pathlib.Path("ml/model_v5_endstop_meta.json").read_text())
-          rt_v4 = json.loads(pathlib.Path("ml/model_v4_meta.json").read_text())
-          rt_v5 = json.loads(pathlib.Path("ml/model_v5_meta.json").read_text())
           date = datetime.date.today().isoformat()
 
           entry_lines = [
@@ -137,13 +129,6 @@ jobs:
               "|---|---|---|---|---|",
               f"| V5 XGBoost | {es_v5['top1_accuracy']:.1%} | {es_v5['top3_accuracy']:.1%} | {len(es_v5['classes'])} | {es_v5['n_trips']} |",
               f"| V4 LogReg  | {es_v4['top1_accuracy']:.1%} | {es_v4['top3_accuracy']:.1%} | {len(es_v4['classes'])} | {es_v4['n_trips']} |",
-              "",
-              "### Route Models",
-              "",
-              "| Model | Top-1 | Top-3 | Classes | Trips |",
-              "|---|---|---|---|---|",
-              f"| V5 XGBoost | {rt_v5['top1_accuracy']:.1%} | {rt_v5['top3_accuracy']:.1%} | {len(rt_v5['classes'])} | {rt_v5['n_trips']} |",
-              f"| V4 LogReg  | {rt_v4['top1_accuracy']:.1%} | {rt_v4['top3_accuracy']:.1%} | {len(rt_v4['classes'])} | {rt_v4['n_trips']} |",
               "",
               "---",
               "",
