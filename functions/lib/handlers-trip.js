@@ -99,7 +99,7 @@ async function detectProvisionalTransfer(userId, nextTrip, agency, boardingStop,
     let best = null;
     for (const trip of history) {
       if (!trip.endTime || !trip.endStopName) continue;
-      const confidence = TransferEngine.score(trip, nextTrip, history, networkConnections);
+      const confidence = TransferEngine.score(trip, nextTrip, history, networkConnections, stopsLibrary);
       if (confidence < TransferEngine.CONFIDENCE_THRESHOLD) continue;
       if (!best || confidence > best.confidence) best = { trip, confidence };
     }
