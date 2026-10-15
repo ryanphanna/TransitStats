@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Trips with no exit recorded no longer show a guessed exit on your map.** Admins still see the guess, drawn as a dashed outline labelled "estimated", and it never counts as a real ride.
 - **Stops texted by code that the library doesn't have yet are now found in Atlas.** The stop is looked up in your own agency's Atlas stop list and added, so those trips can become clean data instead of staying unmatched.
 - **Pittsburgh trips now look up stops in the right system.** The label "PRT" was being matched to West Virginia University's PRT instead of Pittsburgh Regional Transit.
 - **Stations typed as a platform, or with different punctuation, now match.** "X Station" and "X Station - Northbound Platform" (or "St. George" and "St George") are treated as one station, so these trips become clean data instead of staying unmatched. Different stops are never merged.

@@ -34,6 +34,9 @@ function renderCorridors(trips) {
         const start = boarding?.location;
         const end = exiting?.location;
         if (!start || !end) return;
+        // Only admins ever get a guessed exit; it is drawn dashed and kept
+        // out of the trip count so it never reads as a real ride.
+        const estimated = exiting.estimated === true;
         routeFeatures
             .filter(feature => feature.__agency === trip.agency)
             .filter(feature => routeMatches(feature.properties?.routeShortName || feature.properties?.routeId, trip.route))
@@ -41,7 +44,7 @@ function renderCorridors(trips) {
             .filter(candidate => candidate.line)
             .slice(0, 1)
             .forEach(({ feature, line }) => {
-                const key = [routeFeatures.indexOf(feature), trip.startStopCode || '', trip.endStopCode || ''].join(':');
+                const key = [estimated ? 'estimated' : 'recorded', routeFeatures.indexOf(feature), trip.startStopCode || '', trip.endStopCode || '', estimated ? exiting.label || '' : ''].join(':');
                 const existing = clipped.get(key);
                 if (existing) existing.count += 1;
                 else clipped.set(key, {
@@ -49,6 +52,7 @@ function renderCorridors(trips) {
                     count: 1,
                     start,
                     end,
+                    estimated,
                     agency: feature.__agency || trip.agency,
                     route: feature.properties?.routeShortName || getTripRouteLabel(trip),
                     startLabel: getTripStopLabel(trip, 'boarding', boarding),
@@ -56,10 +60,10 @@ function renderCorridors(trips) {
                 });
             });
     });
-    const maxCount = Math.max(1, ...[...clipped.values()].map(item => item.count));
+    const maxCount = Math.max(1, ...[...clipped.values()].filter(item => !item.estimated).map(item => item.count));
     clipped.forEach(corridor => {
         const layer = L.polyline(corridor.line, {
-            ...getCorridorStyle(corridor.count, maxCount),
+            ...getCorridorStyle(corridor.count, maxCount, { estimated: corridor.estimated }),
             interactive: true,
             lineCap: 'round',
             lineJoin: 'round',
@@ -67,11 +71,18 @@ function renderCorridors(trips) {
         layer.bindPopup(buildCorridorPopup(corridor));
         layer.addTo(corridorLayer);
     });
-    const completeTrips = [...clipped.values()].reduce((total, corridor) => total + corridor.count, 0);
-    setStatus(`${completeTrips} trips shown`);
+    const completeTrips = [...clipped.values()]
+        .filter(corridor => !corridor.estimated)
+        .reduce((total, corridor) => total + corridor.count, 0);
+    const estimatedTrips = [...clipped.values()]
+        .filter(corridor => corridor.estimated)
+        .reduce((total, corridor) => total + corridor.count, 0);
+    setStatus(estimatedTrips > 0
+        ? `${completeTrips} trips shown, plus ${estimatedTrips} with an estimated exit (dashed)`
+        : `${completeTrips} trips shown`);
 
     if (!hasFitToCorridors && clipped.size > 0) {
-        const viewportPoints = [...clipped.values()].flatMap(({ start, end, count }) => [
+        const viewportPoints = [...clipped.values()].filter(corridor => !corridor.estimated).flatMap(({ start, end, count }) => [
             { ...start, usage: count },
             { ...end, usage: count },
         ]);
@@ -90,6 +101,8 @@ async function init() {
     MapEngine.layers.markers.remove();
     corridorLayer.addTo(MapEngine.map);
     const { user, isAdmin } = await requireAuth();
+    // Exit guesses for trips with no exit recorded are admin-only.
+    MapEngine.setShowEstimatedExits(isAdmin === true);
     initHeader({ isAdmin, currentPage: 'route-heatmap' });
 
     TripController.listen(user.uid, trips => {

@@ -76,3 +76,12 @@ it('selects the busiest half-degree area for the initial view', () => {
         { lat: 45.42, lng: -75.70, usage: 30 },
     ])).toEqual([{ lat: 45.42, lng: -75.70 }]);
 });
+
+it('draws an estimated-exit corridor dashed and labels it', () => {
+    expect(getCorridorStyle(3, 4, { estimated: true }).dashArray).toBeTruthy();
+    expect(getCorridorStyle(3, 4).dashArray).toBeUndefined();
+
+    const popup = buildCorridorPopup({ count: 1, endLabel: 'Spadina & Bloor', estimated: true });
+    expect(popup).toContain('To Spadina &amp; Bloor (estimated, no exit recorded)');
+    expect(buildCorridorPopup({ count: 1, endLabel: 'Bloor' })).not.toContain('estimated');
+});
