@@ -47,15 +47,15 @@ test('semantic directions remain available to ML features', () => {
 
 test('canonicalizeStop and getStopFeature normalize aliases consistently', () => {
   const lib = [
-    { name: 'Spadina Ave at Nassau St South Side', aliases: ['Spadina / Nassau', 'SPADINA & NASSAU'] },
+    { name: 'Aspen Ave at Poplar St South Side', aliases: ['Aspen / Poplar', 'ASPEN & POPLAR'] },
   ];
   assert.equal(
-    canonicalizeStop('SPADINA & NASSAU', lib),
-    'spadina ave/nassau st south side',
+    canonicalizeStop('ASPEN & POPLAR', lib),
+    'aspen ave/poplar st south side',
   );
   assert.equal(
-    getStopFeature('Spadina / Nassau', lib),
-    'stop_spadina_ave_nassau_st_south_side',
+    getStopFeature('Aspen / Poplar', lib),
+    'stop_aspen_ave_poplar_st_south_side',
   );
 });
 

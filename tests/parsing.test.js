@@ -159,10 +159,10 @@ describe('parseMultiLineTripFormat', () => {
 
 describe('parseCasualTripFormat', () => {
   test('parses "I am on the [route] from [stop]" messages', () => {
-    const result = parseCasualTripFormat("I'm on the 510 from Spadina and Nassau", 'TTC');
+    const result = parseCasualTripFormat("I'm on the 510 from Aspen and Poplar", 'TTC');
     expect(result).toMatchObject({
       route: '510',
-      stop: 'Spadina & Nassau',
+      stop: 'Aspen & Poplar',
       direction: null,
       agency: 'TTC',
       agencyExplicit: false,
