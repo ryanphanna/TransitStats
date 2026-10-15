@@ -4,6 +4,7 @@ const {
   artifactSupportsAgency,
   cleanTripsForAgency,
   getEligibility,
+  isModelReady,
 } = require('./lib/intelligence-eligibility');
 
 function trip(overrides = {}) {
@@ -26,12 +27,11 @@ test('eligibility counts only clean trips from the requested agency', () => {
     trip({ stop_matched: false }),
   ];
   assert.equal(cleanTripsForAgency(history, 'ttc').length, 1);
-  assert.deepEqual(getEligibility(history, 'TTC', { routeTrips: 1, endStopTrips: 1 }), {
+  assert.deepEqual(getEligibility(history, 'TTC', { endStopTrips: 1 }), {
     agency: 'TTC',
     cleanTripCount: 1,
-    routeEligible: true,
     endStopEligible: true,
-    thresholds: { routeTrips: 1, endStopTrips: 1 },
+    thresholds: { endStopTrips: 1 },
   });
 });
 
@@ -44,4 +44,13 @@ test('legacy or incomplete artifacts are never treated as agency-safe', () => {
 test('eligibility accepts a valid stop code without a display name', () => {
   const history = [trip({ startStopName: null, startStopCode: '5394' })];
   assert.equal(cleanTripsForAgency(history, 'TTC').length, 1);
+});
+
+test('isModelReady checks end-stop artifacts only', () => {
+  const history = Array.from({ length: 15 }, () => trip());
+  const endMeta = { feature_schema_version: 2, agencies: ['TTC'], label_schema: 'agency::end_stop' };
+  const routeMeta = { feature_schema_version: 2, agencies: ['TTC'], label_schema: 'agency::route' };
+  assert.equal(isModelReady(history, 'TTC', endMeta, endMeta), true);
+  assert.equal(isModelReady(history, 'TTC', routeMeta, routeMeta), false);
+  assert.equal(isModelReady(history.slice(0, 14), 'TTC', endMeta, endMeta), false);
 });

@@ -13,6 +13,7 @@ function loadFinalization(overrides = {}) {
 
   const calls = {
     docUpdates: [],
+    docSets: [],
     collectionAdds: [],
     batchUpdates: [],
     batchCommits: 0,
@@ -36,7 +37,7 @@ function loadFinalization(overrides = {}) {
         doc: (id) => ({
           id,
           update: async (data) => { calls.docUpdates.push({ collection: name, id, data }); },
-          set: async () => {},
+          set: async (data) => { calls.docSets.push({ collection: name, id, data }); },
           get: async () => ({ exists: false, data: () => ({}) }),
         }),
         where: () => ({
@@ -240,7 +241,7 @@ test('gradeAllPredictions does not throw or log an error for a trip with no pred
   assert.equal(calls.loggerError.length, 0);
 });
 
-test('gradeAllPredictions writes a predictionStats doc when a V3 prediction is present', async () => {
+test('gradeAllPredictions no longer grades route guesses (V3/V4/V5) stored on older trips', async () => {
   const { finalization, calls } = loadFinalization();
   const activeTrip = {
     id: 't1',
@@ -248,10 +249,13 @@ test('gradeAllPredictions writes a predictionStats doc when a V3 prediction is p
     agency: 'TTC',
     startStopName: 'Union',
     prediction: { route: '510', stop: 'Union', confidence: 0.8, version: 'v3' },
+    predictionV4: { route: '510', confidence: 60, version: '4.6' },
+    predictionV5: { route: '510', confidence: 65, version: '5.6' },
   };
   await finalization.gradeAllPredictions(activeTrip, { userId: 'u1' }, null, 12);
   assert.equal(calls.loggerError.length, 0);
-  assert.ok(calls.collectionAdds.some((c) => c.collection === 'predictionStats'));
+  assert.equal(calls.collectionAdds.filter((c) => c.collection === 'predictionStats').length, 0);
+  assert.equal(calls.docSets.filter((c) => c.collection === 'predictionAccuracy').length, 0);
 });
 
 test('gradeAllPredictions grades V3 and the habit separately on a habit trip', async () => {
@@ -272,6 +276,8 @@ test('gradeAllPredictions grades V3 and the habit separately on a habit trip', a
   assert.equal(byVersion('v5-endstop').length, 1);
   assert.equal(byVersion('habit-endstop').length, 1);
   assert.equal(byVersion('habit-endstop')[0].endStopPredicted, 'Spadina Station');
+  assert.equal(stats.length, 4);
+  assert.ok(stats.every((d) => 'endStopPredicted' in d));
 });
 
 // --- triggerManualFinalization: throw paths ---

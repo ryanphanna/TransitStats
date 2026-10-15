@@ -234,14 +234,12 @@ function loadHandlers(overrides = {}) {
   };
   const predictV4 = {
     PredictionEngineV4: {
-      guessTopRoutes: () => [],
       guessTopEndStops: () => [],
       ...(overrides.predictV4?.PredictionEngineV4 || {}),
     },
   };
   const predictV5 = {
     PredictionEngineV5: {
-      guessTopRoutes: async () => [],
       guessTopEndStops: async () => [],
       ...(overrides.predictV5?.PredictionEngineV5 || {}),
     },
@@ -490,7 +488,7 @@ test('handleTripLog: Line 1 College auto-resolves to subway station', async () =
   assert.equal(calls.createTrip[0].startStopName, 'College');
 });
 
-test('handleTripLog: a firing habit changes only the reply; V3/V4/V5 still run and are stored', async () => {
+test('handleTripLog: a firing habit changes only the reply; V3/V4/V5 end-stop guesses still run and are stored', async () => {
   let matchArgs = null;
   const v3End = { stop: 'Bathurst', confidence: 70 };
   const { handlers, calls, restore } = loadHandlers({
@@ -507,13 +505,13 @@ test('handleTripLog: a firing habit changes only the reply; V3/V4/V5 still run a
       },
     },
     eligibility: {
-      getEligibility: () => ({ routeEligible: true, endStopEligible: true, cleanTripCount: 50 }),
+      getEligibility: () => ({ endStopEligible: true, cleanTripCount: 50 }),
       artifactSupportsAgency: () => true,
     },
     predict: {
       PredictionEngine: {
         stopsLibrary: [], networkGraph: null,
-        guess: () => ({ route: '510', direction: 'Westbound', confidence: 80 }),
+        guess: () => { throw new Error('route guesses are no longer made'); },
         guessEndStop: () => v3End,
         guessTopEndStops: () => [v3End, { stop: 'Dufferin', confidence: 20 }],
         getEndStopConstraint: () => ({ source: 'none', legalStops: null }),
@@ -521,11 +519,9 @@ test('handleTripLog: a firing habit changes only the reply; V3/V4/V5 still run a
       },
     },
     predictV4: { PredictionEngineV4: {
-      guessTopRoutes: () => [{ route: '510', confidence: 60 }],
       guessTopEndStops: () => [{ stop: 'Bathurst', confidence: 55 }],
     } },
     predictV5: { PredictionEngineV5: {
-      guessTopRoutes: async () => [{ route: '510', confidence: 65 }],
       guessTopEndStops: async () => [{ stop: 'Strachan', confidence: 50 }],
     } },
   });
@@ -542,14 +538,13 @@ test('handleTripLog: a firing habit changes only the reply; V3/V4/V5 still run a
   assert.equal(trip.habitPrediction.endStop, 'Spadina Station');
   assert.equal(trip.habitPrediction.version, 'habit_v2');
   // V3's own predictions stay separate from the habit.
-  assert.equal(trip.prediction.route, '510');
   assert.deepEqual(trip.endStopPrediction, v3End);
   assert.equal(trip.endStopPredictions.length, 2);
   assert.equal(trip.endStopPredictions[0].stop, 'Bathurst');
   assert.equal(trip.endStopPredictionV4.stop, 'Bathurst');
   assert.equal(trip.endStopPredictionV5.stop, 'Strachan');
-  assert.ok(trip.predictionV4);
-  assert.ok(trip.predictionV5);
+  // Route guesses are not made or stored at all (the route arrives in the text).
+  for (const key of ['prediction', 'predictionV4', 'predictionV5']) assert.ok(!(key in trip), key);
   // Only the reply changes: habit instead of V3's numbered list.
   const reply = calls.sendSmsReply[0]?.message || '';
   assert.match(reply, /Usual trip to Spadina Station\./);
@@ -815,26 +810,18 @@ test('handleMmsTrip: single-route snap-to-start preserves startTime/source metad
   assert.equal(calls.createTrip[0].parsed_by, 'mms');
 });
 
-test('handleTripLog: legacy V4/V5 artifacts are not used for predictions', async () => {
+test('handleTripLog: no V4/V5 route guess is stored, even with route artifacts and GTFS routes', async () => {
   const { handlers, calls, restore } = loadHandlers({
     dbModule: {
       getRoutesAtStop: async () => ['510'],
     },
     predictV4: {
       PredictionEngineV4: {
-        guessTopRoutes: () => [
-          { route: '29', confidence: 90, version: 'v4' },
-          { route: '510', confidence: 70, version: 'v4' },
-        ],
         guessTopEndStops: () => [],
       },
     },
     predictV5: {
       PredictionEngineV5: {
-        guessTopRoutes: async () => [
-          { route: '310', confidence: 95, version: 'v5' },
-          { route: '510', confidence: 60, version: 'v5' },
-        ],
         guessTopEndStops: async () => [],
       },
     },
@@ -847,12 +834,11 @@ test('handleTripLog: legacy V4/V5 artifacts are not used for predictions', async
   }
 
   assert.equal(calls.createTrip.length, 1);
-  assert.equal(calls.createTrip[0].predictionV4, null);
-  assert.equal(calls.createTrip[0].predictionV5, null);
+  assert.ok(!('predictionV4' in calls.createTrip[0]));
+  assert.ok(!('predictionV5' in calls.createTrip[0]));
 });
 
 test('handleTripLog: experimental models stay off without eligible agency history and artifacts', async () => {
-  let routeContext;
   let endStopContext;
   const networkGraph = { edges: { learned: { tripCount: 3 } } };
   const { handlers, restore } = loadHandlers({
@@ -871,7 +857,6 @@ test('handleTripLog: experimental models stay off without eligible agency histor
     },
     predictV4: {
       PredictionEngineV4: {
-        guessTopRoutes: context => { routeContext = context; return []; },
         guessTopEndStops: context => { endStopContext = context; return []; },
       },
     },
@@ -883,12 +868,10 @@ test('handleTripLog: experimental models stay off without eligible agency histor
     restore();
   }
 
-  assert.equal(routeContext, undefined);
   assert.equal(endStopContext, undefined);
 });
 
 test('fillPredictions: fallback inference stays off without eligible agency artifacts', async () => {
-  let routeContext;
   let endStopContext;
   const networkGraph = { edges: { learned: { tripCount: 3 } } };
   const { handlers, restore } = loadHandlers({
@@ -906,7 +889,6 @@ test('fillPredictions: fallback inference stays off without eligible agency arti
     },
     predictV4: {
       PredictionEngineV4: {
-        guessTopRoutes: context => { routeContext = context; return []; },
         guessTopEndStops: context => { endStopContext = context; return []; },
       },
     },
@@ -925,8 +907,25 @@ test('fillPredictions: fallback inference stays off without eligible agency arti
     restore();
   }
 
-  assert.equal(routeContext, undefined);
   assert.equal(endStopContext, undefined);
+});
+
+test('fillPredictions: stores V4/V5 end-stop guesses only, never a route guess', async () => {
+  const { handlers, calls, restore } = loadHandlers({
+    eligibility: { isModelReady: () => true },
+    predictV4: { PredictionEngineV4: { guessTopEndStops: () => [{ stop: 'Bathurst', confidence: 55 }] } },
+    predictV5: { PredictionEngineV5: { guessTopEndStops: async () => [{ stop: 'Strachan', confidence: 50 }] } },
+  });
+  try {
+    await handlers.fillPredictions({ userId: 'u6', email: 'user@example.com' }, 'trip_6', 'Spadina Station', '510', 'Southbound', 'TTC');
+  } finally {
+    restore();
+  }
+  assert.equal(calls.docUpdates.length, 1);
+  const update = calls.docUpdates[0];
+  assert.equal(update.endStopPredictionV4.stop, 'Bathurst');
+  assert.equal(update.endStopPredictionV5.stop, 'Strachan');
+  assert.ok(!('predictionV4' in update) && !('predictionV5' in update));
 });
 
 test('handleTripLog: skips V4/V5 shadow inference when experimental access is disabled', async () => {
@@ -938,13 +937,11 @@ test('handleTripLog: skips V4/V5 shadow inference when experimental access is di
     },
     predictV4: {
       PredictionEngineV4: {
-        guessTopRoutes: () => { v4Calls += 1; return []; },
         guessTopEndStops: () => { v4Calls += 1; return []; },
       },
     },
     predictV5: {
       PredictionEngineV5: {
-        guessTopRoutes: async () => { v5Calls += 1; return []; },
         guessTopEndStops: async () => { v5Calls += 1; return []; },
       },
     },
@@ -958,8 +955,8 @@ test('handleTripLog: skips V4/V5 shadow inference when experimental access is di
 
   assert.equal(v4Calls, 0);
   assert.equal(v5Calls, 0);
-  assert.equal(calls.createTrip[0].predictionV4, null);
-  assert.equal(calls.createTrip[0].predictionV5, null);
+  assert.ok(!('predictionV4' in calls.createTrip[0]));
+  assert.ok(!('predictionV5' in calls.createTrip[0]));
 });
 
 test('handleTripLog: end-to-end prediction prompt does not surface illegal 506 destinations', async () => {
@@ -1001,13 +998,11 @@ test('handleTripLog: end-to-end prediction prompt does not surface illegal 506 d
     predict: { PredictionEngine },
     predictV4: {
       PredictionEngineV4: {
-        guessTopRoutes: () => [],
         guessTopEndStops: () => [],
       },
     },
     predictV5: {
       PredictionEngineV5: {
-        guessTopRoutes: async () => [],
         guessTopEndStops: async () => [],
       },
     },

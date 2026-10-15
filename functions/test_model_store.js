@@ -25,9 +25,40 @@ test('loads models from the configured directory and exposes them', async () => 
   writeFixtureModels(dir);
   process.env.ML_MODEL_DIR = dir;
   const models = await ModelStore.ensure();
-  assert.equal(models.routeV4Meta.file, 'model_v4_meta.json');
-  assert.ok(Buffer.isBuffer(models.routeV5Onnx));
+  assert.equal(models.endStopV4Meta.file, 'model_v4_endstop_meta.json');
+  assert.ok(Buffer.isBuffer(models.endStopV5Onnx));
   assert.equal(ModelStore.current(), models);
+});
+
+const REMOVED_ROUTE_FILES = ['model_v4.json', 'model_v4_meta.json', 'model_v5_meta.json', 'model_v5.onnx'];
+
+test('the model set is the end-stop files only (route models were removed)', () => {
+  assert.deepEqual([...ModelStore.MODEL_FILE_NAMES].sort(), [
+    'model_v4_endstop.json', 'model_v4_endstop_meta.json', 'model_v5_endstop.onnx', 'model_v5_endstop_meta.json',
+  ]);
+  for (const name of REMOVED_ROUTE_FILES) assert.ok(!ModelStore.MODEL_FILE_NAMES.includes(name));
+});
+
+test('an end-stop-only folder loads as a complete set', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'models-es-'));
+  writeFixtureModels(dir);
+  process.env.ML_MODEL_DIR = dir;
+  const models = await ModelStore.ensure();
+  assert.ok(models);
+  assert.ok(!('routeV4' in models) && !('routeV5Onnx' in models));
+});
+
+test('an already-published set that still holds the route files loads, ignoring them', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'models-old-'));
+  writeFixtureModels(dir);
+  for (const name of REMOVED_ROUTE_FILES) {
+    fs.writeFileSync(path.join(dir, name), name.endsWith('.onnx') ? Buffer.from([7]) : JSON.stringify({ file: name }));
+  }
+  process.env.ML_MODEL_DIR = dir;
+  const models = await ModelStore.ensure();
+  assert.ok(models);
+  assert.equal(models.endStopV5Meta.file, 'model_v5_endstop_meta.json');
+  assert.ok(!Object.values(models).some(v => v && REMOVED_ROUTE_FILES.includes(v.file)));
 });
 
 test('missing models resolve to null so predictions fall back to rules', async () => {
@@ -71,7 +102,7 @@ test('upload script: versioned folder first, pointer last, refuses a partial set
   assert.deepEqual(events.slice(0, -1).sort(), ModelStore.MODEL_FILE_NAMES.map(n => `models/v1/${n}`).sort());
   assert.match(events.at(-1), /^models\/latest\.json=.*"version":"v1"/);
 
-  fs.rmSync(path.join(dir, 'model_v4.json'));
+  fs.rmSync(path.join(dir, 'model_v4_endstop.json'));
   await assert.rejects(() => uploadModels({ dir, bucket, log: () => {} }), /Missing model files/);
 });
 
@@ -104,7 +135,7 @@ test('loads the version named by the pointer, never a mix', async () => {
   Object.defineProperty(storage, 'getStorage', { value: () => ({ bucket: () => bucket }), configurable: true });
   try {
     const models = await ModelStore.ensure();
-    assert.equal(models.routeV4Meta.v, 'new');
+    assert.equal(models.endStopV4Meta.v, 'new');
   } finally {
     Object.defineProperty(storage, 'getStorage', { value: original, configurable: true });
   }

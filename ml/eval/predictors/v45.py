@@ -30,7 +30,7 @@ R5 = dict(NOBAL, relax=5)
 R3 = dict(NOBAL, relax=3)
 R2 = dict(NOBAL, relax=2)
 R5W = dict(R5, route_weights=True)
-SHIPPED_CFG = {"end": R5, "route": NOBAL}  # what train_endstop.py / train_routes.py now ship
+SHIPPED_CFG = {"end": R5, "route": NOBAL}  # what train_endstop.py ships / what the removed train_routes.py shipped
 
 import os
 _SETS = {

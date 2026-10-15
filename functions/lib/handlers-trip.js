@@ -14,7 +14,6 @@ const {
   isExperimentalIntelligenceEnabled,
   lookupStop,
   findMatchingStops,
-  getRoutesAtStop,
   db,
   createTrip,
   getRecentCompletedTrips,
@@ -53,7 +52,6 @@ const { getEligibility, artifactSupportsAgency } = require('./intelligence-eligi
 const PREDICTION_HISTORY_LIMIT = 500;
 const ELIGIBILITY_HISTORY_LIMIT = 100;
 const {
-  correctPredictionByGtfs,
   agencySuffix,
   isStopMatched,
   resolveTripAgency,
@@ -232,9 +230,6 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
   }
 
   // No active trip - generate predictions before creating trip
-  let prediction = null;
-  let predictionV4 = null;
-  let predictionV5 = null;
   let habitPrediction = null;
   let endStopPrediction = null;
   let endStopPredictions = null;
@@ -243,15 +238,13 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
   let endStopConstraintSource = 'none';
   let provisionalTransfer = null;
   const startStopName = stopData ? stopData.stopName : parsedStop.stopName;
-  const startStopCode = stopData ? stopData.stopCode : parsedStop.stopCode;
   let isAdmin = false;
   let defaultAgency = null;
   // Predictions read the owner's history, so an unconfirmed number skips them.
   if (!unconfirmed) try {
-    const [history, stopsLibrary, routesAtStop, profile, networkGraph, habits, adminStatus, experimentalIntelligence] = await Promise.all([
+    const [history, stopsLibrary, profile, networkGraph, habits, adminStatus, experimentalIntelligence] = await Promise.all([
       getRecentCompletedTrips(user.userId, PREDICTION_HISTORY_LIMIT),
       getStopsLibrary(),
-      getRoutesAtStop(startStopCode, resolvedAgency),
       getUserProfile(user.userId),
       NetworkEngine.load(db, user.userId, resolvedAgency, route),
       HabitEngine.load(db, user.userId),
@@ -267,22 +260,17 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       || null;
     // Models are private and only trained on allowlisted users; everyone else gets rule-based predictions.
     const mlModels = ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
-    const { routeV4Meta, routeV5Meta, endStopV4Meta, endStopV5Meta } = mlModels || {};
+    const { endStopV4Meta, endStopV5Meta } = mlModels || {};
     const now = new Date();
     const eligibility = getEligibility(history.slice(0, ELIGIBILITY_HISTORY_LIMIT), resolvedAgency);
-    const mlRouteReady = eligibility.routeEligible &&
-      artifactSupportsAgency(routeV4Meta, resolvedAgency, 'agency::route') &&
-      artifactSupportsAgency(routeV5Meta, resolvedAgency, 'agency::route');
     const mlEndStopReady = eligibility.endStopEligible &&
       artifactSupportsAgency(endStopV4Meta, resolvedAgency, 'agency::end_stop') &&
       artifactSupportsAgency(endStopV5Meta, resolvedAgency, 'agency::end_stop');
-    const mlReady = experimentalIntelligence && (mlRouteReady || mlEndStopReady);
+    const mlReady = experimentalIntelligence && mlEndStopReady;
     logger.info('Prediction eligibility', {
       agency: resolvedAgency,
       cleanTripCount: eligibility.cleanTripCount,
-      routeEligible: eligibility.routeEligible,
       endStopEligible: eligibility.endStopEligible,
-      routeArtifactReady: mlRouteReady,
       endStopArtifactReady: mlEndStopReady,
       traceId,
     }, traceId);
@@ -302,15 +290,6 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
     const minutesSinceLastTrip = lastTrip?.startTime?.toDate
       ? Math.max(0, Math.round((now.getTime() - lastTrip.startTime.toDate().getTime()) / 60000))
       : null;
-    const routeContext = {
-      stopName: startStopName,
-      time: now,
-      lastEndStopName,
-      lastRoute,
-      agency: resolvedAgency,
-      stopsLibrary,
-      primaryAgency: defaultAgency,
-    };
     const endStopContext = {
       route,
       startStopName,
@@ -351,26 +330,15 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       }, traceId);
     }
 
-    // V3/V4/V5 always run and are stored, even when a habit fires, so live
+    // V3/V4/V5 end-stop guesses always run and are stored, even when a habit fires, so live
     // predictionStats stay complete and comparable. Only the SMS reply changes.
-    prediction = PredictionEngine.guess(history, {
-      stopName: startStopName,
-      time: now,
-      routesAtStop: routesAtStop || undefined,
-      lastEndStopName,
-      agency: resolvedAgency,
-    });
+    // Route guesses are not made: the route arrives in the texted message.
     // Experimental models only run after both clean-history and artifact coverage checks.
     if (mlReady) {
-      const [rawTopV4, rawTopV5, topEndV4, topEndV5] = await Promise.all([
-        mlRouteReady ? Promise.resolve(PredictionEngineV4.guessTopRoutes(routeContext, 5)) : [],
-        mlRouteReady ? PredictionEngineV5.guessTopRoutes(routeContext, 5) : [],
-        mlEndStopReady ? PredictionEngineV4.guessTopEndStops(endStopContext, 1) : [],
-        mlEndStopReady ? PredictionEngineV5.guessTopEndStops(endStopContext, 1) : [],
+      const [topEndV4, topEndV5] = await Promise.all([
+        PredictionEngineV4.guessTopEndStops(endStopContext, 1),
+        PredictionEngineV5.guessTopEndStops(endStopContext, 1),
       ]);
-      // Correct: pick best prediction that GTFS confirms serves this stop; floor at 25%
-      predictionV4 = correctPredictionByGtfs(rawTopV4, routesAtStop);
-      predictionV5 = correctPredictionByGtfs(rawTopV5, routesAtStop);
       if (topEndV4.length > 0) endStopPredictionV4 = topEndV4[0];
       if (topEndV5.length > 0) endStopPredictionV5 = topEndV5[0];
     }
@@ -400,9 +368,6 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       startTime: options.startTime || null,
       source: options.source || null,
       timing_reliability: options.timing_reliability || null,
-      prediction: prediction || null,
-      predictionV4: predictionV4 || null,
-      predictionV5: predictionV5 || null,
       habitPrediction: habitPrediction || null,
       endStopPrediction: endStopPrediction || null,
       endStopPredictions: endStopPredictions || null,
@@ -461,9 +426,6 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
   const oldTripRouteDisplay = getRouteDisplay(activeTrip.route, activeTrip.direction);
 
   let confirmDefaultAgency = 'TTC';
-  let confirmPrediction = null;
-  let confirmPredictionV4 = null;
-  let confirmPredictionV5 = null;
   let confirmEndStopPrediction = null;
   let confirmEndStopPredictions = null;
   let confirmEndStopPredictionV4 = null;
@@ -473,10 +435,9 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
   let confirmProvisionalTransfer = null;
   let newStopData = null;
   try {
-    const [history, stopsLibrary, routesAtStop, confirmProfile, confirmNetworkGraph, confirmAdminStatus, experimentalIntelligence] = await Promise.all([
+    const [history, stopsLibrary, confirmProfile, confirmNetworkGraph, confirmAdminStatus, experimentalIntelligence] = await Promise.all([
       getRecentCompletedTrips(user.userId, PREDICTION_HISTORY_LIMIT),
       getStopsLibrary(),
-      getRoutesAtStop(newTrip.stopCode, newTrip.agency),
       getUserProfile(user.userId),
       NetworkEngine.load(db, user.userId, newTrip.agency, newTrip.route),
       isEmailAdmin(user.email),
@@ -490,23 +451,19 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
       || null;
     // Models are private and only trained on allowlisted users; everyone else gets rule-based predictions.
     const mlModels = ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
-    const { routeV4Meta, routeV5Meta, endStopV4Meta, endStopV5Meta } = mlModels || {};
+    const { endStopV4Meta, endStopV5Meta } = mlModels || {};
     const now = new Date();
     const confirmEligibility = getEligibility(history.slice(0, ELIGIBILITY_HISTORY_LIMIT), newTrip.agency);
-    const confirmMlRouteReady = confirmEligibility.routeEligible &&
-      artifactSupportsAgency(routeV4Meta, newTrip.agency, 'agency::route') &&
-      artifactSupportsAgency(routeV5Meta, newTrip.agency, 'agency::route');
     const confirmMlEndStopReady = confirmEligibility.endStopEligible &&
       artifactSupportsAgency(endStopV4Meta, newTrip.agency, 'agency::end_stop') &&
       artifactSupportsAgency(endStopV5Meta, newTrip.agency, 'agency::end_stop');
-    const confirmMlReady = experimentalIntelligence && (confirmMlRouteReady || confirmMlEndStopReady);
+    const confirmMlReady = experimentalIntelligence && confirmMlEndStopReady;
     const lastTrip = history.length > 0 ? history[0] : null;
     const lastEndStopName = lastTrip?.endStopName || lastTrip?.endStop || null;
     
     // Resolve hubId for the new trip
     newStopData = await lookupStop(newTrip.stopCode, newTrip.stopName, newTrip.agency, newTrip.route, newTrip.direction);
     
-    const confirmRouteContext = { stopName: newTrip.stopName, time: now, lastEndStopName, agency: newTrip.agency, stopsLibrary };
     const confirmEndStopContext = { route: newTrip.route, startStopName: newTrip.stopName, direction: newTrip.direction, time: now, lastEndStopName, agency: newTrip.agency, stopsLibrary, networkGraph: confirmNetworkGraph || null };
     const confirmEndStopConstraint = PredictionEngine.getEndStopConstraint(confirmEndStopContext);
     confirmEndStopConstraintSource = confirmEndStopConstraint.source;
@@ -534,22 +491,11 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
         traceId,
       });
     }
-    confirmPrediction = PredictionEngine.guess(history, {
-      stopName: newTrip.stopName,
-      time: now,
-      routesAtStop: routesAtStop || undefined,
-      lastEndStopName,
-      agency: newTrip.agency,
-    });
     if (confirmMlReady) {
-      const [confirmRawV4, confirmRawV5, confirmTopV4, confirmTopV5] = await Promise.all([
-        confirmMlRouteReady ? Promise.resolve(PredictionEngineV4.guessTopRoutes(confirmRouteContext, 5)) : [],
-        confirmMlRouteReady ? PredictionEngineV5.guessTopRoutes(confirmRouteContext, 5) : [],
-        confirmMlEndStopReady ? PredictionEngineV4.guessTopEndStops(confirmEndStopContext, 1) : [],
-        confirmMlEndStopReady ? PredictionEngineV5.guessTopEndStops(confirmEndStopContext, 1) : [],
+      const [confirmTopV4, confirmTopV5] = await Promise.all([
+        PredictionEngineV4.guessTopEndStops(confirmEndStopContext, 1),
+        PredictionEngineV5.guessTopEndStops(confirmEndStopContext, 1),
       ]);
-      confirmPredictionV4 = correctPredictionByGtfs(confirmRawV4, routesAtStop);
-      confirmPredictionV5 = correctPredictionByGtfs(confirmRawV5, routesAtStop);
       if (confirmTopV4.length > 0) confirmEndStopPredictionV4 = confirmTopV4[0];
       if (confirmTopV5.length > 0) confirmEndStopPredictionV5 = confirmTopV5[0];
     }
@@ -584,9 +530,6 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
     tags: newTrip.tags || [],
     parsed_by: newTrip.parsed_by || 'manual',
     vehicle: newTrip.vehicle || null,
-    prediction: confirmPrediction || null,
-    predictionV4: confirmPredictionV4 || null,
-    predictionV5: confirmPredictionV5 || null,
     endStopPrediction: confirmEndStopPrediction || null,
     endStopPredictions: confirmEndStopPredictions || null,
     endStopPredictionV4: confirmEndStopPredictionV4 || null,
