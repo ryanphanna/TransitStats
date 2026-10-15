@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '0 4 * * 1'  # Every Monday at 4 AM UTC
   workflow_dispatch:       # Manual trigger from GitHub UI
+    inputs:
+      dry_run:
+        description: Train and run the gate only. Nothing is uploaded, latest.json is untouched, no log PR.
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -84,15 +89,23 @@ jobs:
             --candidate-dir ml --out ml/eval_rows.json --version "${{ steps.version.outputs.version }}" \
             --fetch-published
 
+      - name: Dry run summary
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          echo "Dry run: training and the gate passed. Nothing was uploaded and models/latest.json is unchanged."
+
       - name: Set up Node
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         uses: actions/setup-node@v7
         with:
           node-version: '22'
 
       - name: Install functions dependencies
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         run: npm ci --prefix functions
 
       - name: Upload models to private storage
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
         run: |
@@ -104,6 +117,7 @@ jobs:
           node functions/scripts/upload-models.js --dir ml --require-eval-rows --version "${{ steps.version.outputs.version }}"
 
       - name: Append retrain results to MODEL_LOG
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         run: |
           python3 - <<'EOF'
           import json, datetime, pathlib
@@ -144,6 +158,7 @@ jobs:
           EOF
 
       - name: Prepare model update branch
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         id: model_changes
         env:
           MODEL_BRANCH: automation/weekly-model-retrain-${{ github.run_id }}
@@ -163,7 +178,7 @@ jobs:
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Open model update pull request
-        if: steps.model_changes.outputs.changed == 'true'
+        if: ${{ steps.model_changes.outputs.changed == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         env:
           GH_TOKEN: ${{ github.token }}
           MODEL_BRANCH: automation/weekly-model-retrain-${{ github.run_id }}
