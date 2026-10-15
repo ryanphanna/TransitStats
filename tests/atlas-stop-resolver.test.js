@@ -174,14 +174,14 @@ describe('Atlas stop resolver', () => {
         const index = buildStopIndex({
             firestoreStops: [{
                 agency: 'TTC',
-                name: 'College / Beverley',
-                aliases: ['College Beverley'],
+                name: 'Hazel / Quince',
+                aliases: ['Hazel Quince'],
                 lat: 43.65,
                 lng: -79.4,
             }],
         });
 
-        const result = resolveStopLocation({ agency: 'TTC', startStopName: 'College Beverley' }, 'boarding', index);
+        const result = resolveStopLocation({ agency: 'TTC', startStopName: 'Hazel Quince' }, 'boarding', index);
         expect(result).toEqual({ source: 'unresolved', location: null });
     });
 

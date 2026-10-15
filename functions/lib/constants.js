@@ -122,3 +122,10 @@ exports.AGENCY_CITY = {
   'SMART': 'Sonoma / Marin',
   'Santa Rosa CityBus': 'Santa Rosa',
 };
+
+// Prediction history windows (read by ml/eval/harness.py and ml/eval/replay_js.js; keep the
+// `exports.NAME = <integer>;` form). V3 votes over the newest PREDICTION_HISTORY_LIMIT completed
+// trips (3.5.0); V4/V5 eligibility counts the first ELIGIBILITY_HISTORY_LIMIT of those after the
+// serving filter.
+exports.PREDICTION_HISTORY_LIMIT = 500;
+exports.ELIGIBILITY_HISTORY_LIMIT = 100;

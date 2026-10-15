@@ -94,11 +94,11 @@ test('lookupStop: prefers candidate whose stopRoutes serves the requested route'
     stops: [
       {
         id: 's_2070',
-        data: { agencies: ['TTC'], code: '2070', name: 'Dufferin / Lawrence', aliases: [] },
+        data: { agencies: ['TTC'], code: '2070', name: 'Grove / Juniper', aliases: [] },
       },
       {
         id: 's_5360',
-        data: { agencies: ['TTC'], code: '5360', name: 'Dufferin / Lawrence', aliases: [] },
+        data: { agencies: ['TTC'], code: '5360', name: 'Grove / Juniper', aliases: [] },
       },
     ],
     stopRoutes: {
@@ -107,7 +107,7 @@ test('lookupStop: prefers candidate whose stopRoutes serves the requested route'
     },
   });
 
-  const result = await lookupStop(null, 'Dufferin / Lawrence', 'TTC', '52B');
+  const result = await lookupStop(null, 'Grove / Juniper', 'TTC', '52B');
   assert.ok(result);
   assert.equal(result.stopCode, '5360');
 });

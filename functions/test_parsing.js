@@ -26,9 +26,9 @@ test('multi-line: route + stop', () => {
 });
 
 test('multi-line: route + stop + direction', () => {
-  const result = parseMultiLineTripFormat('47\nLansdowne / Dupont\nNorth', DEFAULT_AGENCY);
+  const result = parseMultiLineTripFormat('47\nLaurel / Willow\nNorth', DEFAULT_AGENCY);
   assert.equal(result.route, '47');
-  assert.equal(result.stop, 'Lansdowne / Dupont');
+  assert.equal(result.stop, 'Laurel / Willow');
   assert.equal(result.direction, 'Northbound');
 });
 
@@ -61,7 +61,7 @@ test('multi-line: slash in stop name normalizes correctly', () => {
 });
 
 test('multi-line: agency on line 3 is accepted if not a direction', () => {
-  const result = parseMultiLineTripFormat('47\nLansdowne / Dupont\nGO Transit', DEFAULT_AGENCY);
+  const result = parseMultiLineTripFormat('47\nLaurel / Willow\nGO Transit', DEFAULT_AGENCY);
   // GO Transit is not a direction, so it should be treated as an agency (v1.26.0 logic).
   assert.equal(result.agency, 'GO Transit');
   assert.equal(result.agencyExplicit, true);
@@ -101,9 +101,9 @@ test('single-line: extracts vehicle from stop name', () => {
 });
 
 test('single-line: stop with spaces and slash', () => {
-  const result = parseSingleLineTripFormat('47 Lansdowne / Dupont South', DEFAULT_AGENCY);
+  const result = parseSingleLineTripFormat('47 Laurel / Willow South', DEFAULT_AGENCY);
   assert.equal(result.route, '47');
-  assert.equal(result.stop, 'Lansdowne / Dupont');
+  assert.equal(result.stop, 'Laurel / Willow');
   assert.equal(result.direction, 'Southbound');
 });
 
@@ -141,10 +141,10 @@ test('single-line: tonight\'s failing case', () => {
 // ─── parseCasualTripFormat ───────────────────────────────────────────────────
 
 test('casual: "I\'m on the [route] from [stop]"', () => {
-  const result = parseCasualTripFormat('I\'m on the 510 from Spadina and Nassau', DEFAULT_AGENCY);
+  const result = parseCasualTripFormat('I\'m on the 510 from Aspen and Poplar', DEFAULT_AGENCY);
   assert.ok(result !== null);
   assert.equal(result.route, '510');
-  assert.equal(result.stop, 'Spadina & Nassau');
+  assert.equal(result.stop, 'Aspen & Poplar');
   assert.equal(result.direction, null);
 });
 

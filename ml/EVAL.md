@@ -14,12 +14,27 @@ One shared offline harness scores every predictor on the same trips. Aggregates 
 | Eval rows | clean SMS trips (`sms`, `sms_fallback`, `mms`) starting 2026-05-01 to 2026-10-15: **409** rows out of 548 completed SMS trips in the window |
 | Clean | the same filter as `getRecentCompletedTrips` (not incomplete/discarded/needs_review, no blocking correction, stop matched), plus route, start stop and end stop present |
 | Folds | 12 walk-forward folds of 14 days. V4/V5 are refit at each fold start on clean trips that ended before it. Count filters (≥3 per route, ≥5 per route+stop, ≥10 per end-stop class) use training rows only |
-| History-based predictors | each trip sees exactly what serving loads at its start: the newest 100 completed trips by end time, then the clean filter. Sequence features (last end stop, last route, gap) come from `history[0]` |
+| History-based predictors | each trip sees exactly what serving loads at its start: the newest `PREDICTION_HISTORY_LIMIT` completed trips by end time (500 since V3 3.5.0; 100 when the baseline tables below were scored), then the clean filter. V4/V5 eligibility counts the first `ELIGIBILITY_HISTORY_LIMIT` (100) of those with `cleanTripsForAgency`'s rules. Both limits are read from `functions/lib/constants.js`. Sequence features (last end stop, last route, gap) come from `history[0]` |
 | Grading | end stop: V3's `_stopMatch` canonicalization, as `finalization.js` grades. Route: `normalizeRouteForGrading`, route only for every predictor (live `predictionStats` checked direction for V3 until route grading was removed, so historical live V3 route numbers differ) |
 | Abstentions | count as misses; coverage is reported separately |
 | Promotion rule | beat both V3 (as served) and the best baseline on the paired last-90-day slice (160 rows), with the 95% bootstrap CI of the difference above 0 |
 
 Pinned: `EVAL_START`, `EVAL_END`, `FOLD_DAYS` and the snapshot hash. Re-exports print a warning and are not comparable. Any change to the definition bumps `EVAL_VERSION`.
+
+## Current live (as of 8ce7ae2)
+
+What serves today, end stop, n=409. V3, habit and served rows are from `harness.py --task end --only v3,habit,combo` on a fresh default replay (`replay_js.js`, 500-trip window) of 8ce7ae2. V4/V5 rows are copied from "V4/V5 end stop" below (scored with the 100-trip window and the old eligibility count, not re-scored).
+
+| Predictor | Top-1 [95% CI] | Top-3 | Coverage | Conf ≥75 cov / prec |
+|---|---|---|---|---|
+| V3 3.5.0 (with the topology fix) | 50.6% [45.8–55.4] | 61.1% | 98.3% | 60% / 70% |
+| Habit engine v2 | 10.5% | 10.5% | 12.5% | 8% / 82% |
+| Served to admin (habit, else V3 list) | 50.6% [45.8–55.4] | 60.4% | 98.3% | 61% / 69% |
+| V4 4.6 refit (shadow) | 40.8% [36.2–45.7] | 49.4% | 88.0% | |
+| V5 5.6 refit (shadow) | 38.1% [33.6–42.9] | 48.9% | 88.0% | |
+
+- The admin view shows "Usual trip to X." when the habit fires, else V3 guesses with confidence ≥75. Its ≥75 column is that gate: a suggestion is shown on 61% of rows and is right 69% of the time.
+- Non-admins see no end-stop suggestion.
 
 ## Baseline results (v1)
 
@@ -312,3 +327,91 @@ Reference, `--task route --only v3,baseline,combo` on the eval_v1 snapshot (n=40
 | V3 (as served until now) | 45.5% | 45.5% | 57.0% | 0.0 | -28.7 [-36.9, -20.6] |
 
 Decision: removal, not a model change; no promotion rule applies.
+
+## V6: backoff and rerank, scored on eval v1
+
+Code: `ml/eval/predictors/v6.py`, plus the tuning and extra checks in `ml/eval/v6_tune.py`. Same 409 rows, snapshot `78a4265b1519`. Hour buckets are local time.
+
+- **V6 backoff** ports `v6_eval_against_shadow.py`. It walks from the richest context (route + start + direction + previous end stop + 3h bucket + day type) down to agency-wide, and answers from the first bucket with enough support. Top-3 is filled from broader levels.
+  - Sequence context always comes from serving's `history[0]`.
+  - Level order, min support (1/2/3/5) and recency half-life (25/50/100/200/none) were picked by top-1 on the 249 rows before the last 90 days.
+  - Parity check: the degenerate B3 config scores 42.2% on those rows, which matches B3-full.
+- **V6 rerank** builds candidates from V3 top-3, V6 backoff top-5, B3-full top-3, the last end stop and the last start stop.
+  - Each candidate is scored by a logistic model on 29 per-candidate features:
+    - decayed shares at route+start+direction, route+start, route+start×3h×day, same hour ±1, start, route and route+start+previous end
+    - last end stop, and return to the last start stop, each crossed with the gap bucket
+    - V3 rank and confidence, and B3/V6 rank
+  - The model is refit at each fold start on clean replayed trips (Jan 2026 onward) that ended before the fold. Each training trip's candidates come from history before its own start.
+  - The feature set and the pre-tuning backoff were fixed before any last-90-day run. C=1 was confirmed on the tune rows.
+
+### End stop
+
+| Predictor | Top-1 [95% CI] | Top-3 | Coverage | vs V3 (90d) | vs B3 full (90d) | vs V3-else-B3 full (90d) |
+|---|---|---|---|---|---|---|
+| V3 (as served) | 27.9% [23.7–32.4] | 29.6% | 42.5% | 0 | -18.8 [-26.2, -11.2] | |
+| B3 on full history | 45.2% [40.5–50.1] | 51.6% | 99.3% | +18.8 | 0 | |
+| V3, else B3 on full history | 44.3% [39.5–49.1] | 49.1% | 99.3% | +21.2 | +2.5 [-1.9, +6.9] | 0 |
+| V6 backoff, tuned (serve history) | 43.5% [38.8–48.4] | 54.8% | 98.0% | +15.6 | -3.1 [-10.0, +3.8] | |
+| V6 backoff, original order (full history) | 47.9% [43.1–52.8] | 63.8% | 99.3% | +21.2 | +2.5 [-4.4, +8.8] | |
+| V6 backoff, tuned (full history) | 49.9% [45.1–54.7] | 64.1% | 99.3% | +21.9 [+14.4, +30.0] | +3.1 [-3.1, +9.4] | +0.6 [-6.9, +6.9] |
+| V3, else V6 backoff full | 47.7% [42.9–52.5] | 58.4% | 99.3% | +23.1 | +4.4 [-2.5, +11.2] | |
+| **V6 rerank (walk-forward logistic)** | **52.6% [47.7–57.4]** | **64.3%** | 100% | **+28.1 [+20.0, +36.2]** | **+9.4 [+4.4, +14.4]** | **+6.9 [+0.6, +13.1]** |
+
+**Rerank detail:**
+- Last 90 days: 59.4%, against 50.0% for B3 full and 52.5% for V3-else-B3.
+- On the earlier tune rows it ties tuned backoff at 48%; the gain is concentrated in the last 90 days, when it has the most training trips.
+- Confidence ≥50: 76% coverage at 63% precision. Confidence ≥75: 49% coverage at 71% precision.
+- Segments: weekday 54%, weekend 43%, TTC 56%, other agency 18%.
+- Candidate recall, which caps what it can reach: 77.5% on the last 90 days, about 7 candidates per trip.
+
+### Route (never shown to users)
+
+| Predictor | Top-1 | Top-3 | vs V3 (90d) | vs B3 full (90d) |
+|---|---|---|---|---|
+| B3 on full history | 66.5% | 73.8% | +28.7 | 0 |
+| V6 backoff, tuned (full history) | 69.7% | 80.4% | +31.9 | +3.1 [-1.2, +8.1] |
+
+### Caveats
+
+- The 409-row figures include the 249 tuning rows, so the tuned backoff's whole-window number is slightly optimistic. The last-90-day diffs are clean.
+- The full-history views read every clean trip before the trip, not the 100 that serving loads today.
+- **Exploratory: the same rerank fed only the 100-trip serve window** scores 44.0% top-1, -1.9 [-8.8, +5.6] against B3 full on the last 90 days, so it does not pass. The gain needs deep history.
+- With n=160, the rerank's lower bound against V3-else-B3 (+0.6) is thin. Re-check it on the next snapshot before trusting the size of the gain.
+
+**Decision:** the V6 rerank passes the promotion rule for end stop: it beats V3 and B3 full on the last 90 days, with both CIs above 0. The serving design is proposed for the manager's decision and is not implemented. V6 backoff alone, and the route backoff, do not pass.
+
+### Serving proposal for the V6 rerank (not implemented)
+
+- **Where:** a new `functions/lib/predict_v6.js` with the backoff, the candidate features and the logistic scorer.
+  - Call it from `handlers-trip.js` at the same places V3's end-stop prediction runs, the start and confirm-start paths.
+  - Run it in shadow first: log it to `predictionStats` as v6 and keep showing V3/habit. Promote it after a shadow period re-checks the paired gain live.
+  - Add a JS-vs-Python parity test, extending the `replay_js.js` replay, so the JS matches `ml/eval/predictors/v6.py`.
+- **What serving needs:**
+  - V3's top-3, already computed in that handler.
+  - The sequence context from `history[0]`, already loaded.
+  - Deep per-user history: needed, since the serve-window variant above fails.
+  - A coefficient file of 29 weights plus an intercept, published by the weekly retrain beside the V4/V5 artifacts.
+- **Retrain dependency:** the training features include V3's output on past trips, so the weekly retrain has to run the Node replay (`replay_js.js`) before fitting. The current retrain is Python only.
+- **History cost, two options:**
+  - **(a)** Read the full clean history per prediction: about as many document reads as the user has trips, roughly 3k for this account, against 100 today. Latency grows with it. This is the simplest version and matches what was scored.
+  - **(b)** A per-user summary document that finalization updates: 1 read per prediction and 1 write per completed trip.
+    - The decay is by rank within a bucket, so each bucket updates incrementally: multiply its weights by exp(-λ), then add 1.
+    - The rich buckets multiply keys, so it needs a split, for example one document per agency, route and start stop, to stay under the 1 MB limit. That is 1–2 reads per prediction.
+    - The scorer itself is a 7-candidate dot product, so latency is negligible.
+
+### V6 rerank re-scored against V3 as served on main (3.5.0, 500-trip window)
+
+Same eval definition v1 (snapshot `78a4265b1519`, 409 rows, last 90 days n=160). Replay: `TZ=UTC node ml/eval/replay_js.js ... --limit 500` on main at `8ce7ae2`, passed as `--replay`, so both "V3 (as served)" and the rerank's V3 candidates and features come from current serving. Scored with `harness.py --task end --only v6,combo`.
+
+| Predictor | Top-1 [95% CI] | Top-3 | Coverage | Pre-90 / last 90d | vs V3 (90d) | vs B3 full (90d) | Conf ≥50 cov / prec | Conf ≥75 cov / prec |
+|---|---|---|---|---|---|---|---|---|
+| V3 (as served, main) | 50.6% [45.8–55.4] | 61.1% | 98.3% | 47.4% / 55.6% | 0 | +5.6 [-0.6, +11.2] | 80% / 60% | 60% / 70% |
+| B3 on full history | 45.2% [40.5–50.1] | 51.6% | 99.3% | 42.2% / 50.0% | -5.6 [-11.2, +0.6] | 0 | 70% / 60% | 51% / 64% |
+| V6 backoff, tuned (full history) | 49.9% [45.1–54.7] | 64.1% | 99.3% | 47.8% / 53.1% | -2.5 [-10.0, +5.0] | +3.1 [-3.1, +9.4] | | |
+| **V6 rerank (walk-forward logistic)** | **52.3% [47.5–57.1]** | 67.5% | 100% | 48.6% / 58.1% | **+2.5 [-1.9, +6.9]** | +8.1 [+3.8, +13.1] | 80% / 61% | 59% / 70% |
+
+- **Why V3 moved from 46.0% to 50.6%:** `predict_v3.js` is unchanged since 3.5.0, but the topology-constraint label matching (and `topology.json`) merged to main after it was scored. Replaying with the 3.5.0-era topology files reproduces 46.0%, and against that V3 the rerank still scores +7.5 [+1.9, +13.1].
+- **Retune on pre-90 folds:** rerank C in {0.1, 0.3, 1, 3, 10} spans 48.6–49.0% on the 249 tune rows (one row apart). C stays 1; nothing else was changed.
+- Most of the rerank's old margin was V3's coverage gap, which 3.5.0's backoff and the topology fix have since closed.
+
+**Decision:** the V6 rerank no longer passes the promotion rule. It beats B3 full (CI above 0) but not V3 as served now (+2.5, CI [-1.9, +6.9]). Shadow serving was not built. Re-check on the next snapshot; a larger last-90-day slice could settle a gain of this size.

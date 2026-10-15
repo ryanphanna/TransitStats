@@ -74,11 +74,11 @@ test('score: cold start, large gap does not link', () => {
 
 test('score: known stop pair within typical gap links', () => {
   const history = [
-    ...linkedPair({ routeA: '47', routeB: '506', endStop: 'Lansdowne / Dupont', startStop: 'Lansdowne / Dupont', gap: 4 }),
-    ...linkedPair({ routeA: '47', routeB: '506', endStop: 'Lansdowne / Dupont', startStop: 'Lansdowne / Dupont', gap: 6 }),
+    ...linkedPair({ routeA: '47', routeB: '506', endStop: 'Laurel / Willow', startStop: 'Laurel / Willow', gap: 4 }),
+    ...linkedPair({ routeA: '47', routeB: '506', endStop: 'Laurel / Willow', startStop: 'Laurel / Willow', gap: 6 }),
   ];
-  const prev = trip({ route: '47', endStop: 'Lansdowne / Dupont', endTime: new Date('2026-04-15T20:10:00Z') });
-  const next = trip({ route: '506', startStop: 'Lansdowne / Dupont', startTime: new Date('2026-04-15T20:15:00Z') });
+  const prev = trip({ route: '47', endStop: 'Laurel / Willow', endTime: new Date('2026-04-15T20:10:00Z') });
+  const next = trip({ route: '506', startStop: 'Laurel / Willow', startTime: new Date('2026-04-15T20:15:00Z') });
   const confidence = TransferEngine.score(prev, next, history);
   assert.ok(confidence >= TransferEngine.CONFIDENCE_THRESHOLD, `Expected >= ${TransferEngine.CONFIDENCE_THRESHOLD}, got ${confidence}`);
 });
@@ -86,12 +86,12 @@ test('score: known stop pair within typical gap links', () => {
 test('score: known stop pair but gap way outside historical range does not link', () => {
   // Historical transfers at this stop averaged 5 min — 31 min should not link
   const history = [
-    ...linkedPair({ endStop: 'Lansdowne / Dupont', startStop: 'Lansdowne / Dupont', gap: 4 }),
-    ...linkedPair({ endStop: 'Lansdowne / Dupont', startStop: 'Lansdowne / Dupont', gap: 5 }),
-    ...linkedPair({ endStop: 'Lansdowne / Dupont', startStop: 'Lansdowne / Dupont', gap: 6 }),
+    ...linkedPair({ endStop: 'Laurel / Willow', startStop: 'Laurel / Willow', gap: 4 }),
+    ...linkedPair({ endStop: 'Laurel / Willow', startStop: 'Laurel / Willow', gap: 5 }),
+    ...linkedPair({ endStop: 'Laurel / Willow', startStop: 'Laurel / Willow', gap: 6 }),
   ];
-  const prev = trip({ endStop: 'Lansdowne / Dupont', endTime: new Date('2026-04-15T20:10:00Z') });
-  const next = trip({ startStop: 'Lansdowne / Dupont', startTime: new Date('2026-04-15T20:41:00Z') }); // 31 min gap
+  const prev = trip({ endStop: 'Laurel / Willow', endTime: new Date('2026-04-15T20:10:00Z') });
+  const next = trip({ startStop: 'Laurel / Willow', startTime: new Date('2026-04-15T20:41:00Z') }); // 31 min gap
   const confidence = TransferEngine.score(prev, next, history);
   assert.ok(confidence < TransferEngine.CONFIDENCE_THRESHOLD, `Expected < ${TransferEngine.CONFIDENCE_THRESHOLD}, got ${confidence}`);
 });
@@ -110,11 +110,11 @@ test('score: gap over 90 min returns 0', () => {
 
 test('score: tonight\'s false positive (31 min, no history) does not link', () => {
   // Before TransferEngine, two 47 trips 31 min apart got linked — should not happen without history
-  const prev = trip({ route: '47', endStop: 'College / Lansdowne', endTime: new Date('2026-04-16T00:56:00Z') });
-  const next = trip({ route: '47', startStop: 'College / Lansdowne', startTime: new Date('2026-04-16T01:00:00Z') });
+  const prev = trip({ route: '47', endStop: 'Hazel / Laurel', endTime: new Date('2026-04-16T00:56:00Z') });
+  const next = trip({ route: '47', startStop: 'Hazel / Laurel', startTime: new Date('2026-04-16T01:00:00Z') });
   // With only 4 min gap it would still link — the issue was 31 min. Let's test 31 min.
-  const prev2 = trip({ route: '47', endStop: 'Lansdowne / Dupont', endTime: new Date('2026-04-16T00:20:00Z') });
-  const next2 = trip({ route: '47', startStop: 'Lansdowne / Dupont', startTime: new Date('2026-04-16T00:51:00Z') });
+  const prev2 = trip({ route: '47', endStop: 'Laurel / Willow', endTime: new Date('2026-04-16T00:20:00Z') });
+  const next2 = trip({ route: '47', startStop: 'Laurel / Willow', startTime: new Date('2026-04-16T00:51:00Z') });
   const confidence = TransferEngine.score(prev2, next2, []);
   assert.ok(confidence < TransferEngine.CONFIDENCE_THRESHOLD, `31-min gap with no history should not link, got ${confidence}`);
 });
@@ -126,7 +126,7 @@ test('_stopMatch: same name matches', () => {
 });
 
 test('_stopMatch: different punctuation matches', () => {
-  assert.equal(TransferEngine._stopMatch('Lansdowne / Dupont', 'Lansdowne/Dupont'), true);
+  assert.equal(TransferEngine._stopMatch('Laurel / Willow', 'Laurel/Willow'), true);
 });
 
 test('_stopMatch: case insensitive', () => {
@@ -310,7 +310,7 @@ test('score: cold start + network connection extends window to 20 min', () => {
 
 test('score: no-pattern + strong network connection links at short gap', () => {
   // Has history but no matching stop or route pair — network connection should push over threshold
-  const history = linkedPair({ routeA: '47', routeB: '506', endStop: 'Lansdowne / Dupont', startStop: 'Lansdowne / Dupont' });
+  const history = linkedPair({ routeA: '47', routeB: '506', endStop: 'Laurel / Willow', startStop: 'Laurel / Willow' });
   const prev = trip({ route: '510', endStop: 'Spadina Station', endTime: new Date('2026-04-15T20:00:00Z') });
   const next = trip({ route: '2', startStop: 'Spadina Station', startTime: new Date('2026-04-15T20:08:00Z') });
   const noNetwork = TransferEngine.score(prev, next, history);
@@ -495,23 +495,23 @@ test('suggestConnectedPairs: filters out weak or slow pairs', () => {
     ...linkedPair({
       routeA: '47',
       routeB: '29',
-      endStop: 'Lansdowne / Dupont',
-      startStop: 'Dufferin / Lawrence',
+      endStop: 'Laurel / Willow',
+      startStop: 'Grove / Juniper',
       gap: 20,
     }),
     ...linkedPair({
       routeA: '47',
       routeB: '29',
-      endStop: 'Lansdowne / Dupont',
-      startStop: 'Dufferin / Lawrence',
+      endStop: 'Laurel / Willow',
+      startStop: 'Grove / Juniper',
       gap: 18,
       baseTime: new Date('2026-04-16T20:00:00Z'),
     }),
     ...linkedPair({
       routeA: '47',
       routeB: '29',
-      endStop: 'Lansdowne / Dupont',
-      startStop: 'Dufferin / Lawrence',
+      endStop: 'Laurel / Willow',
+      startStop: 'Grove / Juniper',
       gap: 16,
       baseTime: new Date('2026-04-17T20:00:00Z'),
     }),

@@ -31,6 +31,22 @@ class FakeData(harness.Data):
 
 
 class HarnessTests(unittest.TestCase):
+    def test_history_limits_are_read_from_serving_constants(self):
+        # Fails if functions/lib/constants.js stops exporting either window as a plain integer.
+        self.assertEqual(harness.HISTORY_LIMIT, harness.read_serving_constant("PREDICTION_HISTORY_LIMIT"))
+        self.assertEqual(harness.ELIGIBILITY_HISTORY_LIMIT, harness.read_serving_constant("ELIGIBILITY_HISTORY_LIMIT"))
+        self.assertGreater(harness.HISTORY_LIMIT, 0)
+        self.assertGreater(harness.ELIGIBILITY_HISTORY_LIMIT, 0)
+        with self.assertRaises(RuntimeError):
+            harness.read_serving_constant("NO_SUCH_CONSTANT")
+
+    def test_eligibility_count_mirrors_clean_trips_for_agency(self):
+        hist = [trip(1, 0), trip(2, 1, agency="ttc "), trip(3, 2, agency="GO"),
+                trip(4, 3, correctedFields=["notes"]), trip(5, 4, endStopName=None),
+                trip(6, 5, stop_matched=False), trip(7, 6, needs_reprocess=True)]
+        self.assertEqual(harness.eligibility_clean_count(hist, "TTC"), 2)
+        self.assertEqual(harness.eligibility_clean_count(hist, None), 0)
+
     def test_serve_history_excludes_future_and_unclean_trips(self):
         trips = [trip(1, 0), trip(2, 1, needs_review=True), trip(3, 2, stop_matched=False), trip(4, 3), trip(5, 10)]
         data = FakeData(trips)
