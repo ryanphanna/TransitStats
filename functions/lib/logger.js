@@ -32,6 +32,29 @@ function maskPhone(phone) {
 }
 
 /**
+ * Redact an email address (e.g., ryan@example.com -> r***@example.com)
+ * @param {string} email - raw email address
+ * @returns {string} masked email address
+ */
+function maskEmail(email) {
+  if (!email || typeof email !== 'string') return 'Unknown';
+  const at = email.lastIndexOf('@');
+  if (at < 1) return '***';
+  return email.charAt(0) + '***' + email.substring(at);
+}
+
+/**
+ * Summarize a request body for error logs without its contents: only the
+ * field names, so From/Body/email values never reach the logs.
+ * @param {*} body - req.body
+ * @returns {{ fields: string[] }}
+ */
+function describeRequest(body) {
+  const fields = body && typeof body === 'object' ? Object.keys(body).sort() : [];
+  return { fields };
+}
+
+/**
  * Normalize a data object for logging: apply PII redaction and extract traceId.
  * @param {object} data
  * @returns {{ logData: object, traceId: string|null }}
@@ -50,6 +73,8 @@ function normalizeLogData(data = {}) {
   if (logData.phoneNumber) logData.phoneNumber = maskPhone(logData.phoneNumber);
   if (logData.phone) logData.phone = maskPhone(logData.phone);
   if (logData.From) logData.From = maskPhone(logData.From);
+  if (logData.email) logData.email = maskEmail(logData.email);
+  if (logData.Email) logData.Email = maskEmail(logData.Email);
 
   // Redact message body/content if it might contain private info
   if (logData.body) logData.body = `[REDACTED (Length: ${logData.body.length})]`;
@@ -94,6 +119,7 @@ function info(message, data = {}, traceId = null) {
 
 /**
  * Log error events with optional trace correlation.
+ * Plain-object payloads are always PII-masked; Error instances are logged as-is.
  * @param {string} message
  * @param {Error|object} [err]
  * @param {string} [traceId]
@@ -105,7 +131,7 @@ function error(message, err = {}, traceId = null) {
   if (typeof err === 'string' && !traceId) {
     finalTrace = err;
     errorPayload = {};
-  } else if (err && typeof err === 'object' && (err.traceId || err.trace_id)) {
+  } else if (err && typeof err === 'object' && !(err instanceof Error)) {
     const normalized = normalizeLogData(err);
     errorPayload = normalized.logData;
     if (!finalTrace) finalTrace = normalized.traceId;
@@ -116,13 +142,26 @@ function error(message, err = {}, traceId = null) {
 }
 
 /**
- * Log warning events with optional trace correlation.
+ * Log warning events with PII masking and optional trace correlation.
  * @param {string} message
- * @param {string} [traceId]
+ * @param {object|string} [data] - details to log (a string is treated as a traceId)
+ * @param {string} [traceId] - optional convenience param
  */
-function warn(message, traceId = null) {
-  const prefix = formatPrefix('WARN', traceId);
-  console.warn(`${prefix} ${message}`);
+function warn(message, data = {}, traceId = null) {
+  let finalTrace = traceId;
+  let logData;
+
+  if (typeof data === 'string' && !traceId) {
+    finalTrace = data;
+    logData = {};
+  } else {
+    const normalized = normalizeLogData(data || {});
+    logData = normalized.logData;
+    if (!finalTrace) finalTrace = normalized.traceId;
+  }
+
+  const prefix = formatPrefix('WARN', finalTrace);
+  console.warn(`${prefix} ${message}`, Object.keys(logData).length ? logData : '');
 }
 
 module.exports = {
@@ -130,5 +169,7 @@ module.exports = {
   error,
   warn,
   maskPhone,
+  maskEmail,
+  describeRequest,
   generateTraceId,
 };

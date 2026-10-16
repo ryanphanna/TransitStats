@@ -60,7 +60,7 @@ async function handleSmsRequest(req, res) {
     logger.error('CRITICAL SMS DISPATCH ERROR', {
       error: err.message,
       stack: err.stack,
-      request: req.body,
+      request: logger.describeRequest(req.body),
       traceId,
     }, traceId);
     res.status(500).send('Internal Error');
