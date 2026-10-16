@@ -104,6 +104,15 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, getTu
       let sharedFull = false;
 
       await db.runTransaction(async transaction => {
+        // Firestore re-runs this callback when it retries a contended
+        // transaction, so every outcome flag starts fresh on each attempt.
+        secondsRemaining = 0;
+        dailyLimitReached = false;
+        ipLimitReached = false;
+        globalLimitReached = false;
+        usedReserve = false;
+        sharedFull = false;
+
         const existingVerification = await transaction.get(verificationRef);
         const lastSentAt = existingVerification.exists ? existingVerification.data().sentAt : null;
         if (lastSentAt?.toDate) {

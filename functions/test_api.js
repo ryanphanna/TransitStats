@@ -791,3 +791,51 @@ test('a failure to record sign-in activity does not block the sign-in', async ()
   assert.equal(response.statusCode, 200);
   assert.ok(response.body.token);
 });
+
+test('a retried transaction starts its outcome flags fresh, so the refund and answer match the final attempt', async () => {
+  const active = '+15195550143';
+  const { db, handlers, sentMessages } = createOtpHarness(
+    capSeed({ count: OTP_GLOBAL_SHARED_LIMIT - 1, phones: { [active]: 1 } }),
+    { smsResult: false },
+  );
+  // The discarded first attempt sees the shared part full and would use the
+  // reserve; on the retry the shared part has room. Everything after the
+  // transaction must follow the retry, not the discarded attempt.
+  const realRun = db.runTransaction.bind(db);
+  db.runTransaction = async callback => {
+    const globalDoc = db.collection('phoneLoginGlobalLimits').doc(today());
+    await globalDoc.set({ count: OTP_GLOBAL_SHARED_LIMIT, reserveCount: OTP_GLOBAL_RESERVE_LIMIT });
+    await callback({ get: ref => ref.get(), set() {}, update() {}, delete() {} }); // discarded attempt
+    await globalDoc.set({ count: OTP_GLOBAL_SHARED_LIMIT - 1, reserveCount: 0 });
+    return realRun(callback);
+  };
+
+  const response = new FakeResponse();
+  await handlers.handleRequestOtp(otpReq(active, '203.0.113.9'), response, 't');
+
+  // The retry used a shared slot; the failed send refunds that same slot.
+  assert.equal(sentMessages.length, 1);
+  assert.equal(response.statusCode, 500);
+  const global = db.read('phoneLoginGlobalLimits', today());
+  assert.equal(global.count, OTP_GLOBAL_SHARED_LIMIT - 1);
+  assert.equal(global.reserveCount, 0);
+});
+
+test('a retried transaction does not keep a stale block from a discarded attempt', async () => {
+  const active = '+15195550143';
+  const { db, handlers, sentMessages } = createOtpHarness(capSeed({ phones: { [active]: 1 } }));
+  const realRun = db.runTransaction.bind(db);
+  db.runTransaction = async callback => {
+    const globalDoc = db.collection('phoneLoginGlobalLimits').doc(today());
+    await globalDoc.set({ count: OTP_GLOBAL_SHARED_LIMIT, reserveCount: OTP_GLOBAL_RESERVE_LIMIT });
+    await callback({ get: ref => ref.get(), set() {}, update() {}, delete() {} }); // blocked attempt
+    await globalDoc.set({ count: 10, reserveCount: 0 });
+    return realRun(callback);
+  };
+
+  const response = new FakeResponse();
+  await handlers.handleRequestOtp(otpReq(active, '203.0.113.9'), response, 't');
+  assert.equal(response.statusCode, 200);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(db.read('phoneLoginGlobalLimits', today()).count, 11);
+});
