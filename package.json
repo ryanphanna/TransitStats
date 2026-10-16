@@ -3,7 +3,7 @@
   "version": "1.49.4",
   "description": "Personal transit trip tracker for enthusiasts to analyze ridership patterns.",
   "engines": {
-    "node": "22"
+    "node": "24"
   },
   "private": true,
   "repository": {
