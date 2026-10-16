@@ -4,6 +4,7 @@ import { Auth } from '../auth.js';
 import { normalizePhone } from '../phone-fields.js';
 import { getPhoneCooldownSeconds, persistPhoneCooldown, clearPhoneCooldown } from '../shared/phone-cooldown.js';
 import { refreshIcons } from '../shared/icons.js';
+import { createTurnstileClient } from '../shared/turnstile.js';
 
 const DOM = {
     phoneStep: document.getElementById('auth-phone-step'),
@@ -24,8 +25,11 @@ const DOM = {
     resetPassword: document.getElementById('btn-auth-reset-password'),
     verifyCode: document.getElementById('btn-auth-verify-code'),
     resendCode: document.getElementById('btn-auth-resend-code'),
-    status: document.getElementById('auth-status')
+    status: document.getElementById('auth-status'),
+    turnstile: document.getElementById('auth-turnstile')
 };
+
+const turnstile = createTurnstileClient({ container: DOM.turnstile });
 
 let normalizedPhone = '';
 let requestBusy = false;
@@ -297,7 +301,8 @@ async function requestCode() {
     setBusy(DOM.requestCode, true, 'Sending…', 'Text me a code');
 
     try {
-        const result = await Auth.requestPhoneCode(normalizedPhone, '');
+        const turnstileToken = await turnstile.getToken();
+        const result = await Auth.requestPhoneCode(normalizedPhone, turnstileToken);
         adminSession = result.isAdmin === true;
         if (adminSession) clearPhoneCooldown(normalizedPhone);
         else persistPhoneCooldown(normalizedPhone);
@@ -382,6 +387,8 @@ function init() {
     syncButtons();
     applyLocalTransitTheme();
     refreshIcons();
+    // Load early so the check is ready by the time someone asks for a code.
+    turnstile.load().catch(() => {});
 }
 
 if (document.readyState === 'loading') {

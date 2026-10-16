@@ -36,7 +36,7 @@ function normalizePhoneNumber(phone) {
   return '+' + cleaned;
 }
 
-function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logger }) {
+function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, getTurnstileMode, logger }) {
   async function handleRequestOtp(req, res, traceId) {
     const phoneNumber = normalizePhoneNumber(req.body.phoneNumber);
 
@@ -46,6 +46,27 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, logge
     }
 
     try {
+      // Bot check runs before anything else, so a failed request never looks
+      // up the number or uses up a limit slot, and every number gets the same
+      // answer. 'monitor' mode only logs; 'enforce' blocks.
+      const turnstileMode = await getTurnstileMode();
+      const turnstile = await verifyTurnstile(req.body.turnstileToken, getTrustedClientIp(req));
+      if (!turnstile.success) {
+        // Log the page's origin too: the widget only issues tokens on hostnames
+        // allowed in the Cloudflare dashboard, so a login page served elsewhere
+        // shows up here as missing_token.
+        const origin = String(req.headers?.origin || 'none').slice(0, 100);
+        if (turnstileMode === 'enforce') {
+          // logger.warn only prints the message, so the reason goes in it.
+          logger.warn(`OTP Request blocked: Turnstile check failed (${turnstile.reason}, origin ${origin})`, traceId);
+          res.status(403).json({ error: 'Security check failed. Please refresh the page and try again.' });
+          return;
+        }
+        logger.warn(`OTP Request Turnstile check failed (${turnstile.reason}, origin ${origin}); monitor mode, allowed`, traceId);
+      } else {
+        logger.info('OTP Request Turnstile check passed', { mode: turnstileMode, traceId }, traceId);
+      }
+
       // The response must not reveal whether a number is registered or confirmed.
       // Ineligible numbers go through the same limits, store a decoy record whose
       // empty code can never match, send nothing, and get the same answer.

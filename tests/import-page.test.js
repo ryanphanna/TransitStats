@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const signOut = vi.fn(async () => {});
 const checkWhitelist = vi.fn();
+const requestPhoneCode = vi.fn(async () => ({ success: true }));
+const getToken = vi.fn(async () => 'turnstile-token');
 let authListener = null;
 
 vi.mock('../js/firebase.js', () => ({
@@ -10,7 +12,10 @@ vi.mock('../js/firebase.js', () => ({
         onAuthStateChanged: (cb) => { authListener = cb; },
     },
 }));
-vi.mock('../js/auth.js', () => ({ Auth: { checkWhitelist, signOut } }));
+vi.mock('../js/auth.js', () => ({ Auth: { checkWhitelist, signOut, requestPhoneCode } }));
+vi.mock('../js/shared/turnstile.js', () => ({
+    createTurnstileClient: () => ({ getToken, load: async () => {} }),
+}));
 vi.mock('../js/presto-importer.js', () => ({ initPrestoImporter: vi.fn() }));
 
 const IDS = [
@@ -18,7 +23,7 @@ const IDS = [
     'import-denied-step', 'import-loading-step', 'import-active', 'import-denied-message',
     'import-heading', 'import-email', 'btn-import-send-link', 'btn-import-use-email',
     'btn-import-use-phone', 'import-sent-to', 'import-status', 'import-phone', 'import-phone-wrap',
-    'btn-import-request-code', 'import-code', 'btn-import-verify-code',
+    'btn-import-request-code', 'import-code', 'btn-import-verify-code', 'import-turnstile',
 ];
 
 describe('/import page access', () => {
@@ -26,6 +31,9 @@ describe('/import page access', () => {
         vi.resetModules();
         signOut.mockClear();
         checkWhitelist.mockReset();
+        requestPhoneCode.mockClear();
+        getToken.mockClear();
+        localStorage.clear();
         document.body.innerHTML = IDS.map(id => `<div id="${id}" class="hidden"></div>`).join('');
         const { initPrestoImporter } = await import('../js/presto-importer.js');
         initPrestoImporter.mockClear();
@@ -45,5 +53,13 @@ describe('/import page access', () => {
         checkWhitelist.mockResolvedValue({ allowed: false, error: 'Access denied.' });
         await authListener({ uid: 'u1', email: 'a@example.com' });
         await vi.waitFor(() => expect(signOut).toHaveBeenCalled());
+    });
+
+    it('sends a fresh Turnstile token with a phone code request', async () => {
+        document.getElementById('import-phone').value = '5195550143';
+        document.getElementById('btn-import-request-code').click();
+        await vi.waitFor(() => expect(requestPhoneCode).toHaveBeenCalled());
+        expect(getToken).toHaveBeenCalledTimes(1);
+        expect(requestPhoneCode).toHaveBeenCalledWith('+15195550143', 'turnstile-token');
     });
 });

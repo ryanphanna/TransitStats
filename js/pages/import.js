@@ -4,6 +4,7 @@ import { initPrestoImporter } from '../presto-importer.js';
 import { normalizePhone } from '../phone-fields.js';
 import { getPhoneCooldownSeconds, persistPhoneCooldown, clearPhoneCooldown } from '../shared/phone-cooldown.js';
 import { refreshIcons } from '../shared/icons.js';
+import { createTurnstileClient } from '../shared/turnstile.js';
 
 const DOM = {
     emailStep: document.getElementById('import-email-step'),
@@ -26,7 +27,10 @@ const DOM = {
     requestCode: document.getElementById('btn-import-request-code'),
     codeInput: document.getElementById('import-code'),
     verifyCode: document.getElementById('btn-import-verify-code'),
+    turnstile: document.getElementById('import-turnstile'),
 };
+
+const turnstile = createTurnstileClient({ container: DOM.turnstile });
 
 const STEPS = ['emailStep', 'phoneStep', 'codeStep', 'checkEmailStep', 'deniedStep', 'loadingStep', 'active'];
 
@@ -96,7 +100,8 @@ async function requestCode() {
     DOM.requestCode.disabled = true;
     DOM.requestCode.textContent = 'Sending…';
     try {
-        const result = await Auth.requestPhoneCode(normalizedPhone);
+        const turnstileToken = await turnstile.getToken();
+        const result = await Auth.requestPhoneCode(normalizedPhone, turnstileToken);
         if (result.isAdmin) clearPhoneCooldown(normalizedPhone);
         else persistPhoneCooldown(normalizedPhone);
         DOM.codeInput.value = '';
@@ -179,6 +184,8 @@ async function init() {
         setStatus('');
         DOM.heading.textContent = 'Sign in to import';
         showStep('phoneStep');
+        // Load early so the check is ready by the time someone asks for a code.
+        turnstile.load().catch(() => {});
     });
 
     auth.onAuthStateChanged((user) => {
