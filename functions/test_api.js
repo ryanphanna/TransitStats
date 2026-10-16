@@ -34,7 +34,14 @@ function createFakeDb(seed = {}) {
       setDocument(collection, id, options.merge ? { ...current, ...value } : value);
     },
     async update(value) {
-      setDocument(collection, id, { ...(getDocument(collection, id) || {}), ...value });
+      const current = getDocument(collection, id) || {};
+      const next = { ...current };
+      for (const [key, change] of Object.entries(value)) {
+        next[key] = change?.constructor?.name === 'NumericIncrementTransform'
+          ? Number(current[key] || 0) + change.operand
+          : change;
+      }
+      setDocument(collection, id, next);
     },
     async delete() {
       data.delete(`${collection}/${id}`);
@@ -107,6 +114,7 @@ function createOtpHarness(seed, {
   turnstileResult = { success: true, reason: 'ok' },
   turnstileMode = 'enforce',
   logged = [],
+  smsResult = true,
 } = {}) {
   const db = createFakeDb(seed);
   const sentMessages = [];
@@ -120,7 +128,7 @@ function createOtpHarness(seed, {
     },
     async sendSmsReply(phone, message) {
       sentMessages.push({ phone, message });
-      return true;
+      return smsResult;
     },
     async verifyTurnstile(token, remoteIp) {
       turnstileCalls.push({ token, remoteIp });
@@ -279,7 +287,7 @@ test('global daily send cap blocks further sends and logs an error', async () =>
 
   assert.equal(response.statusCode, 429);
   assert.equal(sentMessages.length, 0);
-  assert.ok(logged.some(message => /global daily send cap/.test(message)));
+  assert.ok(logged.some(message => /shared daily send cap/.test(message)));
 });
 
 test('admin phone is subject to the per-IP and global caps', async () => {
@@ -613,4 +621,173 @@ test('Turnstile mode defaults to monitor, reads enforce from config, and keeps t
   doc = { mode: 'garbage' };
   clock += 31000;
   assert.equal(await read(), 'monitor');
+});
+
+// --- Shared vs reserved daily text cap (CIV-275) ---
+
+const { Timestamp: AdminTimestamp } = require('firebase-admin/firestore');
+const {
+  OTP_GLOBAL_SHARED_LIMIT,
+  OTP_GLOBAL_RESERVE_LIMIT,
+  OTP_GLOBAL_DAILY_LIMIT,
+} = require('./lib/otp');
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const today = () => new Date().toISOString().slice(0, 10);
+
+function capSeed({ count = OTP_GLOBAL_SHARED_LIMIT, reserveCount = 0, phones = {} } = {}) {
+  const seed = { [`phoneLoginGlobalLimits/${today()}`]: { count, reserveCount } };
+  for (const [phone, lastVerifiedDaysAgo] of Object.entries(phones)) {
+    seed[`phoneNumbers/${phone}`] = { userId: `user-${phone}` };
+    if (lastVerifiedDaysAgo !== null) {
+      seed[`phoneLoginActivity/${phone}`] = {
+        lastVerifiedAt: AdminTimestamp.fromMillis(Date.now() - lastVerifiedDaysAgo * DAY_MS),
+      };
+    }
+  }
+  return seed;
+}
+
+test('the daily cap stays 200 in total: 150 shared plus a 50 reserve', () => {
+  assert.equal(OTP_GLOBAL_SHARED_LIMIT, 150);
+  assert.equal(OTP_GLOBAL_RESERVE_LIMIT, 50);
+  assert.equal(OTP_GLOBAL_DAILY_LIMIT, 200);
+});
+
+test('below the shared cap, sends count against the shared part only', async () => {
+  const phone = '+15195550143';
+  const { db, handlers, sentMessages } = createOtpHarness(capSeed({ count: 10, phones: { [phone]: null } }));
+  const response = new FakeResponse();
+  await handlers.handleRequestOtp(otpReq(phone, '203.0.113.9'), response, 't');
+  assert.equal(response.statusCode, 200);
+  assert.equal(sentMessages.length, 1);
+  assert.deepEqual(
+    { count: db.read('phoneLoginGlobalLimits', today()).count, reserveCount: db.read('phoneLoginGlobalLimits', today()).reserveCount },
+    { count: 11, reserveCount: 0 },
+  );
+});
+
+test('when the shared cap is full, a number that signed in recently still gets a code from the reserve', async () => {
+  const active = '+15195550143';
+  const logged = [];
+  const { db, handlers, sentMessages } = createOtpHarness(capSeed({ phones: { [active]: 3 } }), { logged });
+  const response = new FakeResponse();
+  await handlers.handleRequestOtp(otpReq(active, '203.0.113.9'), response, 't');
+  assert.equal(response.statusCode, 200);
+  assert.equal(sentMessages.length, 1);
+  const global = db.read('phoneLoginGlobalLimits', today());
+  assert.equal(global.count, OTP_GLOBAL_SHARED_LIMIT);
+  assert.equal(global.reserveCount, 1);
+  assert.ok(logged.some(message => /shared daily send cap/.test(message)));
+});
+
+test('when the shared cap is full, inactive, stale and unregistered numbers all get the same blocked answer', async () => {
+  const inactive = '+15195550143';
+  const stale = '+15195550144';
+  const unregistered = '+15195550145';
+  const { handlers, sentMessages } = createOtpHarness(capSeed({ phones: { [inactive]: null, [stale]: 31 } }));
+  const answers = [];
+  for (const [i, phone] of [inactive, stale, unregistered].entries()) {
+    const response = new FakeResponse();
+    await handlers.handleRequestOtp(otpReq(phone, `203.0.113.${i + 1}`), response, 't');
+    answers.push({ status: response.statusCode, body: response.body });
+  }
+  assert.equal(answers[0].status, 429);
+  assert.match(answers[0].body.error, /temporarily unavailable/);
+  assert.deepEqual(answers[1], answers[0]);
+  assert.deepEqual(answers[2], answers[0]);
+  assert.equal(sentMessages.length, 0);
+});
+
+test('a full reserve blocks recently active numbers too, so the total never passes 200', async () => {
+  const active = '+15195550143';
+  const { db, handlers, sentMessages } = createOtpHarness(
+    capSeed({ reserveCount: OTP_GLOBAL_RESERVE_LIMIT, phones: { [active]: 1 } }),
+  );
+  const response = new FakeResponse();
+  await handlers.handleRequestOtp(otpReq(active, '203.0.113.9'), response, 't');
+  assert.equal(response.statusCode, 429);
+  assert.equal(sentMessages.length, 0);
+  const global = db.read('phoneLoginGlobalLimits', today());
+  assert.equal(global.count + global.reserveCount, OTP_GLOBAL_DAILY_LIMIT);
+});
+
+test('many recently active numbers can fill the reserve exactly, never past it', async () => {
+  const phones = {};
+  for (let i = 0; i < 12; i += 1) phones[`+1519555${String(1000 + i)}`] = 1;
+  const { db, handlers } = createOtpHarness(capSeed({ phones }));
+  let sent = 0;
+  for (const [i, phone] of Object.keys(phones).entries()) {
+    for (let n = 0; n < 5; n += 1) {
+      // Clear the 60s resend wait between attempts.
+      db.collection('phoneLoginVerification').doc(phone).delete();
+      const response = new FakeResponse();
+      await handlers.handleRequestOtp(otpReq(phone, `198.51.${i}.${n}`), response, 't');
+      if (response.statusCode === 200) sent += 1;
+    }
+  }
+  assert.equal(sent, OTP_GLOBAL_RESERVE_LIMIT);
+  assert.equal(db.read('phoneLoginGlobalLimits', today()).reserveCount, OTP_GLOBAL_RESERVE_LIMIT);
+});
+
+test('a failed Twilio send gives the slot back to the part it came from', async () => {
+  const active = '+15195550143';
+  const fromReserve = createOtpHarness(capSeed({ phones: { [active]: 1 } }), { smsResult: false });
+  await fromReserve.handlers.handleRequestOtp(otpReq(active, '203.0.113.9'), new FakeResponse(), 't');
+  assert.deepEqual(
+    [fromReserve.db.read('phoneLoginGlobalLimits', today()).count, fromReserve.db.read('phoneLoginGlobalLimits', today()).reserveCount],
+    [OTP_GLOBAL_SHARED_LIMIT, 0],
+  );
+
+  const fromShared = createOtpHarness(capSeed({ count: 10, phones: { [active]: null } }), { smsResult: false });
+  await fromShared.handlers.handleRequestOtp(otpReq(active, '203.0.113.9'), new FakeResponse(), 't');
+  assert.deepEqual(
+    [fromShared.db.read('phoneLoginGlobalLimits', today()).count, fromShared.db.read('phoneLoginGlobalLimits', today()).reserveCount],
+    [10, 0],
+  );
+});
+
+test('a successful code sign-in records recent activity; a wrong code does not', async () => {
+  const phone = '+15195550143';
+  const { db, handlers } = createOtpHarness({
+    [`phoneNumbers/${phone}`]: { userId: 'user-1' },
+    [`phoneLoginVerification/${phone}`]: {
+      code: '123456',
+      attempts: 0,
+      expiresAt: AdminTimestamp.fromMillis(Date.now() + 60000),
+    },
+  });
+
+  const wrong = new FakeResponse();
+  await handlers.handleVerifyOtp({ body: { phoneNumber: phone, code: '000000' } }, wrong, 't1');
+  assert.equal(wrong.statusCode, 400);
+  assert.equal(db.read('phoneLoginActivity', phone), null);
+
+  const right = new FakeResponse();
+  const before = Date.now();
+  await handlers.handleVerifyOtp({ body: { phoneNumber: phone, code: '123456' } }, right, 't2');
+  assert.equal(right.statusCode, 200);
+  assert.ok(db.read('phoneLoginActivity', phone).lastVerifiedAt.toMillis() >= before);
+});
+
+test('a failure to record sign-in activity does not block the sign-in', async () => {
+  const phone = '+15195550143';
+  const { db, handlers } = createOtpHarness({
+    [`phoneNumbers/${phone}`]: { userId: 'user-1' },
+    [`phoneLoginVerification/${phone}`]: {
+      code: '123456',
+      attempts: 0,
+      expiresAt: AdminTimestamp.fromMillis(Date.now() + 60000),
+    },
+  });
+  const original = db.collection.bind(db);
+  db.collection = name => {
+    const col = original(name);
+    if (name !== 'phoneLoginActivity') return col;
+    return { doc: id => ({ ...col.doc(id), set: async () => { throw new Error('write failed'); } }) };
+  };
+  const response = new FakeResponse();
+  await handlers.handleVerifyOtp({ body: { phoneNumber: phone, code: '123456' } }, response, 't');
+  assert.equal(response.statusCode, 200);
+  assert.ok(response.body.token);
 });
