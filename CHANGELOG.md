@@ -8,7 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
-- **Warnings in the server logs now show their details.** Rate-limit and abuse warnings used to print "[object Object]" with nothing else, which made them hard to investigate. Phone numbers stay masked, and error logs now mask them even when there is no trace ID.
+- **Warnings in the server logs now show their details.** Rate-limit and abuse warnings used to print "[object Object]" with nothing else, which made them hard to investigate. Phone numbers stay masked, email addresses are now masked too, and error logs now mask them even when there is no trace ID.
 - **End-stop predictions no longer rule out the stop you actually got off at.** Bathurst (511), Keele (41), King (504) and several LA and Muni lines had their direction backwards, stops like College Station, St Patrick and College / St George weren't matched or were missing from the route maps, and station names are now compared the same way everywhere.
 - **Trips with no exit recorded no longer show a guessed exit on your map.** Admins still see the guess, drawn as a dashed outline labelled "estimated", and it never counts as a real ride.
 - **Stops texted by code that the library doesn't have yet are now found in Atlas.** The stop is looked up in your own agency's Atlas stop list and added, so those trips can become clean data instead of staying unmatched.

@@ -32,6 +32,18 @@ function maskPhone(phone) {
 }
 
 /**
+ * Redact an email address (e.g., ryan@example.com -> r***@example.com)
+ * @param {string} email - raw email address
+ * @returns {string} masked email address
+ */
+function maskEmail(email) {
+  if (!email || typeof email !== 'string') return 'Unknown';
+  const at = email.lastIndexOf('@');
+  if (at < 1) return '***';
+  return email.charAt(0) + '***' + email.substring(at);
+}
+
+/**
  * Normalize a data object for logging: apply PII redaction and extract traceId.
  * @param {object} data
  * @returns {{ logData: object, traceId: string|null }}
@@ -50,6 +62,8 @@ function normalizeLogData(data = {}) {
   if (logData.phoneNumber) logData.phoneNumber = maskPhone(logData.phoneNumber);
   if (logData.phone) logData.phone = maskPhone(logData.phone);
   if (logData.From) logData.From = maskPhone(logData.From);
+  if (logData.email) logData.email = maskEmail(logData.email);
+  if (logData.Email) logData.Email = maskEmail(logData.Email);
 
   // Redact message body/content if it might contain private info
   if (logData.body) logData.body = `[REDACTED (Length: ${logData.body.length})]`;
@@ -144,5 +158,6 @@ module.exports = {
   error,
   warn,
   maskPhone,
+  maskEmail,
   generateTraceId,
 };

@@ -53,3 +53,20 @@ test('info still logs data and masks phones', () => {
   const [call] = capture('log', () => logger.info('hi', { phone: '+16471234567', n: 1 }));
   assert.deepStrictEqual(call[1], { phone: '+1647***4567', n: 1 });
 });
+
+test('emails are masked at every level', () => {
+  const data = () => ({ email: 'ryan@example.com', k: 1 });
+  const [w] = capture('warn', () => logger.warn('m', data()));
+  const [i] = capture('log', () => logger.info('m', data()));
+  const [e] = capture('error', () => logger.error('m', data()));
+  for (const call of [w, i, e]) {
+    assert.deepStrictEqual(call[1], { email: 'r***@example.com', k: 1 });
+    assert.ok(!JSON.stringify(call).includes('ryan@'));
+  }
+});
+
+test('maskEmail handles odd input', () => {
+  assert.strictEqual(logger.maskEmail('a@b.co'), 'a***@b.co');
+  assert.strictEqual(logger.maskEmail('nodomain'), '***');
+  assert.strictEqual(logger.maskEmail(undefined), 'Unknown');
+});
