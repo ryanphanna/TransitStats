@@ -94,6 +94,7 @@ function info(message, data = {}, traceId = null) {
 
 /**
  * Log error events with optional trace correlation.
+ * Plain-object payloads are always PII-masked; Error instances are logged as-is.
  * @param {string} message
  * @param {Error|object} [err]
  * @param {string} [traceId]
@@ -105,7 +106,7 @@ function error(message, err = {}, traceId = null) {
   if (typeof err === 'string' && !traceId) {
     finalTrace = err;
     errorPayload = {};
-  } else if (err && typeof err === 'object' && (err.traceId || err.trace_id)) {
+  } else if (err && typeof err === 'object' && !(err instanceof Error)) {
     const normalized = normalizeLogData(err);
     errorPayload = normalized.logData;
     if (!finalTrace) finalTrace = normalized.traceId;
@@ -116,13 +117,26 @@ function error(message, err = {}, traceId = null) {
 }
 
 /**
- * Log warning events with optional trace correlation.
+ * Log warning events with PII masking and optional trace correlation.
  * @param {string} message
- * @param {string} [traceId]
+ * @param {object|string} [data] - details to log (a string is treated as a traceId)
+ * @param {string} [traceId] - optional convenience param
  */
-function warn(message, traceId = null) {
-  const prefix = formatPrefix('WARN', traceId);
-  console.warn(`${prefix} ${message}`);
+function warn(message, data = {}, traceId = null) {
+  let finalTrace = traceId;
+  let logData;
+
+  if (typeof data === 'string' && !traceId) {
+    finalTrace = data;
+    logData = {};
+  } else {
+    const normalized = normalizeLogData(data || {});
+    logData = normalized.logData;
+    if (!finalTrace) finalTrace = normalized.traceId;
+  }
+
+  const prefix = formatPrefix('WARN', finalTrace);
+  console.warn(`${prefix} ${message}`, Object.keys(logData).length ? logData : '');
 }
 
 module.exports = {
