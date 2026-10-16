@@ -19,7 +19,8 @@ const TEST_HOSTNAME = 'example.com';
 // it can be flipped without a deploy. The collection has no client access in
 // firestore.rules, so only the Admin SDK / console can change it.
 const MODE_CACHE_MS = 30 * 1000;
-const DEFAULT_MODE = 'monitor';
+// Fail closed: only an exact 'monitor' in config/turnstile relaxes the check.
+const DEFAULT_MODE = 'enforce';
 
 function isEmulator() {
   return process.env.FUNCTIONS_EMULATOR === 'true';
@@ -70,10 +71,10 @@ function createTurnstileModeReader(db, { logger, now = Date.now } = {}) {
     try {
       const snapshot = await db.collection('config').doc('turnstile').get();
       const mode = snapshot.exists ? snapshot.data()?.mode : null;
-      cached = mode === 'enforce' || mode === 'monitor' ? mode : DEFAULT_MODE;
+      cached = mode === 'monitor' ? 'monitor' : DEFAULT_MODE;
       cachedAt = now();
     } catch (error) {
-      // Keep the last known mode on a read error rather than relaxing it.
+      // Keep the last known mode on a read error; with none yet (cold start), enforce.
       logger?.warn?.('Turnstile mode read failed', { error: error.message });
       if (!cached) return DEFAULT_MODE;
     }

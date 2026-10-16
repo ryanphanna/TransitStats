@@ -600,7 +600,7 @@ test('verifyTurnstile rejects Cloudflare failures, wrong hostnames, wrong action
     { success: false, reason: 'siteverify_unreachable' });
 });
 
-test('Turnstile mode defaults to monitor, reads enforce from config, and keeps the last mode on read errors', async () => {
+test('Turnstile mode defaults to enforce; only an exact "monitor" relaxes it; keeps the last mode on read errors', async () => {
   let doc = null;
   let fail = false;
   let clock = 0;
@@ -610,17 +610,35 @@ test('Turnstile mode defaults to monitor, reads enforce from config, and keeps t
   } }) }) };
   const read = createTurnstileModeReader(db, { now: () => clock });
 
-  assert.equal(await read(), 'monitor');
-  doc = { mode: 'enforce' };
+  assert.equal(await read(), 'enforce');            // missing doc
+  doc = { mode: 'monitor' };
   clock += 31000;
-  assert.equal(await read(), 'enforce');
+  assert.equal(await read(), 'monitor');            // exact value relaxes
   fail = true;
   clock += 31000;
+  assert.equal(await read(), 'monitor');            // read error keeps last known
+  fail = false;
+  for (const bad of ['garbage', 'Monitor', 'monitor ', 'MONITOR', '', null, 7, undefined]) {
+    doc = { mode: bad };
+    clock += 31000;
+    assert.equal(await read(), 'enforce', `mode ${JSON.stringify(bad)} must enforce`);
+  }
+  doc = { other: true };                            // doc without a mode field
+  clock += 31000;
+  assert.equal(await read(), 'enforce');
+});
+
+test('Turnstile mode enforces when config is unreadable on a cold instance, and retries next call', async () => {
+  let fail = true;
+  let clock = 0;
+  const db = { collection: () => ({ doc: () => ({ async get() {
+    if (fail) throw new Error('unavailable');
+    return { exists: true, data: () => ({ mode: 'monitor' }) };
+  } }) }) };
+  const read = createTurnstileModeReader(db, { now: () => clock });
   assert.equal(await read(), 'enforce');
   fail = false;
-  doc = { mode: 'garbage' };
-  clock += 31000;
-  assert.equal(await read(), 'monitor');
+  assert.equal(await read(), 'monitor');            // the failed read wasn't cached
 });
 
 // --- Shared vs reserved daily text cap (CIV-275) ---
