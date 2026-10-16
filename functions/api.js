@@ -10,7 +10,7 @@ const { getFirestore } = require('firebase-admin/firestore');
 const { dispatch } = require('./lib/dispatcher');
 const { apiContextStorage, sendSmsReply } = require('./lib/twilio');
 const { createOtpHandlers } = require('./lib/otp');
-const { verifyTurnstile, turnstileSecretKey } = require('./lib/turnstile');
+const { verifyTurnstile, turnstileSecretKey, createTurnstileModeReader } = require('./lib/turnstile');
 const { createCommandHandler } = require('./lib/api-command');
 const logger = require('./lib/logger');
 
@@ -37,6 +37,7 @@ const { handleRequestOtp, handleVerifyOtp } = createOtpHandlers({
   adminAuth,
   sendSmsReply,
   verifyTurnstile,
+  getTurnstileMode: createTurnstileModeReader(db, { logger }),
   logger,
 });
 
