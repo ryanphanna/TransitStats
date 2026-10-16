@@ -687,3 +687,53 @@ describe('firestore.rules: allowedUsers read', () => {
         await assertFails(setDoc(doc(other, 'allowedUsers/other@example.com'), { email: 'other@example.com' }));
     });
 });
+
+describe('firestore.rules: phone sign-in limit records are server-only', () => {
+    const SERVER_ONLY = [
+        'phoneLoginActivity/+15195550143',
+        'phoneLoginOtpLimits/+15195550143',
+        'phoneLoginIpLimits/abc123',
+        'phoneLoginGlobalLimits/2026-10-16',
+        'phoneLoginVerification/+15195550143',
+        'config/turnstile',
+    ];
+
+    beforeAll(async () => {
+        testEnv = await initializeTestEnvironment({
+            projectId: PROJECT_ID,
+            firestore: {
+                rules: readFileSync(RULES_PATH, 'utf8'),
+            },
+        });
+    });
+
+    beforeEach(async () => {
+        if (testEnv) await testEnv.clearFirestore();
+    });
+
+    afterAll(async () => {
+        if (testEnv) await testEnv.cleanup();
+    });
+
+    test('no client, not even an admin or a phone account, can read or write them', async () => {
+        await invite('admin@example.com', { isAdmin: true });
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            for (const path of SERVER_ONLY) {
+                await setDoc(doc(context.firestore(), path), { seeded: true });
+            }
+        });
+
+        const clients = [
+            testEnv.unauthenticatedContext().firestore(),
+            phoneDb('phone_user'),
+            authedDb('admin_user', 'admin@example.com'),
+        ];
+        for (const db of clients) {
+            for (const path of SERVER_ONLY) {
+                await assertFails(getDoc(doc(db, path)));
+                await assertFails(setDoc(doc(db, path), { lastVerifiedAt: new Date(), count: 0 }));
+                await assertFails(deleteDoc(doc(db, path)));
+            }
+        }
+    });
+});

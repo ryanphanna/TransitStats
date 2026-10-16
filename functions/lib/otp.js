@@ -12,7 +12,17 @@ const OTP_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 // numbers, so also cap sends per source IP and per day across everyone.
 const OTP_IP_HOURLY_LIMIT = 10;
 const OTP_IP_WINDOW_MS = 60 * 60 * 1000;
-const OTP_GLOBAL_DAILY_LIMIT = 200;
+// The daily cap guards Twilio spend: 200 texts a day in total. 150 are shared
+// by everyone; the last 50 only go to numbers that completed a text sign-in in
+// the last 30 days, so someone who knows enough linked numbers to use up the
+// shared part can't lock everyone out. An attacker can take at most
+// 5 (OTP_DAILY_LIMIT) x (recently active numbers) from the reserve, so 50 holds
+// while fewer than 10 numbers are active. Revisit it if text sign-in grows past
+// about 10 active numbers.
+const OTP_GLOBAL_SHARED_LIMIT = 150;
+const OTP_GLOBAL_RESERVE_LIMIT = 50;
+const OTP_GLOBAL_DAILY_LIMIT = OTP_GLOBAL_SHARED_LIMIT + OTP_GLOBAL_RESERVE_LIMIT;
+const OTP_RESERVE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Cloud Functions sits behind Google's frontend, which appends the real peer
 // address as the LAST X-Forwarded-For entry. Earlier entries are whatever the
@@ -88,9 +98,21 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, getTu
       const ipRef = db.collection('phoneLoginIpLimits').doc(ipLimitKey(clientIp));
       const globalDay = new Date().toISOString().slice(0, 10);
       const globalRef = db.collection('phoneLoginGlobalLimits').doc(globalDay);
+      const activityRef = db.collection('phoneLoginActivity').doc(phoneNumber);
       const reservedSentAt = Date.now() + Math.random();
+      let usedReserve = false;
+      let sharedFull = false;
 
       await db.runTransaction(async transaction => {
+        // Firestore re-runs this callback when it retries a contended
+        // transaction, so every outcome flag starts fresh on each attempt.
+        secondsRemaining = 0;
+        dailyLimitReached = false;
+        ipLimitReached = false;
+        globalLimitReached = false;
+        usedReserve = false;
+        sharedFull = false;
+
         const existingVerification = await transaction.get(verificationRef);
         const lastSentAt = existingVerification.exists ? existingVerification.data().sentAt : null;
         if (lastSentAt?.toDate) {
@@ -101,6 +123,7 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, getTu
         const existingLimit = await transaction.get(limitRef);
         const existingIpLimit = await transaction.get(ipRef);
         const existingGlobal = await transaction.get(globalRef);
+        const existingActivity = await transaction.get(activityRef);
         const sentAt = existingLimit.exists ? existingLimit.data().sentAt : [];
         const recentSentAt = Array.isArray(sentAt)
           ? sentAt.filter(value => Number(value) > Date.now() - OTP_LIMIT_WINDOW_MS)
@@ -119,19 +142,35 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, getTu
           return;
         }
 
-        // The global cap protects Twilio spend, and a decoy sends nothing, so
-        // decoys don't count toward it (they still count toward the IP limit).
-        const globalCount = existingGlobal.exists ? Number(existingGlobal.data().count || 0) : 0;
-        if (eligible && globalCount >= OTP_GLOBAL_DAILY_LIMIT) {
-          globalLimitReached = true;
-          return;
+        // A decoy sends nothing, so it never uses up the cap (it still counts
+        // toward the IP limit). But once the shared part is full, every number
+        // that can't use the reserve gets the same answer, registered or not.
+        const globalData = existingGlobal.exists ? existingGlobal.data() : {};
+        const sharedCount = Number(globalData.count || 0);
+        const reserveCount = Number(globalData.reserveCount || 0);
+        if (sharedCount >= OTP_GLOBAL_SHARED_LIMIT) {
+          sharedFull = true;
+          const lastVerifiedAt = existingActivity.exists ? existingActivity.data().lastVerifiedAt : null;
+          const recentlyActive = eligible && typeof lastVerifiedAt?.toMillis === 'function'
+            && lastVerifiedAt.toMillis() > Date.now() - OTP_RESERVE_WINDOW_MS;
+          if (!recentlyActive || reserveCount >= OTP_GLOBAL_RESERVE_LIMIT) {
+            globalLimitReached = true;
+            return;
+          }
+          usedReserve = true;
         }
 
         transaction.set(ipRef, {
           sentAt: [...recentIpSentAt, reservedSentAt],
           updatedAt: Timestamp.now(),
         });
-        if (eligible) transaction.set(globalRef, { count: globalCount + 1, updatedAt: Timestamp.now() });
+        if (eligible) {
+          transaction.set(globalRef, {
+            count: usedReserve ? sharedCount : sharedCount + 1,
+            reserveCount: usedReserve ? reserveCount + 1 : reserveCount,
+            updatedAt: Timestamp.now(),
+          });
+        }
         transaction.set(limitRef, {
           sentAt: [...recentSentAt, reservedSentAt],
           updatedAt: Timestamp.now(),
@@ -161,8 +200,19 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, getTu
         return;
       }
 
+      if (sharedFull) {
+        const capMessage = 'OTP Request: shared daily send cap reached (possible attack); '
+          + 'only recent text sign-ins get codes';
+        logger.error(capMessage, {
+          sharedCap: OTP_GLOBAL_SHARED_LIMIT,
+          reserveCap: OTP_GLOBAL_RESERVE_LIMIT,
+          usedReserve,
+          blocked: globalLimitReached,
+          traceId,
+        }, traceId);
+      }
+
       if (globalLimitReached) {
-        logger.error('OTP Request blocked: global daily send cap reached', { cap: OTP_GLOBAL_DAILY_LIMIT, traceId }, traceId);
         res.status(429).json({ error: 'Text sign-in is temporarily unavailable. Try again tomorrow.' });
         return;
       }
@@ -180,7 +230,8 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, getTu
         await verificationRef.delete();
         await limitRef.update({ sentAt: FieldValue.arrayRemove(reservedSentAt) }).catch(() => {});
         await ipRef.update({ sentAt: FieldValue.arrayRemove(reservedSentAt) }).catch(() => {});
-        await globalRef.update({ count: FieldValue.increment(-1) }).catch(() => {});
+        const globalField = usedReserve ? 'reserveCount' : 'count';
+        await globalRef.update({ [globalField]: FieldValue.increment(-1) }).catch(() => {});
         logger.error('OTP Request failed: Twilio send failed', { phoneNumber, traceId }, traceId);
         res.status(500).json({ error: 'Failed to send SMS verification code. Please try again.' });
         return;
@@ -263,6 +314,12 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, getTu
       }
 
       const customToken = await adminAuth.createCustomToken(userId);
+      // Marks this number as recently active, so it can use the reserved part
+      // of the daily text cap. A failure here must not block the sign-in.
+      await db.collection('phoneLoginActivity').doc(phoneNumber)
+        .set({ lastVerifiedAt: Timestamp.now() })
+        .catch(error => logger.error('Failed to record phone sign-in activity',
+          { error: error.message, traceId }, traceId));
       logger.info('OTP verification successful. Minted custom token.', { phoneNumber, userId, traceId }, traceId);
       res.status(200).json({ success: true, token: customToken });
     } catch (error) {
@@ -274,4 +331,10 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, getTu
   return { handleRequestOtp, handleVerifyOtp };
 }
 
-module.exports = { createOtpHandlers, normalizePhoneNumber };
+module.exports = {
+  createOtpHandlers,
+  normalizePhoneNumber,
+  OTP_GLOBAL_SHARED_LIMIT,
+  OTP_GLOBAL_RESERVE_LIMIT,
+  OTP_GLOBAL_DAILY_LIMIT,
+};
