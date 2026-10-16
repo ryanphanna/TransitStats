@@ -10,7 +10,7 @@ const authUser = page => page.evaluate(async () => { const { auth } = await impo
 const FROM = Number(process.env.QA_FROM || 1);
 // 1. signed-out redirects
 if (FROM <= 1) { const { browser, context } = await launch(); const page = await context.newPage();
-  for (const p of ['/dashboard', '/import', '/wrapped']) { const t0 = Date.now(); await page.goto(BASE + p); await page.waitForURL(u => !u.pathname.startsWith(p), { timeout: 30000 }).catch(() => {}); console.log(`signed-out ${p} -> ${page.url().replace(BASE, '')} after ${((Date.now() - t0) / 1000).toFixed(1)}s`); }
+  for (const p of ['/dashboard', '/import', '/recap']) { const t0 = Date.now(); await page.goto(BASE + p); await page.waitForURL(u => !u.pathname.startsWith(p), { timeout: 30000 }).catch(() => {}); console.log(`signed-out ${p} -> ${page.url().replace(BASE, '')} after ${((Date.now() - t0) / 1000).toFixed(1)}s`); }
   await browser.close(); }
 
 // 2. identity save with different combos (fresh page each; each needs a user without an identity -> use 'empty' then reload quirks)
@@ -48,7 +48,7 @@ if (FROM <= 3) { const { browser, context } = await launch(); const page = await
 for (const phone of [false, true]) {
   const { browser, context } = await launch({ phone }); const page = await context.newPage(); await signIn(page, 'pilot');
   const found = new Set();
-  for (const p of ['/dashboard', '/import', '/wrapped', '/route-heatmap', '/privacy', '/terms']) {
+  for (const p of ['/dashboard', '/import', '/recap', '/route-heatmap', '/privacy', '/terms']) {
     await page.goto(BASE + p); await page.waitForTimeout(3500);
     if (p === '/dashboard') { await page.click('text=Settings').catch(() => {}); await page.waitForTimeout(500); }
     const hits = await page.evaluate(() => { const out = []; const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n; while ((n = walker.nextNode())) { const t = n.textContent.trim(); const el = n.parentElement; if (!t || !el || el.closest('script,style,noscript')) continue; const r = el.getBoundingClientRect(); if (!r.width || !r.height) continue; const tt = getComputedStyle(el).textTransform; const letters = t.replace(/[^A-Za-z]/g, ''); if (tt === 'uppercase' && letters.length > 1) out.push(`css-uppercase: "${t.slice(0, 40)}"`); else if (letters.length >= 4 && t === t.toUpperCase() && !/^[A-Z]{2,5}$/.test(t)) out.push(`typed-caps: "${t.slice(0, 40)}"`); } return out; });

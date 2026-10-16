@@ -59,7 +59,7 @@ function updatePublicNavigation(user) {
     }
     if (signedIn && !publicHeaderRendered) {
         publicHeaderRendered = true;
-        initHeader({ currentPage: 'dashboard', shareAction: true });
+        initHeader({ currentPage: 'dashboard', shareAction: true, showRecap: true });
         document.getElementById('btn-header-share')?.addEventListener('click', shareCurrentPage);
     }
     if (signedIn || !cardAction) return;

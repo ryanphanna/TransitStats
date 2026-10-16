@@ -207,7 +207,7 @@ function refresh() {
 
 function fileStem(wrapped) {
     const month = String(wrapped.monthIndex + 1).padStart(2, '0');
-    return `transit-wrapped-${wrapped.year}-${month}`;
+    return `transitstats-recap-${wrapped.year}-${month}`;
 }
 
 async function handleDownload() {
@@ -218,10 +218,10 @@ async function handleDownload() {
         const displayName = displayNameForCard();
         const blob = await renderWrappedPngBlob({ displayName, wrapped: currentWrapped });
         downloadBlob(blob, `${fileStem(currentWrapped)}.png`);
-        UI.showNotification('Wrapped card downloaded.', 'success');
+        UI.showNotification('Recap card downloaded.', 'success');
     } catch (error) {
         console.error(error);
-        UI.showNotification('Could not download your Wrapped card.');
+        UI.showNotification('Could not download your Recap card.');
     } finally {
         downloadBtn.disabled = false;
         shareBtn.disabled = false;
@@ -237,7 +237,7 @@ async function handleShare() {
         const blob = await renderWrappedPngBlob({ displayName, wrapped: currentWrapped });
         const file = new File([blob], `${fileStem(currentWrapped)}.png`, { type: 'image/png' });
         const shareData = {
-            title: `Transit Wrapped · ${currentWrapped.label}`,
+            title: `TransitStats Recap · ${currentWrapped.label}`,
             text: `My ${currentWrapped.label} on TransitStats — ${currentWrapped.trips} trips.`,
             files: [file],
         };
@@ -259,7 +259,7 @@ async function handleShare() {
             return;
         }
         console.error(error);
-        UI.showNotification('Could not share your Wrapped card.');
+        UI.showNotification('Could not share your Recap card.');
     } finally {
         shareBtn.disabled = false;
         downloadBtn.disabled = false;
@@ -281,13 +281,13 @@ function rebuildTrips() {
 async function init() {
     let user = null;
     if (DEMO) {
-        initHeader({ currentPage: 'wrapped' });
+        initHeader({ currentPage: 'recap' });
     } else {
         const auth = await requireAuth({ returnToPage: true });
         user = auth.user;
         setStatus('Loading your trips…');
         await Profile.load(user);
-        initHeader({ isAdmin: auth.isAdmin, currentPage: 'wrapped' });
+        initHeader({ isAdmin: auth.isAdmin, currentPage: 'recap', showRecap: true });
     }
 
     fitToViewport();
@@ -305,7 +305,7 @@ async function init() {
     }
 
     TripController.listen(user.uid, onTrips, err => {
-        console.error('Wrapped trips failed to load:', err);
+        console.error('Recap trips failed to load:', err);
         setStatus('Your trips could not be loaded. Check your connection and refresh to try again.');
     });
     if (INCLUDE_PRESTO_TRIPS) {
@@ -328,6 +328,6 @@ async function init() {
 }
 
 init().catch(error => {
-    console.error('Wrapped failed to load:', error);
-    setStatus('Wrapped could not load. Return to your dashboard and try again.');
+    console.error('Recap failed to load:', error);
+    setStatus('Recap could not load. Return to your dashboard and try again.');
 });

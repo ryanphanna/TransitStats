@@ -3,10 +3,10 @@ import { loginUrlFor, safeReturnPath } from '../js/shared/return-path.js';
 
 describe('return path after sign-in', () => {
     it('builds a login url that remembers the page', () => {
-        expect(loginUrlFor('/wrapped')).toBe('/?next=%2Fwrapped');
+        expect(loginUrlFor('/recap')).toBe('/?next=%2Frecap');
     });
     it('returns to the remembered page', () => {
-        expect(safeReturnPath('?next=%2Fwrapped')).toBe('/wrapped');
+        expect(safeReturnPath('?next=%2Frecap')).toBe('/recap');
     });
     it('falls back to the dashboard when missing or unsafe', () => {
         expect(safeReturnPath('')).toBe('/dashboard');

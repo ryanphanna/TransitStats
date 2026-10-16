@@ -51,7 +51,7 @@ try {
     }));
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await assertSignedOutRedirect(page, '/dashboard');
-    await assertSignedOutRedirect(page, '/wrapped', '/?next=%2Fwrapped');
+    await assertSignedOutRedirect(page, '/recap', '/?next=%2Frecap');
 
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await page.locator('#auth-phone').waitFor();

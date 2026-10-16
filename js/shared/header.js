@@ -6,11 +6,11 @@ import { refreshIcons } from './icons.js';
  * Shared Header Component
  * Injects navigation into the page.
  */
-export function initHeader({ isAdmin = false, currentPage = '', profileHref = '', shareAction = false } = {}) {
-    _render(isAdmin, currentPage, profileHref, shareAction);
+export function initHeader({ isAdmin = false, currentPage = '', profileHref = '', shareAction = false, showRecap = false } = {}) {
+    _render(isAdmin, currentPage, profileHref, shareAction, showRecap);
 }
 
-function _render(isAdmin, currentPage, profileHref, shareAction) {
+function _render(isAdmin, currentPage, profileHref, shareAction, showRecap) {
     const root = document.getElementById('app-root');
     if (!root) return;
 
@@ -29,6 +29,10 @@ function _render(isAdmin, currentPage, profileHref, shareAction) {
                         <button id="btn-header-share" class="header-action-link" title="Share your map" type="button">
                             <span>Share</span>
                         </button>` : ''}
+                    ${showRecap ? `
+                        <a href="/recap" class="header-action-link ${currentPage === 'recap' ? 'active' : ''}" title="Recap">
+                            <span>Recap</span>
+                        </a>` : ''}
                     ${profileHref ? `
                         <a href="${profileHref}" class="header-action-link ${currentPage === 'profile' ? 'active' : ''}" title="Profile">
                             <span>Profile</span>

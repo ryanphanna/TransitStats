@@ -33,7 +33,7 @@ export default defineConfig(({ mode, command }) => {
                     privacy: './privacy.html',
                     import: './import.html',
                     'route-heatmap': './route-heatmap.html',
-                    wrapped: './wrapped.html',
+                    recap: './recap.html',
                 },
                 output: {
                     // Name the shared vendor chunk after what it is (Rollup otherwise borrows a module's name).
@@ -103,7 +103,13 @@ export default defineConfig(({ mode, command }) => {
 
                 server.middlewares.use((req, res, next) => {
                     const url = req.url.split('?')[0];
-                    const targets = ['/dashboard', '/public', '/terms', '/privacy', '/import', '/route-heatmap', '/wrapped'];
+                    if (url === '/wrapped' || url === '/wrapped.html') {
+                        res.statusCode = 301;
+                        res.setHeader('Location', '/recap' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : ''));
+                        res.end();
+                        return;
+                    }
+                    const targets = ['/dashboard', '/public', '/terms', '/privacy', '/import', '/route-heatmap', '/recap'];
                     const isUserProfilePath = url === '/user' || url.startsWith('/user/');
                     if (targets.includes(url)) {
                         req.url = url + '.html' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '');

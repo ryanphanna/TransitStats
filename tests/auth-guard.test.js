@@ -107,7 +107,7 @@ describe('requireAuth signed-out redirect', () => {
             Auth.lastRestoreFoundNoSession = true;
             return null;
         });
-        const location = { pathname: '/wrapped', href: 'http://localhost/wrapped' };
+        const location = { pathname: '/recap', href: 'http://localhost/recap' };
         vi.stubGlobal('location', location);
         const originalWindowLocation = window.location;
         Object.defineProperty(window, 'location', { value: location, configurable: true, writable: true });
@@ -119,7 +119,7 @@ describe('requireAuth signed-out redirect', () => {
         await vi.advanceTimersByTimeAsync(2000);
 
         // Never signed in: redirects right away, not after the 60s grace period.
-        expect(location.href).toBe('/?next=%2Fwrapped');
+        expect(location.href).toBe('/?next=%2Frecap');
         expect(settled).not.toHaveBeenCalled();
         Object.defineProperty(window, 'location', { value: originalWindowLocation, configurable: true, writable: true });
     });

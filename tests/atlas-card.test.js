@@ -43,8 +43,8 @@ describe('shared Atlas card', () => {
 
         renderAtlasCard({ signedIn: true });
         const signedInCard = document.querySelector('[data-atlas-card]');
-        expect(signedInCard.querySelector('.atlas-card-secondary')?.getAttribute('href')).toBe('/wrapped');
-        expect(signedInCard.textContent).toContain('Your Wrapped');
+        expect(signedInCard.querySelector('.atlas-card-secondary')).toBeNull();
+        expect(signedInCard.textContent).not.toContain('Wrapped');
     });
 
     it('keeps the public error card hidden until a profile error occurs', () => {
