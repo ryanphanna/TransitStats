@@ -97,7 +97,7 @@ async function handleApiRequest(req, res) {
     logger.error('CRITICAL API DISPATCH ERROR', {
       error: error.message,
       stack: error.stack,
-      request: req.body,
+      request: logger.describeRequest(req.body),
       traceId,
     }, traceId);
     res.status(500).json({ error: 'Internal Server Error', traceId });

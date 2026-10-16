@@ -44,6 +44,17 @@ function maskEmail(email) {
 }
 
 /**
+ * Summarize a request body for error logs without its contents: only the
+ * field names, so From/Body/email values never reach the logs.
+ * @param {*} body - req.body
+ * @returns {{ fields: string[] }}
+ */
+function describeRequest(body) {
+  const fields = body && typeof body === 'object' ? Object.keys(body).sort() : [];
+  return { fields };
+}
+
+/**
  * Normalize a data object for logging: apply PII redaction and extract traceId.
  * @param {object} data
  * @returns {{ logData: object, traceId: string|null }}
@@ -159,5 +170,6 @@ module.exports = {
   warn,
   maskPhone,
   maskEmail,
+  describeRequest,
   generateTraceId,
 };

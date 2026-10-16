@@ -70,3 +70,22 @@ test('maskEmail handles odd input', () => {
   assert.strictEqual(logger.maskEmail('nodomain'), '***');
   assert.strictEqual(logger.maskEmail(undefined), 'Unknown');
 });
+
+test('describeRequest returns field names only, never values', () => {
+  const body = { From: '+16471234567', Body: 'my secret', email: 'ryan@example.com', nested: { phone: '+14165550123' } };
+  const out = logger.describeRequest(body);
+  assert.deepStrictEqual(out, { fields: ['Body', 'From', 'email', 'nested'] });
+  const text = JSON.stringify(out);
+  for (const leak of ['6471234567', 'my secret', 'ryan@', '4165550123']) assert.ok(!text.includes(leak));
+  assert.deepStrictEqual(logger.describeRequest(undefined), { fields: [] });
+  assert.deepStrictEqual(logger.describeRequest('text'), { fields: [] });
+});
+
+test('crash handlers in api.js and sms.js do not log the raw request body', () => {
+  const fs = require('fs');
+  for (const f of ['api.js', 'sms.js']) {
+    const src = fs.readFileSync(require('path').join(__dirname, f), 'utf8');
+    assert.ok(!/request:\s*req\.body/.test(src), `${f} logs raw req.body`);
+    assert.ok(/request:\s*logger\.describeRequest\(req\.body\)/.test(src), `${f} should log describeRequest(req.body)`);
+  }
+});
