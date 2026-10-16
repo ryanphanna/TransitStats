@@ -102,9 +102,15 @@ function createLogger() {
   return { warn() {}, error() {}, info() {} };
 }
 
-function createOtpHarness(seed, { isAdmin = false } = {}) {
+function createOtpHarness(seed, {
+  isAdmin = false,
+  turnstileResult = { success: true, reason: 'ok' },
+  turnstileMode = 'enforce',
+  logged = [],
+} = {}) {
   const db = createFakeDb(seed);
   const sentMessages = [];
+  const turnstileCalls = [];
   const handlers = createOtpHandlers({
     db,
     adminAuth: {
@@ -116,12 +122,20 @@ function createOtpHarness(seed, { isAdmin = false } = {}) {
       sentMessages.push({ phone, message });
       return true;
     },
-    async verifyTurnstile() {
-      return true;
+    async verifyTurnstile(token, remoteIp) {
+      turnstileCalls.push({ token, remoteIp });
+      return turnstileResult;
     },
-    logger: createLogger(),
+    async getTurnstileMode() {
+      return turnstileMode;
+    },
+    logger: {
+      warn: message => logged.push(message),
+      error: message => logged.push(message),
+      info: message => logged.push(message),
+    },
   });
-  return { db, handlers, sentMessages, isAdmin };
+  return { db, handlers, sentMessages, isAdmin, turnstileCalls, logged };
 }
 
 test('normalizePhoneNumber formats North American and international numbers as E.164', () => {
@@ -255,7 +269,8 @@ test('global daily send cap blocks further sends and logs an error', async () =>
     db,
     adminAuth: {},
     async sendSmsReply(to, message) { sentMessages.push({ to, message }); return true; },
-    async verifyTurnstile() { return true; },
+    async verifyTurnstile() { return { success: true, reason: 'ok' }; },
+    async getTurnstileMode() { return 'enforce'; },
     logger: { warn() {}, info() {}, error: (message) => logged.push(message) },
   });
 
@@ -463,4 +478,139 @@ test('decoy OTP requests do not use the global send cap but do use the per-IP li
   assert.equal(db.read('phoneLoginGlobalLimits', day), null);
   const ipKey = require('node:crypto').createHash('sha256').update(ip).digest('hex').slice(0, 32);
   assert.equal(db.read('phoneLoginIpLimits', ipKey).sentAt.length, 2);
+});
+
+// --- Turnstile bot check on request_otp (#257) ---
+
+const { verifyTurnstile, createTurnstileModeReader, TURNSTILE_ACTION } = require('./lib/turnstile');
+
+function turnstileReq(phone, token) {
+  return { body: { phoneNumber: phone, turnstileToken: token }, headers: { 'x-forwarded-for': '1.1.1.1, 203.0.113.9' } };
+}
+
+function noLimitDocsWritten(db, phone) {
+  return !db.read('phoneLoginOtpLimits', phone)
+    && !db.read('phoneLoginVerification', phone)
+    && !db.read('phoneLoginGlobalLimits', new Date().toISOString().slice(0, 10));
+}
+
+for (const reason of ['missing_token', 'rejected:invalid-input-response', 'hostname:evil.example', 'siteverify_unreachable']) {
+  test(`enforce mode blocks request_otp when Turnstile fails (${reason}) before any limit or send`, async () => {
+    const phone = '+15195550143';
+    const { db, handlers, sentMessages } = createOtpHarness({
+      [`phoneNumbers/${phone}`]: { userId: 'user-1' },
+    }, { turnstileResult: { success: false, reason }, turnstileMode: 'enforce' });
+
+    const response = new FakeResponse();
+    await handlers.handleRequestOtp(turnstileReq(phone, 'tok'), response, 'trace');
+
+    assert.equal(response.statusCode, 403);
+    assert.match(response.body.error, /Security check failed/);
+    assert.equal(sentMessages.length, 0);
+    assert.ok(noLimitDocsWritten(db, phone));
+  });
+}
+
+test('enforce mode gives a registered and an unregistered number the same blocked answer', async () => {
+  const known = '+15195550143';
+  const { handlers } = createOtpHarness({
+    [`phoneNumbers/${known}`]: { userId: 'user-1' },
+  }, { turnstileResult: { success: false, reason: 'missing_token' } });
+  const a = new FakeResponse();
+  const b = new FakeResponse();
+  await handlers.handleRequestOtp(turnstileReq(known, ''), a, 't1');
+  await handlers.handleRequestOtp(turnstileReq('+15195550142', ''), b, 't2');
+  assert.equal(a.statusCode, b.statusCode);
+  assert.deepEqual(a.body, b.body);
+});
+
+test('monitor mode logs a failed Turnstile check but still sends the code', async () => {
+  const phone = '+15195550143';
+  const logged = [];
+  const { handlers, sentMessages } = createOtpHarness({
+    [`phoneNumbers/${phone}`]: { userId: 'user-1' },
+  }, { turnstileResult: { success: false, reason: 'missing_token' }, turnstileMode: 'monitor', logged });
+
+  const response = new FakeResponse();
+  await handlers.handleRequestOtp(turnstileReq(phone, ''), response, 'trace');
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(sentMessages.length, 1);
+  assert.ok(logged.some(message => /\(missing_token, origin none\); monitor mode/.test(message)));
+});
+
+test('a passing Turnstile check sends the code and verifies with the trusted client IP', async () => {
+  const phone = '+15195550143';
+  const { handlers, sentMessages, turnstileCalls } = createOtpHarness({
+    [`phoneNumbers/${phone}`]: { userId: 'user-1' },
+  });
+  const response = new FakeResponse();
+  await handlers.handleRequestOtp(turnstileReq(phone, 'good-token'), response, 'trace');
+  assert.equal(response.statusCode, 200);
+  assert.equal(sentMessages.length, 1);
+  assert.deepEqual(turnstileCalls, [{ token: 'good-token', remoteIp: '203.0.113.9' }]);
+});
+
+function fakeFetch(payload, { fail = false } = {}) {
+  const calls = [];
+  const impl = async (url, init) => {
+    calls.push({ url, body: Object.fromEntries(init.body) });
+    if (fail) throw new Error('network down');
+    return { json: async () => payload };
+  };
+  return { impl, calls };
+}
+
+test('verifyTurnstile accepts a valid token for a production hostname and the OTP action', async () => {
+  const { impl, calls } = fakeFetch({ success: true, hostname: 'transitstats.fyi', action: TURNSTILE_ACTION });
+  const result = await verifyTurnstile('tok', '203.0.113.9', { fetchImpl: impl, secret: 's' });
+  assert.deepEqual(result, { success: true, reason: 'ok' });
+  assert.deepEqual(calls[0].body, { secret: 's', response: 'tok', remoteip: '203.0.113.9' });
+});
+
+test('verifyTurnstile rejects missing tokens without calling Cloudflare', async () => {
+  const { impl, calls } = fakeFetch({ success: true });
+  assert.equal((await verifyTurnstile('', '1.2.3.4', { fetchImpl: impl, secret: 's' })).reason, 'missing_token');
+  assert.equal((await verifyTurnstile(undefined, '1.2.3.4', { fetchImpl: impl, secret: 's' })).reason, 'missing_token');
+  assert.equal(calls.length, 0);
+});
+
+test('verifyTurnstile rejects Cloudflare failures, wrong hostnames, wrong actions and network errors', async () => {
+  const cases = [
+    [{ success: false, 'error-codes': ['invalid-input-response'] }, 'rejected:invalid-input-response'],
+    [{ success: true, hostname: 'evil.example', action: TURNSTILE_ACTION }, 'hostname:evil.example'],
+    [{ success: true, hostname: 'example.com', action: TURNSTILE_ACTION }, 'hostname:example.com'],
+    [{ success: true, hostname: 'transitstats.fyi', action: 'other' }, 'action:other'],
+    [{ success: true, hostname: 'transitstats.fyi' }, 'action:undefined'],
+  ];
+  for (const [payload, reason] of cases) {
+    const { impl } = fakeFetch(payload);
+    assert.deepEqual(await verifyTurnstile('tok', '1.2.3.4', { fetchImpl: impl, secret: 's' }), { success: false, reason });
+  }
+  const { impl } = fakeFetch(null, { fail: true });
+  assert.deepEqual(await verifyTurnstile('tok', '1.2.3.4', { fetchImpl: impl, secret: 's' }),
+    { success: false, reason: 'siteverify_unreachable' });
+});
+
+test('Turnstile mode defaults to monitor, reads enforce from config, and keeps the last mode on read errors', async () => {
+  let doc = null;
+  let fail = false;
+  let clock = 0;
+  const db = { collection: () => ({ doc: () => ({ async get() {
+    if (fail) throw new Error('unavailable');
+    return { exists: Boolean(doc), data: () => doc };
+  } }) }) };
+  const read = createTurnstileModeReader(db, { now: () => clock });
+
+  assert.equal(await read(), 'monitor');
+  doc = { mode: 'enforce' };
+  clock += 31000;
+  assert.equal(await read(), 'enforce');
+  fail = true;
+  clock += 31000;
+  assert.equal(await read(), 'enforce');
+  fail = false;
+  doc = { mode: 'garbage' };
+  clock += 31000;
+  assert.equal(await read(), 'monitor');
 });

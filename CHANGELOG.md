@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Phone login has a bot check again.** Asking for a sign-in code runs Cloudflare Turnstile, which most people never see. It ships in monitor mode: failures are logged but not blocked, until live logs show it works, and it can be switched to blocking without a deploy. The earlier attempt failed because the site's security rules blocked Cloudflare's script on the live site but not locally.
 - **End-stop predictions no longer rule out the stop you actually got off at.** Bathurst (511), Keele (41), King (504) and several LA and Muni lines had their direction backwards, stops like College Station, St Patrick and College / St George weren't matched or were missing from the route maps, and station names are now compared the same way everywhere.
 - **Trips with no exit recorded no longer show a guessed exit on your map.** Admins still see the guess, drawn as a dashed outline labelled "estimated", and it never counts as a real ride.
 - **Stops texted by code that the library doesn't have yet are now found in Atlas.** The stop is looked up in your own agency's Atlas stop list and added, so those trips can become clean data instead of staying unmatched.

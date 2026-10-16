@@ -216,5 +216,10 @@ service cloud.firestore {
     match /rocket_trips/{tripId} {
       allow read, write: if false;
     }
+
+    // Server-only settings (e.g. config/turnstile mode), changed via the console.
+    match /config/{docId} {
+      allow read, write: if false;
+    }
   }
 }
