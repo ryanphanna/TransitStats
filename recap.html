@@ -30,20 +30,20 @@
             document.head.appendChild(el);
         })();
     </script>
-    <title>TransitStats — Wrapped</title>
+    <title>TransitStats — Recap</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@800;900&family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles/main.css">
-    <link rel="stylesheet" href="styles/pages/wrapped.css">
+    <link rel="stylesheet" href="styles/pages/recap.css">
 </head>
 <body class="wrapped-surface">
     <main id="app-root">
         <section class="wrapped-view" aria-labelledby="wrapped-title">
             <div class="wrapped-panel">
                 <div class="wrapped-panel-top">
-                    <h1 id="wrapped-title">Transit Wrapped</h1>
+                    <h1 id="wrapped-title">Recap</h1>
                     <p class="wrapped-lede">Last month's rides on a transfer ticket you can share. <span id="wrapped-deadline"></span></p>
                 </div>
 
@@ -64,12 +64,12 @@
                 <div class="wrapped-printer">
                     <div class="wrapped-housing" aria-hidden="true"><span class="wrapped-slot"></span><span class="wrapped-light"></span></div>
                     <div class="wrapped-feed">
-                        <canvas id="wrapped-preview" class="wrapped-preview" width="470" height="870" aria-label="Wrapped ticket preview"></canvas>
+                        <canvas id="wrapped-preview" class="wrapped-preview" width="470" height="870" aria-label="Recap ticket preview"></canvas>
                     </div>
                 </div>
             </div>
         </section>
     </main>
-    <script type="module" src="js/pages/wrapped.js"></script>
+    <script type="module" src="js/pages/recap.js"></script>
 </body>
 </html>

@@ -21,5 +21,5 @@ real ones. Ports 5001/8080 are avoided on purpose (other tools use them).
 
 Repeatable checks (run after `bash qa/up.sh`, each prints what it found): `node qa/pages-sweep.mjs` (every main page as every
 user, desktop + phone) and `node qa/flows/<name>.mjs` (signed-out redirect time, import denied for non-pilot, PRESTO import
-and Wrapped month, sharing/public profile, Wrapped print/download, logout, phone dashboard map). Screenshots go to
+and Recap month, sharing/public profile, Recap print/download, logout, phone dashboard map). Screenshots go to
 `/private/tmp/claude-501/qa-shots`. Re-seed with `bash qa/up.sh` (it wipes and restarts the emulators).

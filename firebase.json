@@ -27,6 +27,18 @@
       "public": "dist",
       "predeploy": ["npm run build"],
       "cleanUrls": true,
+      "redirects": [
+        {
+          "source": "/wrapped",
+          "destination": "/recap",
+          "type": 301
+        },
+        {
+          "source": "/wrapped.html",
+          "destination": "/recap",
+          "type": 301
+        }
+      ],
       "ignore": [
         "firebase.json",
         "**/.*",
@@ -132,8 +144,8 @@
           "destination": "/import.html"
         },
         {
-          "source": "/wrapped",
-          "destination": "/wrapped.html"
+          "source": "/recap",
+          "destination": "/recap.html"
         },
         {
           "source": "/route-heatmap",

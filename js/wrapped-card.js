@@ -1,5 +1,5 @@
 /**
- * Transit Wrapped card: Canvas PNG export (Stories 1080x1920).
+ * Recap card: Canvas PNG export (Stories 1080x1920).
  * The card is a monthly transfer ticket (see wrapped/ticket.js).
  */
 
@@ -23,7 +23,7 @@ export function drawWrappedCard(ctx, { displayName, wrapped, anim } = {}) {
 }
 
 /**
- * Build a PNG blob for the given Wrapped summary.
+ * Build a PNG blob for the given Recap summary.
  * @returns {Promise<Blob>}
  */
 export function renderWrappedPngBlob({ displayName, wrapped } = {}) {
@@ -35,7 +35,7 @@ export function renderWrappedPngBlob({ displayName, wrapped } = {}) {
     return new Promise((resolve, reject) => {
         canvas.toBlob(blob => {
             if (blob) resolve(blob);
-            else reject(new Error('Could not render Wrapped card'));
+            else reject(new Error('Could not render Recap card'));
         }, 'image/png');
     });
 }

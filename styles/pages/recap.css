@@ -267,7 +267,7 @@
   filter: drop-shadow(0 18px 22px rgba(0, 0, 0, 0.28));
 }
 
-/* On wide windows the stub and ticket scale together (wrapped.js sets --wrapped-scale) so the page fits under the header without scroll. */
+/* On wide windows the stub and ticket scale together (recap.js sets --wrapped-scale) so the page fits under the header without scroll. */
 @media (min-width: 861px) {
   .wrapped-view {
     zoom: var(--wrapped-scale, 1);

@@ -28,8 +28,8 @@ quality and coverage improvements.
 
 ## Dashboard & UI
 
-- [x] **Transit Wrapped (monthly)** — shareable month card from trip history (trips,
-  hours, streak, top route, favorite stop, busiest day) with PNG download at `/wrapped`.
+- [x] **Recap (monthly)** — shareable month card from trip history (trips,
+  hours, streak, top route, favorite stop, busiest day) with PNG download at `/recap`.
   Year-in-review / multi-month recap still open.
 - [ ] **Transit Wrapped (year)** — full calendar-year recap once yearly cohort data is ready.
 - [ ] **Custom Goal Tracker** — users set a monthly trip target with a progress bar

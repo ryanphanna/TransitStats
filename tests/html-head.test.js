@@ -13,7 +13,7 @@ const head = page => /<head>([\s\S]*?)<\/head>/i.exec(readFileSync(page, 'utf8')
 
 describe('top-level pages share the core head', () => {
     it('finds the pages', () => {
-        expect(PAGES).toEqual(expect.arrayContaining(['index.html', 'dashboard.html', 'wrapped.html', 'public.html']));
+        expect(PAGES).toEqual(expect.arrayContaining(['index.html', 'dashboard.html', 'recap.html', 'public.html']));
     });
 
     it.each(PAGES)('%s has the core tags', page => {

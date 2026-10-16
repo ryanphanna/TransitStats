@@ -1,4 +1,4 @@
-// Dev-only sample data for /wrapped?demo=1. Never imported in production builds.
+// Dev-only sample data for /recap?demo=1. Never imported in production builds.
 const add = (list, date, route, from, to, duration) =>
     list.push({ startTime: date, route, startStopName: from, endStopName: to, duration });
 

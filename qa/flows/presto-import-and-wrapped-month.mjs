@@ -5,7 +5,7 @@ const { browser, context } = await launch(); const page = await context.newPage(
 const errs=[]; page.on('pageerror', e => errs.push(e.message.slice(0,150))); page.on('console', m => { if (m.type()==='error') errs.push('console: '+m.text().slice(0,150)); });
 await signIn(page, 'pilot');
 console.log('dashboard total before import:', await total(page));
-await page.goto(BASE + '/wrapped'); await page.waitForTimeout(3000);
+await page.goto(BASE + '/recap'); await page.waitForTimeout(3000);
 console.log('wrapped status before:', (await page.textContent('#wrapped-status')).trim());
 await page.goto(BASE + '/import'); await page.waitForSelector('#import-active:not(.hidden)', { timeout: 15000 }).catch(()=>{});
 console.log('import page active section visible:', await page.locator('#import-active:not(.hidden)').count());
@@ -17,7 +17,7 @@ await page.click('#presto-import-button'); await page.waitForTimeout(4000);
 console.log('status:', (await page.locator('#presto-import-status').innerText().catch(()=>'')).replace(/\s+/g,' '));
 await page.screenshot({ path: `${OUT}/flow-import-done.png` });
 console.log('dashboard total after import:', await total(page));
-await page.goto(BASE + '/wrapped'); await page.waitForTimeout(3000);
+await page.goto(BASE + '/recap'); await page.waitForTimeout(3000);
 console.log('wrapped status after:', (await page.textContent('#wrapped-status')).trim());
 console.log('errors:', errs.slice(0,6));
 await browser.close();

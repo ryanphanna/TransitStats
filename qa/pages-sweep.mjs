@@ -6,11 +6,11 @@ import { launch, signIn, BASE } from './lib.mjs';
 const OUT = process.env.QA_OUT || '/private/tmp/claude-501/qa-shots';
 fs.mkdirSync(OUT, { recursive: true });
 const plan = [
-    ['pilot', ['/dashboard', '/import', '/wrapped', '/route-heatmap', '/']],
-    ['plain', ['/dashboard', '/import', '/wrapped']],
-    ['empty', ['/dashboard', '/import', '/wrapped']],
+    ['pilot', ['/dashboard', '/import', '/recap', '/route-heatmap', '/']],
+    ['plain', ['/dashboard', '/import', '/recap']],
+    ['empty', ['/dashboard', '/import', '/recap']],
     ['admin', ['/dashboard', '/import']],
-    [null, ['/', '/dashboard', '/import', '/wrapped', '/terms', '/privacy', '/user/qapublic', '/public?user=qapublic']],
+    [null, ['/', '/dashboard', '/import', '/recap', '/terms', '/privacy', '/user/qapublic', '/public?user=qapublic']],
 ];
 const results = [];
 for (const phone of [false, true]) {
