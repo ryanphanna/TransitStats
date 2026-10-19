@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { createOtpHandlers, normalizePhoneNumber } = require('./lib/otp');
+const { Timestamp } = require('firebase-admin/firestore');
 const { createCommandHandler } = require('./lib/api-command');
 
 class FakeResponse {
@@ -115,6 +116,7 @@ function createOtpHarness(seed, {
   turnstileMode = 'enforce',
   logged = [],
   smsResult = true,
+  onSend = null,
 } = {}) {
   const db = createFakeDb(seed);
   const sentMessages = [];
@@ -128,7 +130,7 @@ function createOtpHarness(seed, {
     },
     async sendSmsReply(phone, message) {
       sentMessages.push({ phone, message });
-      return smsResult;
+      return onSend ? onSend(phone, db) : smsResult;
     },
     async verifyTurnstile(token, remoteIp) {
       turnstileCalls.push({ token, remoteIp });
@@ -486,6 +488,68 @@ test('decoy OTP requests do not use the global send cap but do use the per-IP li
   assert.equal(db.read('phoneLoginGlobalLimits', day), null);
   const ipKey = require('node:crypto').createHash('sha256').update(ip).digest('hex').slice(0, 32);
   assert.equal(db.read('phoneLoginIpLimits', ipKey).sentAt.length, 2);
+});
+
+// --- Opted-out numbers (CIV-193) ---
+
+test('a number that replied STOP is answered exactly like an unregistered one, twice in a row', async () => {
+  const optedOut = '+15195550143';
+  const unknown = '+15195550142';
+  const ip = '203.0.113.9';
+  const { db, handlers } = createOtpHarness({
+    [`phoneNumbers/${optedOut}`]: { userId: 'user-1' },
+  }, {
+    // What sendSmsReply does on Twilio error 21610.
+    onSend: async (to, fakeDb) => {
+      await fakeDb.collection('smsOptOuts').doc(to).set({ reason: 'twilio-21610', at: Timestamp.now() });
+      return false;
+    },
+  });
+  const ask = async phone => {
+    const res = new FakeResponse();
+    await handlers.handleRequestOtp(otpReq(phone, ip), res, 't');
+    return { status: res.statusCode, body: res.body };
+  };
+  const firstOptedOut = await ask(optedOut);
+  const firstUnknown = await ask(unknown);
+  assert.deepEqual(firstOptedOut, { status: 200, body: { success: true } });
+  assert.deepEqual(firstOptedOut, firstUnknown);
+  // The resend cooldown applies the same way to both.
+  const secondOptedOut = await ask(optedOut);
+  const secondUnknown = await ask(unknown);
+  assert.equal(secondOptedOut.status, 429);
+  assert.deepEqual({ ...secondOptedOut, body: null }, { ...secondUnknown, body: null });
+
+  assert.equal(db.read('phoneLoginOtpLimits', optedOut).sentAt.length, db.read('phoneLoginOtpLimits', unknown).sentAt.length);
+  assert.equal(db.read('phoneLoginVerification', optedOut).code, '');
+  const ipKey = require('node:crypto').createHash('sha256').update(ip).digest('hex').slice(0, 32);
+  assert.equal(db.read('phoneLoginIpLimits', ipKey).sentAt.length, 2);
+  const day = new Date().toISOString().slice(0, 10);
+  assert.equal(Number(db.read('phoneLoginGlobalLimits', day)?.count || 0), 0);
+
+  // The decoy-shaped record can never be redeemed.
+  const guess = new FakeResponse();
+  await handlers.handleVerifyOtp({ body: { phoneNumber: optedOut, code: '000000' } }, guess, 't');
+  assert.equal(guess.statusCode, 400);
+});
+
+test('a send failure that is not a fresh opt-out still reports an error', async () => {
+  const phone = '+15195550143';
+  const stale = Timestamp.fromMillis(Date.now() - 2 * 60 * 1000);
+  for (const optOut of [null, { reason: 'twilio-21610', at: stale }, { reason: 'inbound-keyword', at: Timestamp.now() }]) {
+    const { db, handlers } = createOtpHarness({
+      [`phoneNumbers/${phone}`]: { userId: 'user-1' },
+      ...(optOut ? { [`smsOptOuts/${phone}`]: optOut } : {}),
+    }, { smsResult: false });
+    const response = new FakeResponse();
+    await handlers.handleRequestOtp({ body: { phoneNumber: phone }, headers: {} }, response, 't');
+    const label = JSON.stringify(optOut?.reason ?? null);
+    assert.equal(response.statusCode, 500, label);
+    // Every slot is given back and no code is left behind.
+    assert.equal(db.read('phoneLoginVerification', phone), null, label);
+    const day = new Date().toISOString().slice(0, 10);
+    assert.equal(Number(db.read('phoneLoginGlobalLimits', day).count), 0, label);
+  }
 });
 
 // --- Turnstile bot check on request_otp (#257) ---

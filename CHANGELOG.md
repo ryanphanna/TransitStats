@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Asking for a sign-in code no longer shows whether a number is real when that number has opted out of texts.** A number that replied STOP used to get a server error, which made-up numbers never get. Now it gets the same answer as a made-up number.
 - **The phone-login bot check now fails closed.** If its setting is missing, misspelled or can't be read, it blocks failed checks instead of only logging them; only an exact "monitor" turns the relaxed mode on.
 - **The monthly "Wrapped" is now "Recap".** The page lives at /recap (old /wrapped links redirect), the shareable card and share text say Recap, and the name "Wrapped" is saved for a future year-end feature. Recap now has its own link in the top menu when you're signed in, replacing the "Your Wrapped" link on the stats card.
 - **One person can no longer lock everyone out of text sign-in.** The daily limit on sign-in texts is still 200, but the last 50 are kept for people who signed in by text in the last 30 days. Anyone who knew enough linked numbers could use up the whole day's limit before. Once the shared part is used up, every number that can't use the reserve gets the same message, registered or not, so it no longer reveals which numbers are registered.
