@@ -227,11 +227,34 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, getTu
       const message = `Your TransitStats login verification code is: ${code}.\n\nThis code expires in 10 minutes.\n\n@transitstats.fyi #${code}`;
       const smsSent = await sendSmsReply(phoneNumber, message);
       if (!smsSent) {
+        const globalField = usedReserve ? 'reserveCount' : 'count';
+        await globalRef.update({ [globalField]: FieldValue.increment(-1) }).catch(() => {});
+        // A number that replied STOP fails here (Twilio 21610, which
+        // sendSmsReply records in smsOptOuts). Twilio is the source of truth
+        // for opt-outs, so we ask it rather than our own list. Leave the
+        // records exactly as a decoy would (unredeemable code, cooldown and
+        // limits still used) and give the decoy's answer, so the failure
+        // doesn't mark the number as real.
+        // Only an opt-out Twilio reported just now counts: an old record plus an
+        // unrelated failure must still show the real user an error.
+        const optedOut = await db.collection('smsOptOuts').doc(phoneNumber).get()
+          .then(doc => {
+            const at = doc.exists ? doc.data().at : null;
+            return doc.data()?.reason === 'twilio-21610' && typeof at?.toMillis === 'function'
+              && at.toMillis() > Date.now() - 60 * 1000;
+          })
+          .catch(() => false);
+        if (optedOut) {
+          // If the code can't be blanked, delete it: never leave it redeemable.
+          await verificationRef.update({ code: '' }).catch(() => verificationRef.delete());
+          logger.warn('OTP Request: number has opted out of texts; answered like a decoy',
+            { phoneNumber, traceId }, traceId);
+          res.status(200).json({ success: true });
+          return;
+        }
         await verificationRef.delete();
         await limitRef.update({ sentAt: FieldValue.arrayRemove(reservedSentAt) }).catch(() => {});
         await ipRef.update({ sentAt: FieldValue.arrayRemove(reservedSentAt) }).catch(() => {});
-        const globalField = usedReserve ? 'reserveCount' : 'count';
-        await globalRef.update({ [globalField]: FieldValue.increment(-1) }).catch(() => {});
         logger.error('OTP Request failed: Twilio send failed', { phoneNumber, traceId }, traceId);
         res.status(500).json({ error: 'Failed to send SMS verification code. Please try again.' });
         return;
