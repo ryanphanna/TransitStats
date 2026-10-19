@@ -10,6 +10,7 @@ const Module = require('node:module');
 function buildHarness({
   idempotent = false,
   contentDuplicate = false,
+  rateLimited = false,
   parseEndTripResult = null,
   user = { userId: 'user_1' },
   shouldRespondToUnknown = false,
@@ -65,7 +66,7 @@ function buildHarness({
   };
 
   const dbModule = {
-    isRateLimited: async () => false,
+    isRateLimited: async () => rateLimited,
     checkIdempotency: async () => {
       calls.checkIdempotency++;
       return idempotent;
@@ -320,6 +321,27 @@ test('dispatcher: STARTUP and START also clear the opt-out', async () => {
   const { dispatch, calls } = buildHarness({ user: { userId: 'u1' } });
   await dispatch('+14165550005', 'startup', 'SM_STARTUP');
   assert.deepEqual(calls.optOutDeletes, ['+14165550005']);
+});
+
+test('dispatcher: YES and padded opt-in words also clear the opt-out', async () => {
+  for (const body of ['yes', ' START ', 'Unstop ']) {
+    const { dispatch, calls } = buildHarness({ user: { userId: 'u1' } });
+    await dispatch('+14165550005', body, `SM_OPTIN_${body.trim()}`);
+    assert.deepEqual(calls.optOutDeletes, ['+14165550005'], body);
+  }
+});
+
+test('dispatcher: opt-in and opt-out are recorded even when the message is then dropped', async () => {
+  for (const flags of [{ rateLimited: true }, { idempotent: true }, { contentDuplicate: true }]) {
+    const label = Object.keys(flags)[0];
+    const optIn = buildHarness({ user: { userId: 'u1' }, ...flags });
+    await optIn.dispatch('+14165550005', 'START', `SM_IN_${label}`);
+    assert.deepEqual(optIn.calls.optOutDeletes, ['+14165550005'], label);
+
+    const optOut = buildHarness({ user: null, ...flags });
+    await optOut.dispatch('+14165550005', 'STOP', `SM_OUT_${label}`);
+    assert.deepEqual(optOut.calls.optOuts, [['+14165550005', 'inbound-keyword']], label);
+  }
 });
 
 test('dispatcher: a bare STOP/STOPALL from a linked rider is bookkeeping only (no trip action, no reply)', async () => {

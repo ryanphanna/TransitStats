@@ -52,14 +52,17 @@ function getInviteHandlers() {
 }
 
 // The opt-out / opt-in keywords configured in the Twilio console (Advanced
-// Opt-Out). END is deliberately not one of them: it finishes a trip.
+// Opt-Out). END is deliberately not one of them: it finishes a trip. YES is
+// one of Twilio's default opt-in words. A missed opt-in is the costly side
+// (we'd skip texts Twilio would deliver); a missed opt-out fixes itself when
+// the next send fails with 21610.
 const OPT_OUT_KEYWORDS = /^(STOP|STOPALL)$/;
-const OPT_IN_KEYWORDS = /^(START|STARTUP|UNSTOP)$/;
+const OPT_IN_KEYWORDS = /^(START|STARTUP|UNSTOP|YES)$/;
 
 /** Keep our own opt-out list in step with Twilio's STOP / START handling. */
 async function syncOptOutKeyword(phoneNumber, upperBody) {
   try {
-    if (OPT_IN_KEYWORDS.test(upperBody)) {
+    if (OPT_IN_KEYWORDS.test(upperBody.trim())) {
       await db.collection('smsOptOuts').doc(phoneNumber).delete();
     } else if (OPT_OUT_KEYWORDS.test(upperBody.trim())) {
       await getInviteHandlers().markOptedOut(phoneNumber, 'inbound-keyword');
@@ -73,7 +76,7 @@ async function syncOptOutKeyword(phoneNumber, upperBody) {
 async function handleUnknownNumber(phoneNumber, upperBody, trace) {
   // Opt-out / opt-in keywords were already recorded by syncOptOutKeyword; they
   // get no reply.
-  if (OPT_OUT_KEYWORDS.test(upperBody) || OPT_IN_KEYWORDS.test(upperBody)) return;
+  if (OPT_OUT_KEYWORDS.test(upperBody.trim()) || OPT_IN_KEYWORDS.test(upperBody.trim())) return;
   await getInviteHandlers().handleUnknownSender(phoneNumber, trace);
 }
 
@@ -138,6 +141,11 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
   const upperBody = body ? body.toUpperCase() : '';
   logger.info('Dispatching SMS', { From: phoneNumber, Body: body, isMms, traceId: trace }, trace);
 
+  // Opt-in / opt-out keywords update our own list for everyone, linked or not.
+  // Twilio acts on them whatever we do next, so record them before the rate
+  // limit and duplicate checks below can drop the message (CIV-348).
+  await syncOptOutKeyword(phoneNumber, upperBody);
+
   // 2. Pre-auth Checks
   if (await isRateLimited(phoneNumber)) {
     logger.info('Rate limited', { From: phoneNumber, traceId: trace }, trace);
@@ -164,9 +172,6 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
       return '';
     }
   }
-
-  // Opt-in / opt-out keywords update our own list for everyone, linked or not.
-  await syncOptOutKeyword(phoneNumber, upperBody);
 
   // A bare STOP / STOPALL is an opt-out and nothing else: no trip action and no
   // reply to a number that just asked us to stop. ("STOP <stop>" still ends a

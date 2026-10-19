@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Texting YES (or START with a stray space) after STOP now turns texts back on everywhere.** Before, our own opt-out list could miss it, so invite texts kept being skipped even though Twilio would deliver them again. Opt-in and opt-out words are now also recorded when a message is otherwise dropped as a duplicate or for sending too fast.
 - **Asking for a sign-in code no longer shows whether a number is real when that number has opted out of texts.** A number that replied STOP used to get a server error, which made-up numbers never get. Now it gets the same answer as a made-up number.
 - **The phone-login bot check now fails closed.** If its setting is missing, misspelled or can't be read, it blocks failed checks instead of only logging them; only an exact "monitor" turns the relaxed mode on.
 - **The monthly "Wrapped" is now "Recap".** The page lives at /recap (old /wrapped links redirect), the shareable card and share text say Recap, and the name "Wrapped" is saved for a future year-end feature. Recap now has its own link in the top menu when you're signed in, replacing the "Your Wrapped" link on the stats card.
