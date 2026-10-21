@@ -56,7 +56,8 @@ const {
   resolveTripAgency,
   maybeHandleStopDisambiguation,
   getPredictionPrompt,
-  getShownEndStopPredictions,
+  getShownEndStopChoices,
+  formatPredictionPrompt,
   getAchievementNote,
 } = require('./handlers-utils');
 
@@ -395,12 +396,10 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
 
   let replyBody = `Started ${routeDisplay} from ${finalStopDisplay}${agencySuffix(resolvedAgency, defaultAgency)}.`;
   // End-stop suggestions are admin-only; non-admins always get the plain END/FORGOT prompt.
-  if (isAdmin && habitPrediction?.endStop) {
-    // Keep the END/FORGOT instructions the normal prompt carries.
-    replyBody += `\n\nUsual trip to ${habitPrediction.endStop}.` + getPredictionPrompt(null);
-  } else {
-    replyBody += getPredictionPrompt(isAdmin ? endStopPredictions : null);
-  }
+  // On a habit trip the usual end stop leads the list; END n in handleEndTrip uses the same list.
+  replyBody += isAdmin
+    ? formatPredictionPrompt(getShownEndStopChoices(endStopPredictions, habitPrediction))
+    : getPredictionPrompt(null);
 
   // Add achievement note if applicable
   if (!unconfirmed) replyBody += await getAchievementNote(user.userId);
@@ -592,11 +591,9 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
   const endDefaultAgency = getConfiguredPrimaryAgency(endProfile) || activeTrip.agency || null;
 
   // Resolve numbered shortcut (admin only): END 1/2/3 → the stop list shown at boarding.
-  // A habit trip showed "Usual trip to X." instead of V3's list, so END 1 means X there.
+  // A habit trip listed the usual end stop first; getShownEndStopChoices rebuilds that exact list.
   if (/^[123]$/.test((endStopInput || '').trim())) {
-    const shown = activeTrip.habitPrediction?.endStop
-      ? [{ stop: activeTrip.habitPrediction.endStop }]
-      : getShownEndStopPredictions(activeTrip.endStopPredictions);
+    const shown = getShownEndStopChoices(activeTrip.endStopPredictions, activeTrip.habitPrediction);
     if (endIsAdmin && shown?.length) {
       const idx = parseInt(endStopInput.trim(), 10) - 1;
       const predicted = shown[idx];
