@@ -25,13 +25,13 @@
   z-index: 2;
 }
 
-.auth-brand { display: flex; align-items: center; gap: 12px; font-size: 1.15rem; font-weight: 850; letter-spacing: -0.04em; }
-.auth-brand-mark { width: 34px; height: 34px; display: grid; place-items: center; color: #fff; background: var(--accent-gradient); border-radius: 11px; }
-.auth-brand-mark svg { width: 19px; height: 19px; stroke-width: 2.5; }
+/* Logo bar: reuses the signed-in header's .header-container/.logo so it sits in the same spot. */
+.auth-header { position: absolute; top: 0; left: 0; right: 0; z-index: 3; height: 64px; display: flex; align-items: center; pointer-events: none; }
+.auth-header .logo { pointer-events: auto; }
 /* The app header hides the name on small screens; the sign-in page always shows it. */
-.auth-brand .logo-text { display: inline; }
+.auth-header .logo-text { display: inline; }
 .auth-copy { margin: clamp(60px, 10vh, 120px) 0 58px; }
-.auth-title { max-width: 560px; margin: 0; color: var(--text-primary); font-size: clamp(3.1rem, 5.3vw, 5.7rem); font-weight: 850; letter-spacing: -0.04em; line-height: 0.95; }
+.auth-title { max-width: 560px; margin: 0; color: var(--text-primary); font-size: clamp(3.1rem, 5.3vw, 5.7rem); font-weight: 850; letter-spacing: -0.015em; word-spacing: 0.04em; line-height: 0.98; }
 .auth-title em { color: var(--text-muted); font-style: normal; }
 .auth-subtitle { max-width: 485px; margin: 22px 0 0; color: var(--text-secondary); font-size: 1.05rem; line-height: 1.65; }
 
@@ -105,8 +105,8 @@
 @media (max-width: 860px) {
   /* One screen tall: content at the top, legal links pinned to the bottom, no extra scroll. */
   .auth-view { display: flex; flex-direction: column; min-height: 100svh; }
-  .auth-content { flex: 1 0 auto; width: 100%; min-height: 0; box-sizing: border-box; padding: 30px 22px 0; justify-content: flex-start; }
-  .auth-copy { margin: 44px 0 26px; }
+  .auth-content { flex: 1 0 auto; width: 100%; min-height: 0; box-sizing: border-box; padding: 64px 22px 0; justify-content: flex-start; }
+  .auth-copy { margin: 28px 0 26px; }
   .auth-title { font-size: clamp(2.4rem, 10.5vw, 3.6rem); }
   .auth-subtitle { margin-top: 14px; font-size: 0.96rem; line-height: 1.5; }
   .auth-visual { display: none; }

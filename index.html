@@ -41,12 +41,17 @@
 <body>
     <main id="app-root">
         <section id="view-auth" class="view auth-view active">
-            <div class="auth-content">
-                <header class="auth-brand" aria-label="TransitStats">
-                    <span class="auth-brand-mark"><i data-lucide="zap"></i></span>
-                    <span class="logo-text">TransitStats</span>
-                </header>
+            <!-- Same logo position, size and spacing as the signed-in header (js/shared/header.js). -->
+            <header class="auth-header">
+                <div class="header-container">
+                    <a href="/" class="logo" aria-label="TransitStats home">
+                        <div class="logo-icon"><i data-lucide="zap"></i></div>
+                        <span class="logo-text">TransitStats</span>
+                    </a>
+                </div>
+            </header>
 
+            <div class="auth-content">
                 <div class="auth-copy">
                     <h1 class="auth-title">Your transit life, <em>mapped.</em></h1>
                     <p class="auth-subtitle">Log your trips and see where you ride.</p>
