@@ -25,6 +25,7 @@ const {
 } = require('./utils');
 const { AGENCY_CITY } = require('./constants');
 const { phoneTag } = require('./phone-confirmation');
+const { normalizeStopLabel } = require('./topology-constraints');
 
 /**
  * Returns " via [Agency]" if the trip agency differs from the user's default, otherwise "".
@@ -291,10 +292,29 @@ function getShownEndStopPredictions(predictions) {
 }
 
 /**
+ * The numbered end-stop list an admin sees at boarding. On a habit trip the usual end stop
+ * is #1, then the shown stored guesses that aren't the same stop, max 3. The start reply and
+ * END 1/2/3 both use this, so the numbers can't drift apart.
+ */
+function getShownEndStopChoices(predictions, habitPrediction) {
+  const shown = getShownEndStopPredictions(predictions);
+  const habitStop = habitPrediction?.endStop;
+  if (!habitStop) return shown;
+  const habitKey = normalizeStopLabel(habitStop);
+  const others = shown.filter(p => normalizeStopLabel(p.stop) !== habitKey);
+  return [{ stop: habitStop }, ...others].slice(0, 3);
+}
+
+/**
  * Build a conversational prediction prompt for the user.
  */
 function getPredictionPrompt(rawPredictions) {
-  const predictions = getShownEndStopPredictions(rawPredictions);
+  return formatPredictionPrompt(getShownEndStopPredictions(rawPredictions));
+}
+
+/** Prompt text for an already-filtered list of shown stops (see getShownEndStopChoices). */
+function formatPredictionPrompt(predictions) {
+  predictions = predictions || [];
   if (predictions.length === 0) {
     return '\n\nEND [stop] to finish. FORGOT if forgot to end.';
   }
@@ -350,6 +370,8 @@ module.exports = {
   maybeHandleStopDisambiguation,
   getPredictionPrompt,
   getShownEndStopPredictions,
+  getShownEndStopChoices,
+  formatPredictionPrompt,
   SHOWN_END_STOP_MIN_CONFIDENCE,
   getAchievementNote,
 };

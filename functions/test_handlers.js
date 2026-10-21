@@ -545,11 +545,65 @@ test('handleTripLog: a firing habit changes only the reply; V3/V4/V5 end-stop gu
   assert.equal(trip.endStopPredictionV5.stop, 'Strachan');
   // Route guesses are not made or stored at all (the route arrives in the text).
   for (const key of ['prediction', 'predictionV4', 'predictionV5']) assert.ok(!(key in trip), key);
-  // Only the reply changes: habit instead of V3's numbered list.
+  // The habit stop leads the normal list; V3's guesses here are all below the shown cutoff.
   const reply = calls.sendSmsReply[0]?.message || '';
-  assert.match(reply, /Usual trip to Spadina Station\? END 1 to end\./);
+  assert.match(reply, /Heading to Spadina Station\? END 1 to end\./);
   assert.match(reply, /END \[stop\] to finish/);
-  assert.doesNotMatch(reply, /Bathurst/);
+  assert.doesNotMatch(reply, /Usual trip|Bathurst/);
+});
+
+async function habitStartReply(top) {
+  const { handlers, calls, restore } = loadHandlers({
+    dbModule: { isEmailAdmin: async () => true },
+    habit: {
+      HabitEngine: {
+        VERSION: '2.0.0',
+        load: async () => [{ schema: 2 }],
+        match: (habits, stop) => ({ stop, route: '510', direction: 'Westbound', endStop: 'Spadina Station', confidence: 0.8, count: 4 }),
+        rebuild: async () => [],
+      },
+    },
+    eligibility: {
+      getEligibility: () => ({ endStopEligible: true, cleanTripCount: 50 }),
+      artifactSupportsAgency: () => true,
+    },
+    predict: {
+      PredictionEngine: {
+        stopsLibrary: [], networkGraph: null,
+        guessEndStop: () => top[0] || null,
+        guessTopEndStops: () => top,
+        getEndStopConstraint: () => ({ source: 'none', legalStops: null }),
+        _stopMatch: () => false,
+      },
+    },
+  });
+  try {
+    await handlers.handleTripLog('+14165550034', { userId: 'u34' }, '11985', '510', 'Westbound', 'TTC');
+  } finally {
+    restore();
+  }
+  return { reply: calls.sendSmsReply[0]?.message || '', trip: calls.createTrip[0] };
+}
+
+test('handleTripLog: admin habit trip lists the habit stop first, then other shown guesses', async () => {
+  const { reply } = await habitStartReply([
+    { stop: 'Bathurst', confidence: 90 }, { stop: 'Dufferin', confidence: 80 },
+  ]);
+  assert.match(reply, /Where to\?\n1\. Spadina Station\n2\. Bathurst\n3\. Dufferin\n\nEND 1, END 2, or END 3 to end\./);
+  assert.doesNotMatch(reply, /Usual trip/);
+});
+
+test('handleTripLog: admin habit stop also in the V3 list is shown once', async () => {
+  const { reply } = await habitStartReply([
+    { stop: 'spadina station', confidence: 95 }, { stop: 'Bathurst', confidence: 90 },
+  ]);
+  assert.match(reply, /Where to\?\n1\. Spadina Station\n2\. Bathurst\n\nEND 1, or END 2 to end\./);
+  assert.equal((reply.match(/spadina station/gi) || []).length, 1);
+});
+
+test('handleTripLog: admin habit with no other guesses uses the one-stop prompt', async () => {
+  const { reply } = await habitStartReply([]);
+  assert.match(reply, /\n\nHeading to Spadina Station\? END 1 to end\.\n\nEND \[stop\] to finish\. FORGOT if forgot to end\./);
 });
 
 test('handleTripLog: non-admin on a habit trip gets the unchanged reply, habit still stored', async () => {
@@ -618,6 +672,22 @@ test('handleEndTrip: admin END 1 on a habit trip resolves to the habit end stop,
   const looked = await endWith('1');
   assert.ok(looked.includes('Spadina Station'), `looked up: ${looked.join(', ')}`);
   assert.ok(!looked.includes('Bathurst'));
+});
+
+test('handleEndTrip: admin END 2 on a habit trip resolves to the second shown stop', async () => {
+  const looked = await endWith('2', { trip: habitActiveTrip({
+    endStopPredictions: [{ stop: 'Spadina Station', confidence: 95 }, { stop: 'Bathurst', confidence: 80 }, { stop: 'Dufferin', confidence: 78 }],
+  }) });
+  assert.ok(looked.includes('Bathurst'), `looked up: ${looked.join(', ')}`);
+  assert.ok(!looked.includes('Spadina Station'));
+});
+
+test('handleEndTrip: admin END 3 on a habit trip matches the start list (habit + 2 others)', async () => {
+  const looked = await endWith('3', { trip: habitActiveTrip({
+    endStopPredictions: [{ stop: 'Bathurst', confidence: 90 }, { stop: 'Dufferin', confidence: 80 }, { stop: 'Ossington', confidence: 76 }],
+  }) });
+  assert.ok(looked.includes('Dufferin'), `looked up: ${looked.join(', ')}`);
+  assert.ok(!looked.includes('Ossington'));
 });
 
 test('handleEndTrip: admin END 1 on a non-habit trip still uses V3 list', async () => {
