@@ -76,6 +76,7 @@ app.post('/', (req, res, next) => {
 // Export 2nd Gen Function
 exports.sms = onRequest({
   secrets: [geminiApiKey, twilioAuthToken, twilioAccountSid, twilioPhoneNumber],
+  memory: '512MiB', // 256MiB default ran out under load (dropped trip texts)
   concurrency: 50, // Optimize costs by handling more requests on one instance
   maxInstances: 10,
 }, app);
