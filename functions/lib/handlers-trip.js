@@ -56,6 +56,7 @@ const {
   resolveTripAgency,
   maybeHandleStopDisambiguation,
   getPredictionPrompt,
+  getShownEndStopPredictions,
   getShownEndStopChoices,
   formatPredictionPrompt,
   getAchievementNote,
@@ -397,14 +398,17 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
   let replyBody = `Started ${routeDisplay} from ${finalStopDisplay}${agencySuffix(resolvedAgency, defaultAgency)}.`;
   // End-stop suggestions are admin-only; non-admins always get the plain END/FORGOT prompt.
   // On a habit trip the usual end stop leads the list; END n in handleEndTrip uses the same list.
+  // The same list sets the RCS END n buttons (switched off unless config/rcsButtons enables it).
+  const shownChoices = isAdmin ? getShownEndStopChoices(endStopPredictions, habitPrediction) : [];
   replyBody += isAdmin
-    ? formatPredictionPrompt(getShownEndStopChoices(endStopPredictions, habitPrediction))
+    ? formatPredictionPrompt(shownChoices)
     : getPredictionPrompt(null);
 
   // Add achievement note if applicable
   if (!unconfirmed) replyBody += await getAchievementNote(user.userId);
 
-  await sendSmsReply(phoneNumber, replyBody).catch(err => {
+  const startReplyOptions = shownChoices?.length ? { endButtons: shownChoices.length } : undefined;
+  await sendSmsReply(phoneNumber, replyBody, startReplyOptions).catch(err => {
     console.error('sendSmsReply failed after createTrip — trip created but user not notified', err.message);
   });
 }
@@ -543,13 +547,15 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
   const newRouteDisplay = getRouteDisplay(newTrip.route, normalizeDirection(newTrip.direction));
 
   let confirmReplyBody = `${oldTripRouteDisplay} marked as incomplete.\n\nStarted ${newRouteDisplay} from ${newStopDisplay}${agencySuffix(newTrip.agency, confirmDefaultAgency)}.`;
-  confirmReplyBody += getPredictionPrompt(confirmIsAdmin ? confirmEndStopPredictions : null);
+  const confirmShown = confirmIsAdmin ? getShownEndStopPredictions(confirmEndStopPredictions) : [];
+  confirmReplyBody += formatPredictionPrompt(confirmShown);
 
   // Add achievement note if applicable
   const achievementNote = await getAchievementNote(user.userId);
   confirmReplyBody += achievementNote;
 
-  await sendSmsReply(phoneNumber, confirmReplyBody);
+  await sendSmsReply(phoneNumber, confirmReplyBody,
+    confirmShown?.length ? { endButtons: confirmShown.length } : undefined);
 }
 
 /**

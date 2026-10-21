@@ -778,3 +778,17 @@ test('dispatcher: START and confirm_start prompts are never honoured for an unco
     assert.equal(confirmed, 0, `${type} ${text}`);
   }
 });
+
+test('dispatcher: tapped RCS END 2 button reaches handleEndTrip as the END 2 shortcut', async () => {
+  const { normalizeInbound } = require('./lib/rcs-buttons');
+  const endArgs = [];
+  const { dispatch } = buildHarness({
+    handlers: { handleEndTrip: async (...args) => { endArgs.push(args); } },
+  });
+  const { from, body } = normalizeInbound({ From: 'rcs:+14165551234', Body: '', ButtonPayload: 'end2' });
+  await dispatch(from, body, 'SM_RCS_TAP');
+
+  assert.equal(endArgs.length, 1);
+  assert.equal(endArgs[0][0], '+14165551234');
+  assert.equal(endArgs[0][2], '2');
+});

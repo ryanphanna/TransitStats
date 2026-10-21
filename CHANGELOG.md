@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Tap-to-end buttons are built but switched off.** Trip-start texts can show your likely stops as buttons on phones that support RCS; they turn on once the carrier approves the TransitStats sender.
 - **Trip texts use less memory and fewer database reads.** The stop list is now loaded about once an hour instead of on every trip start and end, which was the main cause of the texting function running out of memory.
 - **Trip texts are less likely to be dropped under load.** The texting function now has twice the memory; it had run out 10 times in the past month.
 - **Usual trips show the numbered stop list again.** When a trip matches your usual route, the start reply lists your usual stop first plus other likely stops, so END 1, END 2 and END 3 work like on any other trip.
