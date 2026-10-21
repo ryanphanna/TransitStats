@@ -41,14 +41,13 @@
 <body>
     <main id="app-root">
         <section id="view-auth" class="view auth-view active">
-            <!-- Same logo position, size and spacing as the signed-in header (js/shared/header.js). -->
+            <!-- One column holds every block, so they share the same left edge and gutter. -->
+            <div class="auth-column">
             <header class="auth-header">
-                <div class="header-container">
-                    <a href="/" class="logo" aria-label="TransitStats home">
-                        <div class="logo-icon"><i data-lucide="zap"></i></div>
-                        <span class="logo-text">TransitStats</span>
-                    </a>
-                </div>
+                <a href="/" class="logo" aria-label="TransitStats home">
+                    <div class="logo-icon"><i data-lucide="zap"></i></div>
+                    <span class="logo-text">TransitStats</span>
+                </a>
             </header>
 
             <div class="auth-content">
@@ -113,6 +112,7 @@
                 <a href="/terms">Terms</a>
                 <span aria-hidden="true">·</span>
                 <a href="/privacy">Privacy</a>
+            </div>
             </div>
 
             <div class="auth-visual" aria-hidden="true">
