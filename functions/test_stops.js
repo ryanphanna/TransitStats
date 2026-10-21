@@ -455,3 +455,68 @@ test('_findStopCandidates: a texted typo alias still reaches its transfer-comple
   const ids = _findStopCandidates('Uniun Stn', docs).map(c => c.id);
   assert.deepEqual(ids, ['station', 'platform']);
 });
+
+// --- Shared stops library cache (#345) ---
+
+test('getStopsLibrary: concurrent calls share one collection read and the same frozen array', async () => {
+  const scans = [];
+  const stops = [{ id: 'a', data: { agencies: ['TTC'], agency: 'TTC', code: '1', name: 'Union Station', aliases: ['Union'], lat: 43.6, lng: -79.4 } }];
+  const m = loadStopsModule({ stops, scans });
+  const [a, b, c] = await Promise.all([m.getStopsLibrary(), m.getStopsLibrary(), m.getStopsLibrary()]);
+  assert.equal(scans.length, 1);
+  assert.equal(a, b);
+  assert.equal(b, c);
+  assert.equal(a[0].name, 'Union Station');
+  assert.ok(Object.isFrozen(a) && Object.isFrozen(a[0]) && Object.isFrozen(a[0].aliases));
+  await m.getStopsLibrary();
+  assert.equal(scans.length, 1);
+});
+
+test('getStopsLibrary: reloads after the one-hour TTL', async () => {
+  const scans = [];
+  const m = loadStopsModule({ stops: [{ id: 'a', data: { agencies: ['TTC'], name: 'Union Station' } }], scans });
+  const realNow = Date.now;
+  let now = realNow();
+  Date.now = () => now;
+  try {
+    const first = await m.getStopsLibrary();
+    now += 59 * 60 * 1000;
+    assert.equal(await m.getStopsLibrary(), first);
+    assert.equal(scans.length, 1);
+    now += 2 * 60 * 1000;
+    const second = await m.getStopsLibrary();
+    assert.equal(scans.length, 2);
+    assert.notEqual(second, first);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('lookupStop: the cross-agency fallback uses the cached library and invalidates it after adding an agency', async () => {
+  const scans = [];
+  const writes = [];
+  const stops = [{ id: 'u', data: { agencies: ['UP Express'], name: 'Union', aliases: [], routes: ['UP'] } }];
+  const m = loadStopsModule({ stops, scans, writes });
+  await m.getStopsLibrary();
+  assert.equal(scans.length, 1);
+
+  const found = await m.lookupStop(null, 'Union', 'TTC');
+  assert.equal(found?.id, 'u');
+  assert.equal(scans.length, 1); // served from the cache, no second whole-collection read
+  assert.notEqual(found, stops[0].data);
+
+  await new Promise(resolve => setImmediate(resolve)); // let the background agencies write land
+  assert.equal(writes.filter(w => w.op === 'update' && w.id === 'u').length, 1);
+  await m.getStopsLibrary();
+  assert.equal(scans.length, 2); // invalidated by the write, so the next read reloads
+});
+
+test('invalidateStopsLibrary: a load already in flight is not kept', async () => {
+  const scans = [];
+  const m = loadStopsModule({ stops: [{ id: 'a', data: { agencies: ['TTC'], name: 'Union Station' } }], scans });
+  const pending = m.getStopsLibrary();
+  m.invalidateStopsLibrary();
+  await pending;
+  await m.getStopsLibrary();
+  assert.equal(scans.length, 2);
+});
