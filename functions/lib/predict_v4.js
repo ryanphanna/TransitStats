@@ -34,9 +34,11 @@ const PredictionEngineV4 = {
     // Shared with training's feature parity test; local time when the artifact was trained on it.
     const x = toFeatureVector(buildEndStopFeatures(context, endStopModel.time_basis), endStopModel.feature_names, Array);
 
+    // Bound by the trained model's own feature count, never by request data (CodeQL alert 53).
+    const featureCount = endStopModel.feature_names.length;
     const logits = endStopModel.classes.map((_, c) => {
       let z = endStopModel.intercept[c];
-      for (let f = 0; f < x.length; f++) z += endStopModel.coef[c][f] * x[f];
+      for (let f = 0; f < featureCount; f++) z += endStopModel.coef[c][f] * x[f];
       return z;
     });
     const displayClasses = endStopModel.classes.map(displayScopedStopLabel);
