@@ -396,8 +396,9 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
   let replyBody = `Started ${routeDisplay} from ${finalStopDisplay}${agencySuffix(resolvedAgency, defaultAgency)}.`;
   // End-stop suggestions are admin-only; non-admins always get the plain END/FORGOT prompt.
   if (isAdmin && habitPrediction?.endStop) {
-    // Keep the END/FORGOT instructions the normal prompt carries.
-    replyBody += `\n\nUsual trip to ${habitPrediction.endStop}.` + getPredictionPrompt(null);
+    // END 1 maps to the habit stop (see handleEndTrip), so say so, like the
+    // one-suggestion prompt does. Keep the END/FORGOT instructions too.
+    replyBody += `\n\nUsual trip to ${habitPrediction.endStop}? END 1 to end.` + getPredictionPrompt(null);
   } else {
     replyBody += getPredictionPrompt(isAdmin ? endStopPredictions : null);
   }

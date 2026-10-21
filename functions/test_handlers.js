@@ -547,7 +547,7 @@ test('handleTripLog: a firing habit changes only the reply; V3/V4/V5 end-stop gu
   for (const key of ['prediction', 'predictionV4', 'predictionV5']) assert.ok(!(key in trip), key);
   // Only the reply changes: habit instead of V3's numbered list.
   const reply = calls.sendSmsReply[0]?.message || '';
-  assert.match(reply, /Usual trip to Spadina Station\./);
+  assert.match(reply, /Usual trip to Spadina Station\? END 1 to end\./);
   assert.match(reply, /END \[stop\] to finish/);
   assert.doesNotMatch(reply, /Bathurst/);
 });
