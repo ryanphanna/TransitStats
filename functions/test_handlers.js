@@ -127,7 +127,7 @@ function loadHandlers(overrides = {}) {
   });
 
   const twilio = {
-    sendSmsReply: async (phone, message) => { calls.sendSmsReply.push({ phone, message }); },
+    sendSmsReply: async (phone, message, options) => { calls.sendSmsReply.push({ phone, message, options }); },
     ...overrides.twilio,
   };
 
@@ -582,8 +582,17 @@ async function habitStartReply(top) {
   } finally {
     restore();
   }
-  return { reply: calls.sendSmsReply[0]?.message || '', trip: calls.createTrip[0] };
+  return { reply: calls.sendSmsReply[0]?.message || '', options: calls.sendSmsReply[0]?.options, trip: calls.createTrip[0] };
 }
+
+test('handleTripLog: admin start reply asks for one END button per numbered stop shown', async () => {
+  const three = await habitStartReply([
+    { stop: 'Bathurst', confidence: 90 }, { stop: 'Dufferin', confidence: 80 },
+  ]);
+  assert.deepEqual(three.options, { endButtons: 3 });
+  const one = await habitStartReply([]);
+  assert.deepEqual(one.options, { endButtons: 1 });
+});
 
 test('handleTripLog: admin habit trip lists the habit stop first, then other shown guesses', async () => {
   const { reply } = await habitStartReply([
@@ -631,6 +640,7 @@ test('handleTripLog: non-admin on a habit trip gets the unchanged reply, habit s
   assert.equal(without.createTrip[0].habitPrediction, null);
   const reply = withHabit.sendSmsReply[0].message;
   assert.equal(reply, without.sendSmsReply[0].message);
+  assert.equal(withHabit.sendSmsReply[0].options, undefined, 'non-admins never get END buttons');
   assert.doesNotMatch(reply, /Usual trip|Spadina Station/);
   assert.match(reply, /\n\nEND \[stop\] to finish\. FORGOT if forgot to end\.$/);
 });

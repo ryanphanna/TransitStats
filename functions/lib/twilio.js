@@ -2,6 +2,16 @@ const twilio = require('twilio');
 const { defineSecret } = require('firebase-functions/params');
 const { escapeXml } = require('./utils');
 const { AsyncLocalStorage } = require('async_hooks');
+const { createRcsConfigReader, deliverReply } = require('./rcs-buttons');
+
+let _rcsConfigReader = null;
+async function getRcsConfig() {
+  if (!_rcsConfigReader) {
+    const { getFirestore } = require('./db');
+    _rcsConfigReader = createRcsConfigReader(getFirestore(), { logger: console });
+  }
+  return _rcsConfigReader();
+}
 
 // API context storage to intercept Twilio SMS replies
 const apiContextStorage = new AsyncLocalStorage();
@@ -53,9 +63,13 @@ function getMessagingServiceSid() {
  * Send an SMS reply via Twilio
  * @param {string} to - Recipient phone number
  * @param {string} message - Message body
+ * @param {object} [options]
+ * @param {number} [options.endButtons] - Number of numbered end-stop choices in the
+ *   message (1-3). When config/rcsButtons allows it, the reply goes out as an RCS
+ *   card with END 1..END n tap buttons; otherwise (or on any card failure) plain SMS.
  * @returns {Promise<boolean>} success status
  */
-async function sendSmsReply(to, message) {
+async function sendSmsReply(to, message, { endButtons = 0 } = {}) {
   // Check if we are running in an API request context
   const apiContext = apiContextStorage.getStore();
   if (apiContext && apiContext.isApiRequest) {
@@ -86,6 +100,14 @@ async function sendSmsReply(to, message) {
     : { body: message, from, to };
 
   try {
+    if (endButtons && !messagingServiceSid) {
+      let rcsConfig = null;
+      try { rcsConfig = await getRcsConfig(); } catch { rcsConfig = null; }
+      const via = await deliverReply(client, { from, to, message, endButtons, rcsConfig });
+      console.log(`Message sent via ${via === 'card' ? 'RCS button card' : 'direct SMS'}`);
+      await logOutboundMessage(message);
+      return true;
+    }
     await client.messages.create(msgParams);
     console.log(`Message sent via ${messagingServiceSid ? 'Messaging Service (RCS/SMS)' : 'direct SMS'}`);
     await logOutboundMessage(message);

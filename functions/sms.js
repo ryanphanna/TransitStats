@@ -23,6 +23,7 @@ const {
   twimlResponse,
 } = require('./lib/twilio');
 const { dispatch } = require('./lib/dispatcher');
+const { normalizeInbound } = require('./lib/rcs-buttons');
 
 // Secrets (Modern defineSecret pattern)
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
@@ -40,8 +41,8 @@ async function handleSmsRequest(req, res) {
   const traceId = generateTraceIdLocal();
 
   try {
-    const phoneNumber = req.body.From;
-    const body = (req.body.Body || '').trim();
+    // Tapped RCS END n buttons become the text "END n"; "rcs:" sender prefixes are stripped.
+    const { from: phoneNumber, body } = normalizeInbound(req.body);
     const messageSid = req.body.MessageSid;
     const numMedia = parseInt(req.body.NumMedia || '0', 10);
     const mediaUrl = numMedia > 0 ? (req.body.MediaUrl0 || null) : null;
