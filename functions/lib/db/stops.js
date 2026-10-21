@@ -46,6 +46,7 @@ async function _lookupStopCore(stopCode, stopName, agency, route, direction, { c
         // Found under another label of the same agency: record this label too (write path only).
         if (crossAgency && !(data.agencies || []).includes(agency) && doc.ref?.update) {
           doc.ref.update({ agencies: FieldValue.arrayUnion(agency), updatedAt: new Date() })
+            .then(invalidateStopsLibrary)
             .catch(err => console.error('agencies label union failed:', err.message));
         }
         return { id: doc.id, ...data, stopCode: data.code, stopName: data.name };
@@ -122,11 +123,14 @@ async function _addAtlasStop(agency, stop) {
   const ref = db.collection('stops').doc(id);
   try {
     await ref.create({ ...data, createdAt: new Date(), updatedAt: new Date() });
+    invalidateStopsLibrary();
   } catch (error) {
     const alreadyExists = error.code === 6 || /already exists|ALREADY_EXISTS/i.test(error.message || '');
     try {
-      if (alreadyExists) await ref.update({ agencies: FieldValue.arrayUnion(agency), updatedAt: new Date() });
-      else console.warn('Could not add Atlas stop to the library:', error.message);
+      if (alreadyExists) {
+        await ref.update({ agencies: FieldValue.arrayUnion(agency), updatedAt: new Date() });
+        invalidateStopsLibrary();
+      } else console.warn('Could not add Atlas stop to the library:', error.message);
     } catch (updateError) {
       console.warn('Could not update Atlas stop agencies:', updateError.message);
     }
@@ -221,10 +225,9 @@ async function _findAndExpandStop(term, agency) {
       .map(([a]) => a)
   );
 
-  const allStops = await db.collection('stops').get();
+  const { records } = await _loadStopsCache();
 
-  for (const doc of allStops.docs) {
-    const data = doc.data();
+  for (const { id, data } of records) {
 
     // Skip stops whose home agency is in a different city
     if (data.agency && !cityAgencies.has(data.agency)) continue;
@@ -236,12 +239,14 @@ async function _findAndExpandStop(term, agency) {
 
     if (match) {
       if (!data.agencies?.includes(agency)) {
-        doc.ref.update({
+        db.collection('stops').doc(id).update({
           agencies: FieldValue.arrayUnion(agency),
           updatedAt: new Date(),
-        }).catch(err => console.error('agencies auto-expand failed:', err.message));
+        }).then(invalidateStopsLibrary)
+          .catch(err => console.error('agencies auto-expand failed:', err.message));
       }
-      return { id: doc.id, ...data, stopCode: data.code, stopName: data.name };
+      // A copy: the cached record is shared.
+      return { id, ...data, stopCode: data.code, stopName: data.name };
     }
   }
   return null;
@@ -260,20 +265,79 @@ async function getRoutesAtStop(stopCode, agency) {
   }
 }
 
-async function getStopsLibrary() {
-  const snapshot = await db.collection('stops').get();
-  return snapshot.docs.map(doc => {
-    const data = doc.data();
-    return {
-      name: data.name,
-      aliases: data.aliases || [],
-      code: data.code || null,
-      agency: data.agency || null,
-      agencies: data.agencies || [],
-      lat: data.lat ?? data.location?.lat ?? null,
-      lng: data.lng ?? data.lon ?? data.location?.lng ?? data.location?.lon ?? null,
-    };
+// The whole stops collection (~1,100 docs) is read at most about once an hour per instance and
+// shared by every caller (#345): reading it on every trip start and end pushed the texting
+// function past its memory limit. Concurrent callers share one in-flight read. The cache holds
+// plain records, never Firestore snapshots, and getStopsLibrary returns the same frozen array
+// until the next load, so callers must treat it as read-only.
+//
+// Writes from this process that change what the cache holds (a new stop, an agencies label)
+// invalidate it. Writes to fields the library does not return (routes, source) do not, or the
+// cache would reload on nearly every trip; a stale routes/source in a fallback record only
+// repeats an idempotent union/promotion write. Writes from other instances wait for the TTL.
+const STOPS_LIBRARY_TTL_MS = 60 * 60 * 1000;
+let _stopsCache = null; // { records: [{ id, data }], library: [...], loadedAt }
+let _stopsInflight = null;
+let _stopsGeneration = 0;
+
+function _projectLibraryEntry(data) {
+  return Object.freeze({
+    name: data.name,
+    aliases: Object.freeze([...(data.aliases || [])]),
+    code: data.code || null,
+    agency: data.agency || null,
+    agencies: Object.freeze([...(data.agencies || [])]),
+    lat: data.lat ?? data.location?.lat ?? null,
+    lng: data.lng ?? data.lon ?? data.location?.lng ?? data.location?.lon ?? null,
   });
+}
+
+async function _loadStopsCache() {
+  if (_stopsCache && Date.now() - _stopsCache.loadedAt < STOPS_LIBRARY_TTL_MS) return _stopsCache;
+  if (_stopsInflight) return _stopsInflight;
+  const generation = _stopsGeneration;
+  const load = (async () => {
+    try {
+      const snapshot = await db.collection('stops').get();
+      const records = snapshot.docs.map(doc => ({ id: doc.id, data: doc.data() }));
+      const cache = {
+        records,
+        library: Object.freeze(records.map(record => _projectLibraryEntry(record.data))),
+        loadedAt: Date.now(),
+      };
+      // A load that started before an invalidation may hold pre-write data: hand it to the
+      // callers already waiting on it, but don't keep it.
+      if (generation === _stopsGeneration) _stopsCache = cache;
+      return cache;
+    } catch (error) {
+      // Keep serving the last good library if a refresh fails; with nothing cached, fail as before.
+      if (_stopsCache) {
+        console.warn('Stops library refresh failed; serving the cached copy:', error.message);
+        return _stopsCache;
+      }
+      throw error;
+    } finally {
+      if (_stopsInflight === load) _stopsInflight = null;
+    }
+  })();
+  _stopsInflight = load;
+  return load;
+}
+
+/** The shared stops library. Read-only: the array and its entries are frozen and shared. */
+async function getStopsLibrary() {
+  return (await _loadStopsCache()).library;
+}
+
+/** Drops the cached library so the next read reloads it (after a write that changes it). */
+function invalidateStopsLibrary() {
+  _stopsGeneration += 1;
+  _stopsCache = null;
+  _stopsInflight = null;
+}
+
+function resetStopsLibraryForTests() {
+  invalidateStopsLibrary();
 }
 
 /**
@@ -462,6 +526,8 @@ module.exports = {
   findMatchingStops,
   getRoutesAtStop,
   getStopsLibrary,
+  invalidateStopsLibrary,
+  resetStopsLibraryForTests,
   _lookupStopInTopology,
   _findStopCandidates,
   _preferCandidatesByRouteMode,
