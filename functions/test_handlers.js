@@ -1092,8 +1092,6 @@ test('handleTripLog: end-to-end prediction prompt does not surface illegal 506 d
     await handlers.handleTripLog('+14165550004', { userId: 'u4' }, '14400', '506', 'Westbound', 'TTC');
   } finally {
     restore();
-    PredictionEngine.networkGraph = null;
-    PredictionEngine.stopsLibrary = [];
   }
 
   const reply = calls.sendSmsReply[0]?.message || '';
@@ -1790,4 +1788,70 @@ test('handleEndTrip: admin END 1 does not resolve a stored guess below 75', asyn
   // Same as a non-admin: "1" is parsed as typed input (a stop code), not the hidden guess.
   assert.equal(calls.docUpdates[0].endStopCode, '1');
   assert.notEqual(calls.docUpdates[0].endStopName, 'College Station');
+});
+
+test('handleTripLog: two texts handled at once each predict with their own stops library and network graph', async () => {
+  const libA = [{ name: 'Library A Stop', aliases: [] }];
+  const libB = [{ name: 'Library B Stop', aliases: [] }];
+  const graphFor = { uA: { owner: 'uA' }, uB: { owner: 'uB' } };
+  const seen = { uA: [], uB: [] };
+  const record = (engine, step) => {
+    const owner = engine.networkGraph?.owner;
+    seen[owner].push({ step, library: engine.stopsLibrary, graph: engine.networkGraph });
+  };
+
+  // A pauses after its engine data is loaded and stays paused until B has finished.
+  let releaseA;
+  const aPaused = new Promise(resolve => { releaseA = resolve; });
+  let signalAWaiting;
+  const aWaiting = new Promise(resolve => { signalAWaiting = resolve; });
+  let libraryCalls = 0;
+
+  const { handlers, restore } = loadHandlers({
+    dbModule: {
+      getStopsLibrary: async () => (libraryCalls++ === 0 ? libA : libB),
+    },
+    network: {
+      NetworkEngine: {
+        load: async (_db, userId) => graphFor[userId],
+        getConnectionsAtStop: async () => {
+          if (libraryCalls === 1) {
+            signalAWaiting();
+            await aPaused;
+          }
+          return {};
+        },
+      },
+    },
+    predict: {
+      PredictionEngine: {
+        guess: () => null,
+        guessEndStop() { record(this, 'guessEndStop'); return null; },
+        guessTopEndStops() { return []; },
+        getEndStopConstraint() { record(this, 'getEndStopConstraint'); return { source: 'none', legalStops: null }; },
+        _stopMatch: () => false,
+      },
+    },
+  });
+
+  try {
+    const tripA = handlers.handleTripLog('+14165550010', { userId: 'uA' }, '11985', '506', 'Westbound', 'TTC');
+    await aWaiting;
+    await handlers.handleTripLog('+14165550011', { userId: 'uB' }, '11985', '506', 'Westbound', 'TTC');
+    releaseA();
+    await tripA;
+  } finally {
+    restore();
+  }
+
+  assert.deepEqual(seen.uA.map(s => s.step), ['getEndStopConstraint', 'guessEndStop']);
+  assert.deepEqual(seen.uB.map(s => s.step), ['getEndStopConstraint', 'guessEndStop']);
+  for (const s of seen.uA) {
+    assert.equal(s.library, libA);
+    assert.equal(s.graph, graphFor.uA);
+  }
+  for (const s of seen.uB) {
+    assert.equal(s.library, libB);
+    assert.equal(s.graph, graphFor.uB);
+  }
 });

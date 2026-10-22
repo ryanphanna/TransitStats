@@ -14,8 +14,8 @@
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
     "test": "node --test $(ls test_*.js | grep -v -e test_e2e.js -e test_integration.js)",
-    "test:watch": "node --test --watch test_*.js",
-    "test:integration": "node --test test_integration.js",
+    "test:watch": "node --test --watch $(ls test_*.js | grep -v -e test_e2e.js -e test_integration.js)",
+    "test:integration": "firebase emulators:exec --only firestore \"node --test test_integration.js\"",
     "test:e2e": "firebase emulators:exec --only firestore,functions \"node test_e2e.js\""
   },
   "dependencies": {
@@ -30,7 +30,7 @@
     "twilio": "^6.1.2"
   },
   "overrides": {
-    "follow-redirects": "^1.16.0",
+    "follow-redirects": "^1.16.1",
     "axios": "^1.20.0",
     "@fastify/busboy": "^3.2.2",
     "@grpc/grpc-js": "^1.14.5",
