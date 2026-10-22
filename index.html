@@ -41,14 +41,19 @@
 <body>
     <main id="app-root">
         <section id="view-auth" class="view auth-view active">
-            <div class="auth-content">
-                <header class="auth-brand" aria-label="TransitStats">
-                    <span class="auth-brand-mark"><i data-lucide="zap"></i></span>
+            <!-- One column holds every block, so they share the same left edge and gutter. -->
+            <div class="auth-column">
+            <header class="auth-header">
+                <a href="/" class="logo" aria-label="TransitStats home">
+                    <div class="logo-icon"><i data-lucide="zap"></i></div>
                     <span class="logo-text">TransitStats</span>
-                </header>
+                </a>
+            </header>
 
+            <div class="auth-content">
                 <div class="auth-copy">
                     <h1 class="auth-title">Your transit life, <em>mapped.</em></h1>
+                    <p class="auth-subtitle">Log your trips and see where you ride.</p>
                 </div>
 
                 <div class="auth-card card">
@@ -56,7 +61,6 @@
                         <div>
                             <h2 id="auth-heading">Get started or log in</h2>
                         </div>
-                        <i data-lucide="arrow-up-right" aria-hidden="true"></i>
                     </div>
 
                     <div class="auth-step-frame">
@@ -64,7 +68,7 @@
                             <label class="sr-only" for="auth-phone">Phone number</label>
                         <div class="auth-input-wrap" id="auth-phone-wrap">
                                 <i data-lucide="smartphone" aria-hidden="true"></i>
-                                <input type="tel" id="auth-phone" inputmode="tel" autocomplete="off" placeholder="Phone number">
+                                <input type="tel" id="auth-phone" inputmode="tel" autocomplete="tel" placeholder="Phone number">
                             </div>
                             <button id="btn-auth-request-code" class="btn btn-primary full-width">Text me a code <i data-lucide="arrow-right" aria-hidden="true"></i></button>
                             <button id="btn-auth-email-mode" class="btn btn-link full-width hidden" type="button">Use email instead</button>
@@ -90,9 +94,10 @@
                             <label class="sr-only" for="auth-code">Verification code</label>
                             <div class="auth-code-wrap">
                                 <input type="text" id="auth-code" class="auth-code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">
-                                <button id="btn-auth-resend-code" class="btn btn-link">Resend code</button>
+                                <button id="btn-auth-resend-code" class="btn btn-link" type="button">Resend code</button>
                             </div>
                             <button id="btn-auth-verify-code" class="btn btn-primary full-width" disabled>Continue <i data-lucide="arrow-right" aria-hidden="true"></i></button>
+                            <button id="btn-auth-change-number" class="btn btn-link full-width" type="button">Wrong number? Change it</button>
                         </div>
                     </div>
 
@@ -107,6 +112,7 @@
                 <a href="/terms">Terms</a>
                 <span aria-hidden="true">·</span>
                 <a href="/privacy">Privacy</a>
+            </div>
             </div>
 
             <div class="auth-visual" aria-hidden="true">

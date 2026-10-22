@@ -25,6 +25,7 @@ const DOM = {
     resetPassword: document.getElementById('btn-auth-reset-password'),
     verifyCode: document.getElementById('btn-auth-verify-code'),
     resendCode: document.getElementById('btn-auth-resend-code'),
+    changeNumber: document.getElementById('btn-auth-change-number'),
     status: document.getElementById('auth-status'),
     turnstile: document.getElementById('auth-turnstile')
 };
@@ -274,6 +275,18 @@ async function transitionAuthStep(fromStep, toStep) {
     frame.style.height = '';
 }
 
+// Back to the phone step from the code step. The typed number stays in the box.
+async function changeNumber() {
+    clearStatus();
+    window.clearInterval(resendTimer);
+    resendSeconds = 0;
+    DOM.codeInput.value = '';
+    DOM.heading.textContent = 'Get started or log in';
+    await transitionAuthStep(DOM.codeStep, DOM.phoneStep);
+    syncButtons();
+    DOM.phoneInput.focus();
+}
+
 function hasValidPhone() {
     return normalizePhone(DOM.phoneInput.value).replace(/\D/g, '').length >= 10;
 }
@@ -364,6 +377,7 @@ function setupListeners() {
     });
     DOM.verifyCode.addEventListener('click', verifyCode);
     DOM.resendCode.addEventListener('click', requestCode);
+    DOM.changeNumber.addEventListener('click', changeNumber);
 }
 
 function init() {
