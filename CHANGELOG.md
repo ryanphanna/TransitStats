@@ -8,6 +8,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+- **Two texts arriving at the same moment can no longer mix up each other's stop data**, and the background ML task check no longer fails on every run.
 - **Tap-to-end buttons are built but switched off.** Trip-start texts can show your likely stops as buttons on phones that support RCS; they turn on once the carrier approves the TransitStats sender.
 - **Trip texts use less memory and fewer database reads.** The stop list is now loaded about once an hour instead of on every trip start and end, which was the main cause of the texting function running out of memory.
 - **Trip texts are less likely to be dropped under load.** The texting function now has twice the memory; it had run out 10 times in the past month.
