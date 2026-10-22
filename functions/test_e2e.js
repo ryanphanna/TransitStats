@@ -34,6 +34,13 @@ const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestor
 // FIRESTORE_EMULATOR_HOST still keeps everything fully local; no real project touched.
 const EMULATOR_PROJECT_ID = 'transitstats-21ba4';
 
+// Refuse to run without the emulator: the project id above is the real one.
+if (!process.env.FIRESTORE_EMULATOR_HOST) {
+  console.error('test_e2e.js: FIRESTORE_EMULATOR_HOST is not set. ' +
+    'Refusing to run against production. Use `npm run test:e2e`.');
+  process.exit(1);
+}
+
 if (!getApps().length) {
   initializeApp({
     projectId: EMULATOR_PROJECT_ID,

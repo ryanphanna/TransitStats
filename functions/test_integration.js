@@ -5,19 +5,25 @@
  * No real SMS is sent (TS_TEST_MODE intercepts Twilio).
  * No Gemini API calls are made (returns null, forcing heuristic parser).
  *
- * Requires the Firebase service account key at:
- *   /Users/ryan/Desktop/Dev/Credentials/Firebase for Transit Stats.json
+ * Runs only against the Firestore emulator. It refuses to start without
+ * FIRESTORE_EMULATOR_HOST, so test rows can never land in production
+ * (earlier runs left ~580 integration-test-user docs in live data, CIV-426).
  *
  * Run with:
- *   node test_integration.js
+ *   npm run test:integration
  */
 
 'use strict';
 
 // Must be set before any module that reads it is required
 process.env.TS_TEST_MODE = '1';
-process.env.GOOGLE_APPLICATION_CREDENTIALS =
-  '/Users/ryan/Desktop/Dev/Credentials/Firebase for Transit Stats.json';
+
+// Refuse to touch a real Firestore project. emulators:exec sets this for us.
+if (!process.env.FIRESTORE_EMULATOR_HOST) {
+  console.error('test_integration.js: FIRESTORE_EMULATOR_HOST is not set. ' +
+    'Refusing to run against production. Use `npm run test:integration`.');
+  process.exit(1);
+}
 
 const { test, before, after, describe } = require('node:test');
 const assert = require('node:assert/strict');
@@ -27,7 +33,7 @@ const { getFirestore } = require('firebase-admin/firestore');
 // Initialize Admin SDK before anything else loads db modules
 let integrationApp;
 if (!getApps().length) {
-  integrationApp = initializeApp();
+  integrationApp = initializeApp({ projectId: 'transitstats-21ba4' });
 }
 const db = getFirestore();
 
