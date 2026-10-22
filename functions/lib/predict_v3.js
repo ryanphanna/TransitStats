@@ -19,6 +19,10 @@ try { _topology = require('./topology.json'); } catch (e) { /* topology filter d
 const { NetworkEngine } = require('./network');
 const TopologyConstraints = require('./topology-constraints');
 
+// Normalized stop name -> canonical name, keyed by stops-library array.
+const _stopIndexByLibrary = new WeakMap();
+const _EMPTY_LIBRARY = [];
+
 const PredictionEngineV3 = {
   VERSION: '3.5.0',
 
@@ -318,9 +322,13 @@ const PredictionEngineV3 = {
    * find() over the library would.
    */
   _stopIndex: function () {
-    if (this._stopIndexFor !== this.stopsLibrary) {
-      const index = new Map();
-      for (const s of this.stopsLibrary || []) {
+    // Cached per library array (not on the engine), so per-request engines built with
+    // Object.create share one index for the same library and never write shared state.
+    const library = this.stopsLibrary || _EMPTY_LIBRARY;
+    let index = _stopIndexByLibrary.get(library);
+    if (!index) {
+      index = new Map();
+      for (const s of library) {
         if (!s || !s.name) continue;
         const canonical = this._normStopName(s.name);
         for (const c of [s.name, ...(s.aliases || [])]) {
@@ -329,10 +337,9 @@ const PredictionEngineV3 = {
           if (!index.has(key)) index.set(key, canonical);
         }
       }
-      this._stopIndexCache = index;
-      this._stopIndexFor = this.stopsLibrary;
+      _stopIndexByLibrary.set(library, index);
     }
-    return this._stopIndexCache;
+    return index;
   },
 
   /**

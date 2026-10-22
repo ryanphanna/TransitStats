@@ -27,11 +27,14 @@ async function gradeAllPredictions(activeTrip, user, endStopData, duration) {
   const actualEndStop = endStopData ? endStopData.stopName : (activeTrip.endStopName || '');
 
   try {
+    // Per-call engine so grading never depends on (or touches) another request's data.
+    const engine = Object.create(PredictionEngine);
+    engine.stopsLibrary = await getStopsLibrary();
     // Route guesses are no longer made (the route arrives in the texted message), so only
     // end stops are graded (V3/V4/V5/Habit). Route guesses already stored on older trips are left ungraded.
     const es = async (pred, version) => {
       if (!pred) return;
-      const hit = PredictionEngine._stopMatch(pred.stop, actualEndStop);
+      const hit = engine._stopMatch(pred.stop, actualEndStop);
       await db.collection('predictionStats').add({
         tripId: activeTrip.id, userId: user.userId, endStopPredicted: pred.stop, endStopActual: actualEndStop,
         endStopHit: hit, endStopConfidence: pred.confidence, version, route: activeTrip.route, agency: activeTrip.agency, source: 'sms', timestamp: FieldValue.serverTimestamp()

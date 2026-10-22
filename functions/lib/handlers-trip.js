@@ -23,6 +23,16 @@ const {
 } = require('./db');
 const { getConfiguredPrimaryAgency } = require('./primary-agency');
 const { PredictionEngine } = require('./predict.js');
+
+// PredictionEngine is a module-level singleton shared by every request on this instance, and
+// texts are handled concurrently. Per-request data (stops library, network graph) goes on a
+// fresh object that inherits the engine's methods, so one text never sees another's data.
+function requestEngine(stopsLibrary, networkGraph) {
+  const engine = Object.create(PredictionEngine);
+  engine.stopsLibrary = stopsLibrary;
+  engine.networkGraph = networkGraph || null;
+  return engine;
+}
 const { TransferEngine } = require('./transfer.js');
 const { NetworkEngine } = require('./network.js');
 const { HabitEngine } = require('./habit');
@@ -252,8 +262,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       isEmailAdmin(user.email),
       isExperimentalIntelligenceEnabled(user.email),
     ]);
-    PredictionEngine.stopsLibrary = stopsLibrary;
-    PredictionEngine.networkGraph = networkGraph || null;
+    const engine = requestEngine(stopsLibrary, networkGraph);
     isAdmin = adminStatus;
     defaultAgency = getConfiguredPrimaryAgency(profile)
       || history.find(trip => trip.agency)?.agency
@@ -304,7 +313,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       stopsLibrary,
       networkGraph: networkGraph || null,
     };
-    const endStopConstraint = PredictionEngine.getEndStopConstraint(endStopContext);
+    const endStopConstraint = engine.getEndStopConstraint(endStopContext);
     endStopConstraintSource = endStopConstraint.source;
     logger.info('Trip-start end-stop constraint', {
       route,
@@ -343,9 +352,9 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       if (topEndV4.length > 0) endStopPredictionV4 = topEndV4[0];
       if (topEndV5.length > 0) endStopPredictionV5 = topEndV5[0];
     }
-    endStopPrediction = PredictionEngine.guessEndStop(history, endStopContext);
+    endStopPrediction = engine.guessEndStop(history, endStopContext);
     if (isAdmin) {
-      const top = PredictionEngine.guessTopEndStops(history, endStopContext, 3);
+      const top = engine.guessTopEndStops(history, endStopContext, 3);
       if (top.length > 0) endStopPredictions = top;
     }
   } catch (err) {
@@ -445,7 +454,7 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
       isEmailAdmin(user.email),
       isExperimentalIntelligenceEnabled(user.email),
     ]);
-    PredictionEngine.stopsLibrary = stopsLibrary;
+    const engine = requestEngine(stopsLibrary, confirmNetworkGraph);
     confirmIsAdmin = confirmAdminStatus;
     confirmDefaultAgency = getConfiguredPrimaryAgency(confirmProfile)
       || history.find(trip => trip.agency)?.agency
@@ -467,7 +476,7 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
     newStopData = await lookupStop(newTrip.stopCode, newTrip.stopName, newTrip.agency, newTrip.route, newTrip.direction);
     
     const confirmEndStopContext = { route: newTrip.route, startStopName: newTrip.stopName, direction: newTrip.direction, time: now, lastEndStopName, agency: newTrip.agency, stopsLibrary, networkGraph: confirmNetworkGraph || null };
-    const confirmEndStopConstraint = PredictionEngine.getEndStopConstraint(confirmEndStopContext);
+    const confirmEndStopConstraint = engine.getEndStopConstraint(confirmEndStopContext);
     confirmEndStopConstraintSource = confirmEndStopConstraint.source;
     logger.info('Confirm-start end-stop constraint', {
       route: newTrip.route,
@@ -501,9 +510,9 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
       if (confirmTopV4.length > 0) confirmEndStopPredictionV4 = confirmTopV4[0];
       if (confirmTopV5.length > 0) confirmEndStopPredictionV5 = confirmTopV5[0];
     }
-    confirmEndStopPrediction = PredictionEngine.guessEndStop(history, confirmEndStopContext);
+    confirmEndStopPrediction = engine.guessEndStop(history, confirmEndStopContext);
     if (confirmIsAdmin) {
-      const top = PredictionEngine.guessTopEndStops(history, confirmEndStopContext, 3);
+      const top = engine.guessTopEndStops(history, confirmEndStopContext, 3);
       if (top.length > 0) confirmEndStopPredictions = top;
     }
   } catch (err) {
