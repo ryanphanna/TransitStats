@@ -8,54 +8,56 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
-- **Trip texts are no longer dropped when the texting function runs out of memory**: it had run out 10 times in the past month, mostly because it reloaded the full stop list on every trip start and end. It now has twice the memory and loads the stop list about once an hour.
-- **End-stop guesses are right on 46% of trips, up from 28%**: when a trip is new, the guesser now falls back to the same route, then the same stop, and looks further back in your history. It no longer ignores real stops with "Northbound"-style names, and the text only suggests a stop when it's fairly sure.
-- **Predictions keep each agency separate**: identical route numbers or stop names in different cities can no longer collide, so a one-off trip in another city can't leak into your habits, transfers or ML predictions.
-- **"Usual trip" end-stop prediction works now (admins only)**: when a weekday or weekend trip from that stop around that time usually ends in the same place, the start reply leads with "Usual trip to ..." and still lists the numbered stops, so END 1, END 2 and END 3 work as on any other trip. Offline it's right 84% of the time it shows; other riders' replies are unchanged.
-- **Stop matching finds the right stop more often**: "X Station" and "X Station - Northbound Platform", or "St. George" and "St George", are now one station; stops texted by code are looked up in Atlas; corrected trips are re-checked instead of staying "unmatched" forever; and trips with a valid stop code count as matched even without a display name. Different stops are never merged.
-- **End-stop predictions no longer rule out the stop you actually got off at**: Bathurst (511), Keele (41), King (504) and several LA and Muni lines had their direction backwards, and stops like College Station, St Patrick and College / St George were missing from the route maps.
-- **Texted trips no longer get a made-up agency**: a third line like "Downtown" or a typo like "Northa" used to be saved as the agency, keeping those trips out of predictions. They're now read as the direction, and known agencies are recognized however they're typed ("GO" becomes GO Transit, "MFTA" and "NFTA" become NFTA Metro).
-- **Pittsburgh trips look up stops in the right system**: "PRT" was being matched to West Virginia University's PRT instead of Pittsburgh Regional Transit.
-- **Two texts arriving at the same moment no longer mix up each other's stop data.**
-- **No more false "trip not ended" prompts on spotty signal**: when a phone silently resent a trip-start text a couple of minutes later (common in tunnels and subways), it was treated as a second trip and the real one was flagged as abandoned. The duplicate check now covers 5 minutes instead of 60 seconds.
-- **"Up" and "Down" stay as typed**: a bare direction on an incline or funicular trip no longer becomes "Up Valley" or "Down Mountain".
-- **Texting YES or START after STOP turns texts back on everywhere**: our own opt-out list could miss it, so invite texts kept being skipped even though Twilio would deliver them again.
-- **People on the invite list can start just by texting**: their account is created, the phone is linked, and a website sign-in link arrives by email, with no need to sign up on the site first. Everyone gets a one-time welcome text when added, and replying STOP is respected.
-- **Texts to an unlinked number explain how to link it with REGISTER**, instead of mentioning an invite list; a REGISTER with an unknown email says no account was found.
-- **Monthly Recap**: a shareable transfer-ticket card for last month's rides (day grid, trips, hours, top routes, favourite stop, busiest day), linked from the top menu. Imported PRESTO rides count too, a ride both logged and imported counts once, and a month with no rides shows a "no transfer issued" ticket. It fits a laptop window without scrolling.
-- **PRESTO import is open to everyone**: any signed-in user can import from the import page or Settings, with step-by-step instructions for getting the Transit Usage Report from PRESTO's site. New accounts with no rides see an import prompt.
-- **PRESTO imports are accurate**: rides were read as UTC and could land on the next day; GO tap-ins and tap-outs are now paired by time and fare, so one missed tap-off no longer scrambles every later GO trip; refunded fares are left out; and a ride you both logged and imported counts once in totals, the map and your public profile.
-- **Imported PRESTO rides show on the dashboard**: map, trip counts, agencies, days ridden and countries, not just the public profile.
-- **PRESTO imports fail less often**: one bad row no longer blocks a whole file, CSVs with a hidden byte-order mark import, uploading the PDF report explains to export the CSV instead, errors say it's safe to retry, and opening the import page without access no longer signs you out. The preview lists what it skipped (e.g. "3 Refund, 2 Autoload") and separates fares from card top-ups.
-- **Travel corridor map**: a private heatmap that draws your repeated trips along real route shapes, shaded by how often you ride them and opening on your busiest area.
-- **Settings is a panel instead of a separate page**: it opens over the map without losing your place, with Account, Map, Profile and Sharing tabs, and shows your plan (Free, Premium or Admin).
-- **Phone-only accounts can link an email in Settings**: before, signing in with email created a separate, empty account with none of your trips.
-- **Public profiles are open to every account**: sharing used to work for one pilot username only. The dashboard now links to your public profile when sharing is on.
-- **Pages load faster**: saved map dots show before the full history loads, the dashboard no longer reads your trip history twice, signed-in pages don't wait on session sync, and icons ship with the app instead of loading from another site at an unpinned version.
-- **Signed-out visitors go straight to login on every page**: they used to wait up to a minute on a loading skeleton, and they now come back to the page they wanted after signing in.
-- **Idle tabs stay signed in**: the session is refreshed on focus and every 45 minutes, and a network blip no longer forces a logout.
-- **The sign-in screen is clearer on phones**: it says what TransitStats is, lets you go back if you mistype your number, and lets iPhone fill in your number. Login texts now say codes expire after 10 minutes. The email option is hidden on the main login, since email-only accounts can't log trips by text.
-- **The login map shows the real TTC network** (Lines 1, 2, 4, 5) for visitors in Toronto, instead of the generic squiggle other cities still get.
+- **Start by texting.** People on the invite list can text the number to get set up: the account is created, the phone is linked, and a website sign-in link arrives by email. Everyone gets a one-time welcome text when added, and replying STOP is respected.
+- **Monthly Recap.** A shareable transfer-ticket card for last month's rides (day grid, trips, hours, top routes, favourite stop, busiest day), linked from the top menu and sized to fit a laptop window. Imported PRESTO rides count too, and a ride both logged and imported counts once.
+- **PRESTO import for everyone.** Any signed-in user can import their PRESTO history from the import page or Settings, with step-by-step instructions for getting the file and a preview that lists what it skips and separates fares from card top-ups. New accounts with no rides see an import prompt.
+- **Travel corridor map.** A private heatmap that draws your repeated trips along real route shapes, shaded by how often you ride them, opening on your busiest area.
+- **"Usual trip" end-stop prediction (admins only).** When a trip from that stop at that time usually ends in the same place, the start reply leads with that stop, still followed by the numbered list. It's right 84% of the time it shows.
 - **Clicking map lines and stops shows the route or stop name.**
-- **Trips with no exit recorded no longer show a guessed exit on your map**: admins still see the guess as a dashed "estimated" outline, and it never counts as a real ride.
-- **Social preview cards show the full ride map over real street tiles**: totals moved to the post text, bad coordinates are skipped, large ride histories no longer fail to render, and LinkedIn shows the large card.
+- **Phone-only accounts can link an email in Settings**, so signing in with email reaches the same account instead of creating an empty one.
+- **Public profiles are open to every account**, and the dashboard links to your public profile when sharing is on.
 - **Terms of Service and Privacy Policy pages**, linked from the login screen.
-- **Tap-to-end buttons are built but switched off**: trip-start texts can show your likely stops as buttons on phones that support RCS; they turn on once the carrier approves the TransitStats sender.
-- **Phone sign-in is protected against abuse**: code requests go through an invisible bot check that blocks when its setting is missing or unreadable, each source can request 10 codes an hour, and the daily cap keeps the last 50 codes for people who signed in by text recently, so one person can no longer lock everyone out. None of these replies reveal whether a number is registered or has opted out.
-- **A number added by invite must be confirmed before it can see or change your data**: it can log trips right away, but anything else (stats, history, discard, settings) asks for a code emailed to the account.
-- **Closed privacy leaks**: anyone could read a public user's raw profile record, including admin and premium status, and anyone could read other people's Rocket GPS trails. Both are locked down, and the unused Rocket page is gone.
-- **Prediction models are no longer in the public repository**: they contained real stop and route names, so they now live in private storage, are trained only on approved users, and only those users get ML predictions.
-- **Server logs mask phone numbers and email addresses**: warnings used to print "[object Object]"; they now show their details, and crash logs list only request field names instead of message contents.
-- **Website visits are counted with Google Analytics**: the site's security policy had been blocking it. No trip or location data is sent, and the owner's own visits are skipped.
-- **Fixed "Saving a public identity" failing**, and picking one that's taken now says "That one's taken. Try another combination."
-- **Fixed "Failed to sync trips" when toggling "Allow others to view your shared stats page"**: the switch saved but the trip update threw an error.
-- **The dashboard no longer hangs if loading your trips fails**, and refreshes show a loading state instead of a blank or fake empty dashboard while your session restores.
-- **Settings no longer crashes for a brand-new account** with no agency chosen yet.
-- **Maps behave**: tiles no longer need an API key, dragging stops where you leave it, public profile pages load their styling, and the app stays in light mode even when the browser is set to dark.
-- **Interface polish**: no more all-caps labels, the TransitStats name stands out more on the dashboard, Share sits in the top-right on public profiles, the PRESTO file picker and link buttons match the app's style, negative import amounts read "-$10.05", and every page has a lightning-bolt tab icon.
-- **Admins get every premium text feature automatically**, including STATS trend arrows.
+- **Tap-to-end buttons (switched off).** Trip-start texts can show likely stops as buttons on phones that support RCS; they turn on once the carrier approves the sender.
+- **A lightning-bolt browser tab icon** on every page.
+- **End-stop guesses are right on 46% of trips, up from 28%.** New trips fall back to the same route or stop and look further back in your history, and the text only suggests a stop when fairly sure.
+- **Predictions keep each agency separate.** Same route numbers or stop names in different cities can no longer mix, and a one-off trip elsewhere no longer affects your habits or predictions.
+- **Settings is a panel instead of a separate page.** It opens over the map with Account, Map, Profile and Sharing tabs, and shows your plan (Free, Premium or Admin).
+- **Pages load faster.** Saved map dots show before the full history loads, the dashboard no longer reads your trip history twice, signed-in pages don't wait on session sync, and icons ship with the app instead of loading from another site.
+- **Signed-out visitors go straight to login on every page**, and come back to the page they wanted after signing in.
+- **Texts to an unlinked number explain how to link it** with REGISTER, instead of mentioning an invite list.
+- **Login texts say codes expire after 10 minutes.**
+- **The sign-in screen is clearer on phones.** It says what TransitStats is, lets you go back if you mistype your number, and lets iPhone fill in your number. The email option is hidden on the main login, since email-only accounts can't log trips by text.
+- **The login map shows the real TTC network** (Lines 1, 2, 4, 5) for visitors in Toronto.
+- **Trips with no exit recorded no longer show a guessed exit on your map.**
+- **Social preview cards show the full ride map** over real street tiles, with totals in the post text, and render as large cards on LinkedIn.
+- **Website visits are counted with Google Analytics**, without any trip or location data. The owner's own visits are skipped.
+- **No more all-caps labels.**
+- **Smaller interface polish.** The TransitStats name stands out more on the dashboard, Share sits in the top-right on public profiles, and the PRESTO file picker and text-link buttons match the app's style.
+- **Admins get every premium text feature automatically.**
 - **Removed the Routes page, the Trip Paths beta, the live-trip indicator and the browser admin area**, keeping the personal map as the main view.
-- **Updated web and Functions dependencies to patched releases**: clears the open security alerts, including two denial-of-service issues in text-message input handling.
+- **Trip texts are less likely to be dropped under load.** The texting function was running out of memory; it now has more and reloads the stop list about once an hour instead of on every trip.
+- **Two texts arriving at the same moment no longer mix up each other's stop data.**
+- **No more false "trip not ended" prompts on spotty signal**, when a phone quietly resent a trip-start text a few minutes later.
+- **Texting YES or START after STOP turns texts back on everywhere**, so invite texts are no longer skipped afterward.
+- **Stop matching finds the right stop more often.** Stations typed as a platform or with different punctuation match, stops entered by code are found in Atlas, Pittsburgh trips use Pittsburgh Regional Transit, routes with backwards directions (such as Bathurst, Keele and King) are corrected, and corrected trips are re-checked. Different stops are never merged.
+- **Texted trips no longer get a made-up agency.** Words like "Downtown" or typos are read as the direction, and known agencies and nicknames (such as GO or NFTA) are recognized however they're typed.
+- **"Up" and "Down" stay as typed** instead of becoming "Up Valley" or "Down Mountain".
+- **PRESTO imports are accurate.** Rides land on the right day, GO tap-ins and tap-outs pair into one trip even after a missed tap-off, refunded fares are left out, rides both logged and imported count once, and imported rides show on the dashboard as well as the public profile.
+- **PRESTO imports fail less.** One bad row no longer blocks a file, CSVs with hidden characters import, a PDF upload explains what file to use instead, errors are plain and safe to retry, and opening the import page without access no longer signs you out.
+- **Idle tabs stay signed in**, and a dashboard refresh shows a loading state instead of a blank or fake empty page while your session restores.
+- **The dashboard no longer hangs** if loading your trips fails.
+- **Saving a public identity works again**, and picking one that's taken says so.
+- **The "Allow others to view your shared stats page" switch no longer shows "Failed to sync trips".**
+- **Settings no longer crashes for a new account** with no agency chosen.
+- **Maps load reliably.** Map tiles no longer need a key, dragging stops where you leave it, and public profile pages load their styling.
+- **The app stays in light mode** even when the browser is set to dark.
+- **Social preview images load for large ride histories** and skip bad coordinates instead of breaking.
+- **Phone sign-in is protected against abuse.** Code requests go through an invisible bot check that blocks when its setting is missing, each source can request 10 codes an hour, and a daily cap keeps a reserve for recent users so one person can't lock everyone out. None of these responses reveal whether a number is registered or opted out.
+- **A number added by invite must be confirmed before it can see or change your data.** It can log trips right away; anything else asks for a code sent to the account's email.
+- **Closed privacy leaks.** Public profiles no longer expose private fields like admin or premium status, other people's Rocket GPS trails are no longer readable, and the unused Rocket page is gone.
+- **Prediction models are no longer public.** They contained real stop and route names, so they now live in private storage and are trained only on approved users.
+- **Server logs mask phone numbers and email addresses** and no longer record message contents.
+- **Updated web and Functions dependencies to patched releases**, clearing open security alerts, including two denial-of-service issues in text-message handling.
 
 ## [1.49.4] — 2026-08-26
 
