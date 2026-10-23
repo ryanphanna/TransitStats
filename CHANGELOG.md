@@ -8,154 +8,56 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
-- **The sign-in screen is clearer on phones.** It now shows the TransitStats name and what it's for, has a way back if you mistype your number, and lets iPhone fill in your number.
-- **Two texts arriving at the same moment can no longer mix up each other's stop data**, and the background ML task check no longer fails on every run.
-- **Tap-to-end buttons are built but switched off.** Trip-start texts can show your likely stops as buttons on phones that support RCS; they turn on once the carrier approves the TransitStats sender.
-- **Trip texts use less memory and fewer database reads.** The stop list is now loaded about once an hour instead of on every trip start and end, which was the main cause of the texting function running out of memory.
-- **Trip texts are less likely to be dropped under load.** The texting function now has twice the memory; it had run out 10 times in the past month.
-- **Usual trips show the numbered stop list again.** When a trip matches your usual route, the start reply lists your usual stop first plus other likely stops, so END 1, END 2 and END 3 work like on any other trip.
-- **Texting YES (or START with a stray space) after STOP now turns texts back on everywhere.** Before, our own opt-out list could miss it, so invite texts kept being skipped even though Twilio would deliver them again. Opt-in and opt-out words are now also recorded when a message is otherwise dropped as a duplicate or for sending too fast.
-- **Asking for a sign-in code no longer shows whether a number is real when that number has opted out of texts.** A number that replied STOP used to get a server error, which made-up numbers never get. Now it gets the same answer as a made-up number.
-- **The phone-login bot check now fails closed.** If its setting is missing, misspelled or can't be read, it blocks failed checks instead of only logging them; only an exact "monitor" turns the relaxed mode on.
-- **The monthly "Wrapped" is now "Recap".** The page lives at /recap (old /wrapped links redirect), the shareable card and share text say Recap, and the name "Wrapped" is saved for a future year-end feature. Recap now has its own link in the top menu when you're signed in, replacing the "Your Wrapped" link on the stats card.
-- **One person can no longer lock everyone out of text sign-in.** The daily limit on sign-in texts is still 200, but the last 50 are kept for people who signed in by text in the last 30 days. Anyone who knew enough linked numbers could use up the whole day's limit before. Once the shared part is used up, every number that can't use the reserve gets the same message, registered or not, so it no longer reveals which numbers are registered.
-- **Phone login has a bot check again.** Asking for a sign-in code runs Cloudflare Turnstile, which most people never see. It ships in monitor mode: failures are logged but not blocked, until live logs show it works, and it can be switched to blocking without a deploy. The earlier attempt failed because the site's security rules blocked Cloudflare's script on the live site but not locally.
-- **Warnings in the server logs now show their details.** Rate-limit and abuse warnings used to print "[object Object]" with nothing else, which made them hard to investigate. Phone numbers stay masked, email addresses are now masked too, error logs now mask them even when there is no trace ID, and crash logs for SMS and API requests list only the request field names instead of dumping the message and sender.
-- **End-stop predictions no longer rule out the stop you actually got off at.** Bathurst (511), Keele (41), King (504) and several LA and Muni lines had their direction backwards, stops like College Station, St Patrick and College / St George weren't matched or were missing from the route maps, and station names are now compared the same way everywhere.
-- **Trips with no exit recorded no longer show a guessed exit on your map.** Admins still see the guess, drawn as a dashed outline labelled "estimated", and it never counts as a real ride.
-- **Stops texted by code that the library doesn't have yet are now found in Atlas.** The stop is looked up in your own agency's Atlas stop list and added, so those trips can become clean data instead of staying unmatched.
-- **Pittsburgh trips now look up stops in the right system.** The label "PRT" was being matched to West Virginia University's PRT instead of Pittsburgh Regional Transit.
-- **Stations typed as a platform, or with different punctuation, now match.** "X Station" and "X Station - Northbound Platform" (or "St. George" and "St George") are treated as one station, so these trips become clean data instead of staying unmatched. Different stops are never merged.
-- **Corrected trips can become clean data.** When a trip's stops, agency, route or direction are corrected, the stop match is re-checked, so a fixed trip no longer stays "unmatched" forever (and a trip corrected to something unresolvable stops counting as matched).
-- **Texted trips no longer get a made-up agency.** A third line like "Downtown" or a typo such as "Northa" used to be saved as the agency, which kept those trips out of predictions. Typos and words like Downtown are now read as the direction, known agencies (including aliases like GO or MFTA) are recognized however they are spaced or punctuated, and other systems you type are kept as typed.
-- **Agency names are cleaned up in one place.** "MFTA" and "NFTA" now both become NFTA Metro, and "GO" becomes GO Transit, wherever an agency is typed by text message.
-- **Icons are bundled with the app and the map library no longer blocks the first paint.** Icons used to load from a CDN at an unpinned version on every page; now only the icons the app uses ship with it.
-- **Pages show your data sooner after you navigate.** Signed-in pages no longer wait on the shared-session sync before rendering.
-- **Prediction models are no longer published in the public repository.** The trained models contained real stop and route names, so they now live in private storage, are trained only on approved users, and only those users get ML predictions; everyone else gets the rule-based predictions.
-- **Texts to an unlinked number no longer mention an invite list.** The reply now says the number isn't linked to an account yet and how to link it with REGISTER, and a REGISTER with an unknown email says we couldn't find an account for it.
-- **A number added by invite now has to be confirmed before it can see or change your data.** It can log trips right away. The first time it asks for anything else (stats, history, discard, settings), it emails a code to the account to reply with. Signing in on the website no longer counts as confirming a phone.
-- **The "usual trip" end-stop prediction works now (admins only).** When a weekday or weekend trip from that stop around that time usually ends at the same place, admins see "Usual trip to ..." instead of the suggested list. Offline it's right 84% of the time it shows, and admin end-stop suggestions improve from 28% to 32% right (31% to 39% in the last 90 days). Other users' replies are unchanged; the habit is still recorded and graded for everyone.
-- **End-stop guesses are right on 46% of trips, up from 28%.** When a trip is new, the guesser now falls back to the same route, then the same stop, and it looks further back in your history. It also no longer ignores real stops with "Northbound"-style names. The SMS only suggests a stop when it's fairly sure (confidence 75 or higher).
-- **Wrapped now fits the window without scrolling on laptops.** It uses the same page background as the rest of the app, the top bar no longer covers the printer and ticket, and the stub and ticket scale together to the window height (phones still stack and scroll). The downloaded image is unchanged.
-- **Signed-out visitors on the local dev server go straight to login.** The dashboard used to sit on its loading skeleton for a minute because the session check got an HTML page instead of an answer.
-- **Google Analytics can now actually load.** The site's security policy was blocking it, so no visits were being counted. Only the Google Analytics addresses were allowed.
-- **Route heatmap visits now count in Google Analytics.** The owner's own visits are skipped as elsewhere.
-- **Visits to public profile pages now count in Google Analytics.** Only the default page view is sent, with no extra profile or trip data. The owner's own visits are skipped as elsewhere.
-- **The site owner's own visits no longer count in analytics.** Localhost and any browser opened once with ?ts_internal=1 skip Google Analytics. Wrapped visits are now counted too.
-- **Picking a public identity someone already has now says so.** You see "That one's taken. Try another combination." next to the picker, and can change an emoji and save again.
-- **Saving a public identity works again.**
-- **PRESTO import is now available to everyone.** Every signed-in user can import their PRESTO history from the import page and settings, and new accounts with no rides see the import prompt.
-- **No more all-caps labels.** Removed the last uppercase styling (e.g. "Recent activity", the route heatmap heading), and a test now blocks it coming back.
-- **Negative amounts in the PRESTO import preview read "-$10.05"** instead of "$-10.05".
-- **Fixed "Failed to sync trips" when toggling "Allow others to view your shared stats page".** The switch saved but the trip update threw an error; it now updates your trips too.
-- **People you've added can start just by texting.** Text the number and you're set up: your account is created, your phone is linked, and a website sign-in link lands in your email, with no need to sign up on the site first. Numbers that aren't on the list get a short "invite-only" reply (once an hour at most), and everyone gets a one-time welcome text when their number is added. Replying STOP is respected.
-- **Opening Wrapped while signed out now goes to the login page instead of loading forever**, and signing in brings you back to Wrapped. A failed trip load now shows an error instead of spinning.
-- **Signed-out visitors are sent to login right away on every page.** The 60-second wait is now kept only when a saved session might still be restoring, so a visitor who was never signed in no longer waits.
-- **PRESTO import preview now shows what it skipped and cancels refunded fares.** Row types it doesn't import (e.g. "3 Refund, 2 Autoload") are listed, and a fare that a matching refund reverses is left out instead of counting as a ride.
-- **PRESTO import is friendlier about the file.** A CSV with a hidden byte-order mark now imports, uploading the PDF report explains to export the CSV instead, and an unreadable date format gets a plain message rather than every row flagged.
-- **GO trips from a PRESTO import stay correct after a missed tap-off.** Rows were paired two at a time, so one missing tap-off scrambled every later GO trip on the map; they're now paired by time gap and fare.
-- **Rides you logged AND imported from PRESTO are no longer counted twice** in your dashboard totals, map and public profile. A logged trip and an imported ride of the same agency within 30 minutes count as one.
-- **Imported PRESTO rides now land on the right day.** Their times were read as UTC instead of Toronto time, which could shift late-evening rides to the next day.
-- **Opening the import page without access no longer signs you out of TransitStats.** You now see a short "not set up for importing" note with a link back to your dashboard.
-- **Transit Wrapped** — a shareable transfer-ticket card for last month's rides (punched day grid, trips, hours, top routes, favorite stop, busiest day), from the dashboard or `/wrapped`. It always shows the previous calendar month and expires at the end of the current one; a month with no rides shows a "no transfer issued" ticket. Imported PRESTO rides count too (without hours, routes, or stops), and a ride you both logged and imported is counted once. Trips are counted in the month they started, so a ride that crosses midnight at month-end belongs to the earlier month.
-- **A failed PRESTO import now shows a plain, reassuring message** instead of a raw technical error, and explains it's safe to retry without creating duplicates.
-- **PRESTO import now shows step-by-step instructions** for getting your Transit Usage Report from PRESTO's site — previously there was no guidance anywhere on how to actually get that file.
-- **A single bad row no longer blocks a whole PRESTO import.** The invalid-row check was counting Period Pass Load/Epurse Load rows that get discarded either way — a corrupted one of those could block every valid fare payment in the file. Now only fare-payment rows are checked, and invalid ones are skipped instead of blocking the whole import.
-- **A broken trip listener no longer hangs the dashboard forever.** If loading your trips fails, the dashboard now finishes loading everything else instead of getting stuck.
-- **PRESTO pilot accounts with zero rides now see an "Import PRESTO history" prompt** on the dashboard instead of no next step at all.
-- **Idle tabs should stay signed in.** The shared session cookie is refreshed on focus and every 45 minutes, whitelist network flakes no longer force a logout, and a bad Admin SDK blip no longer wipes the cookie.
-- **Added abuse limits to phone-login text codes.** A single source can now request at most 10 codes an hour, and there is a daily cap across everyone, so a script can no longer rack up SMS costs by cycling through registered numbers. Hitting the daily cap is logged as an error.
-- **Closed a privacy leak in public profiles.** Anyone could read the raw profile record of a public user, including private fields like admin and premium status. Public profile pages still work; they get their data from the server instead.
-- Removed the unused Rocket research page.
-- **Closed a privacy leak in Rocket.** Anyone could read other people's Rocket GPS trails. Sessions are now readable only by their owner.
-- Updated web and Functions dependencies to clear the active Dependabot security alerts.
-- SMS stop selection now drops explicitly opposite-direction platforms when a neutral station match remains, avoiding unnecessary prompts.
-- **Trips with valid stop codes now count as matched**, so a missing display name no longer blocks prediction history.
-- **Kept the Vitest test packages on the same major version**, so dependency updates install and CI can run again.
-- **Updated the Functions archive dependency to its symlink-safe release**, clearing the remaining open security alert.
-- **The dashboard now gives the TransitStats name more visual weight than “Your,”** making the brand clearer at a glance.
-- **Login texts now say that verification codes expire after 10 minutes**, so users know when to request a new one.
-- **Map lines and stop dots now reveal useful trip details when clicked**, so route lines identify the route and high-zoom stops identify the stop without exposing internal mapping terms.
-- **Fixed false "trip not ended" prompts on spotty signal.** A duplicate-text safeguard only looked back 60 seconds, so when your phone silently retried a trip-start text a couple minutes later (common in tunnels, subways, inclines), TransitStats treated it as a second trip and flagged the real one as abandoned. The safeguard now covers a 5-minute window.
-- **"Up"/"Down" no longer get relabeled as "Up Valley"/"Down Mountain".** Texting a bare direction for an incline or funicular trip now keeps it as-is instead of assuming a ski-valley or escarpment system.
-- **Sign-in security check reliability**: Fixed the production phone-login check failing to initialize before code requests.
-- **Sign-in security check loading**: Load Cloudflare’s check only when needed so phone login can recover from slow or blocked page startup.
-- **Sign-in security check policy**: Allow Cloudflare Turnstile’s script, frame, and verification requests through the production security policy.
-- **Sign-in security check startup**: Corrected Cloudflare’s required script-loading mode so the widget can initialize.
-- **Sign-in security check startup**: Explicitly disable asynchronous script execution for Cloudflare’s readiness API.
-- **Sign-in security check compatibility**: Updated the widget configuration for Cloudflare’s current size and execution options.
-- **Phone sign-in availability**: Removed the failing browser security check from OTP requests while retaining server-side rate limits.
-
-### Changed
-
-- **Rebuilt V4/V5 model artifacts with agency-scoped route and end-stop labels**, so identical route numbers and stop names in different agencies cannot collide during prediction or training.
-- **Prediction history is now agency-separated and model use is gated by clean agency history and verified artifact coverage**, so one-off trips in another city cannot contaminate habits, transfers, or machine-learning predictions.
-- **Added anonymous GA4 website-usage measurement** for the main app, dashboard, import flow, and marketing pages, so product usage can be understood without sending trip or location data.
-- **Login codes are now protected against bot/spam abuse, and fail clearly instead of hanging.** Requesting a text code goes through an invisible bot check before the SMS is sent, so opening sign-up to the public won't risk someone racking up texting costs by spamming fake numbers; if the check or API hangs, the request now fails clearly instead of leaving the button stuck on “Sending…”.
-- **TransitStats is now named consistently across the app, legal pages, documentation, and operational tooling.**
-- **Added a private travel-corridor map**, connecting verified boarding and exit stops so repeated trips become visibly stronger without changing the dashboard.
-- **Removed the stalled Trip Paths beta**, leaving the working personal map as the foundation for future map improvements.
-- **The login page map now shows the real shape of the TTC network** (Lines 1, 2, 4, 5) for visitors detected in Toronto, instead of the generic abstract squiggle every other city still gets. Station dots are smaller and filled now, matching the signed-in map's trip dots instead of the old bold hollow-ring look, on both the abstract and real versions.
-- **The PRESTO import file picker now matches the app's styling** instead of showing the raw browser file-input control.
-- **Phone-only accounts can now link an email in Settings.** Previously a phone account had no email at all, so signing in with an email anywhere (like the new Import page) created a separate, disconnected account with none of your trips. Linking uses the same Firebase provider as email sign-in, so afterward either one reaches the same account.
-- **Added a dedicated /import page** for PRESTO pilot accounts: sign in by phone or email (magic link), then upload and import directly — no dashboard detour. Gated the same way as everywhere else (invite-only whitelist, plus the `pilot`/admin check that already gated the Settings import tab).
-- **Fixed the "Use email/phone instead" link buttons rendering as solid gray boxes** instead of plain text links, on the login and import pages.
-- **Added real Terms of Service and Privacy Policy pages**, linked from the login screen — Terms previously existed only as a repo file with no page to link to, and there was no Privacy page at all.
-- **Hid the "Use email instead" login option**, since email-only accounts can't do manual SMS trip logging — it stood next to the phone option looking like an equal alternative when it isn't. It'll come back once there's a dedicated import-signup flow that makes that limitation clear upfront.
-- **Settings is now a panel you open from wherever you are, instead of a separate page.** It matches the rest of the app's visual style, opens over the map without losing your place, and organizes sections into sidebar tabs (Account, Map, Profile, Sharing) instead of one long scroll.
-- **Settings now shows your plan (Free, Premium, or Admin)** on the Account tab, so it's clear why premium-gated features do or don't work.
-- **Settings hides the Map tab until a phone number is linked**, since the primary-agency setting there only affects text-in trip logging.
-- **Settings panel polish**: stays a consistent size across tabs instead of resizing per tab, text-link buttons (Reset password, Change, Save, Share) now carry a small arrow so they read clearly as actions, and the Profile URL's Share button lines up with the other action buttons instead of sitting off to the side.
-- **Removed the Routes page and its route-completion tracker**, a leftover from an earlier design. The map is the app's main draw, not a separate route-checklist page.
-- **Admins can now import PRESTO activity from Settings**, previewing and importing PRESTO Transit Usage Reports without a separate pilot page.
-- **Imported PRESTO activity shows on the public map for flagged pilot profiles once its stop is uniquely known**, leaving ambiguous or unresolved locations for later matching instead of guessing.
-- **Imported PRESTO activity stays visible while stop matching is deferred**, so an unclear location doesn't block the rest of the import.
-- **PRESTO pilot uploads now preview multiple reports and import activity in user-scoped batches.**
-- **PRESTO trials can sign in with email only**, so trying the pilot doesn't require a second phone number.
-- **PRESTO fare exports can now be previewed in an isolated report**, keeping imported fare transactions separate from canonical trip history until matched.
-- **Social preview images now focus on the full-width map**, leaving trip totals and other stats in the post text where they are easier to read.
-- **Profile preview image URLs now advance past cached responses**, so repaired previews and corrected dot maps can be fetched by X and other social platforms instead of reusing a failed or stale cached image.
-- **The dashboard no longer shows a live-trip indicator**, keeping the map card focused on trip history and totals.
-- **The browser admin area has been retired**, leaving operational maintenance in protected backend tools instead of an unfinished UI.
-- **Dashboard maps now load saved dots before the full trip history finishes**, making returning visits feel immediate while fresh data loads.
-- **Unauthenticated dashboard visits no longer show a fake empty dashboard while redirecting**, keeping sign-in visitors out of the signed-in shell.
-- **Dashboards now link to the owner’s public Profile when sharing is enabled**, making the shared map easy to open from the account home.
-- **Signed-in dashboards now consistently identify the card as Your TransitStats**, making the account view distinct from a public profile without briefly flickering back to the profile name.
-- **Signed-in public profiles now put Share in the top-right account controls**, matching the dashboard’s Profile placement.
-- **Admins now automatically get every premium perk over SMS**, including the STATS trend arrows that previously required a premium flag same as ASK did — one shared rule instead of a per-feature check.
-- **PRESTO's import preview now separates fares from card funding**, splitting "loaded" into reloadable-balance top-ups and pass purchases instead of one combined total that made it look like a large, nonexistent balance was unaccounted for.
-- **PRESTO imports now only store fare payments**, not card loads — nothing reads load rows back out of storage once imported, and the preview already summarizes them from the file before saving.
-- **Public profiles are now open to every account, not just one pilot username.** Settings' Sharing tab (identity reservation, the public toggle, share links) now works for any signed-in user, and the public profile page/API/share-image no longer reject everyone but a single hardcoded account.
-- **Added a ⚡ browser tab icon**, replacing the generic blank tab across every page.
-
-### Fixed
-
-- **Map dragging now stops where you leave it**, instead of carrying on or jumping while map markers refresh.
-
-- **The corridor map no longer zooms twice while loading**, so it settles directly on the busiest corridor area.
-- **The corridor heatmap now opens on the area with the most recorded corridor use**, instead of starting at a broad multi-city overview.
-- **The corridor heatmap now shows route usage without stop dots**, keeping the map focused on repeated travel patterns.
-- **Travel corridor usage is now shown through colour intensity alone**, keeping every line equally readable instead of making busy routes physically thicker.
-- **Travel corridors now follow verified transit route geometry instead of drawing straight lines across the map**, and one unavailable agency no longer prevents other corridors from loading.
-- **Authentication and profile checks now handle missing Firestore documents correctly**, preventing phone sign-in crashes and false username/phone availability results.
-- **Settings no longer crashes for a brand-new account with no agency chosen yet**, a state every new signup starts in.
-- **Imported PRESTO activity now actually appears on the signed-in dashboard — map, trip counts, agencies, days ridden, and countries**, not just the public profile — the dashboard was never wired up to read it.
-- **GO Transit's tap-in and tap-out are now combined into one trip**, fixing a double-counted trip and a duplicate map dot for every GO ride (GO is the only PRESTO agency that taps twice per trip).
-- **Two different riders can no longer collide on the same imported PRESTO record**, which previously could fail one rider's entire import batch if a coincidental match occurred.
-- **Dashboard refreshes now show a loading state while a signed-in session is restored**, instead of appearing blank during a slow auth startup.
-- **Local and deployed maps no longer request Carto tiles that require an API key**, preventing the map from showing a configuration error.
-- **Public profile pages now load their production CSS and JavaScript**, preventing refreshed profiles from appearing as unstyled browser-default HTML.
-- **TransitStats now uses the light theme consistently**, so browser or Incognito dark-mode settings cannot unexpectedly restyle the app.
-- **Public profile share images now have enough renderer capacity for larger ride histories**, so Twitter and other social sites can load the preview image.
-- **Social preview images now resolve the full dot map on a light geographic canvas and cache the result**, so X cards are both readable and fast to load.
-- **Social preview maps now ignore malformed coordinates**, keeping one bad stop from collapsing the entire dot map.
-- **Social preview images now render real street map tiles behind the ride dots**, replacing the decorative placeholder background that made cards look generic and unrecognizable. Tile fetching is capped at a 2-second budget so a slow map server falls back to the plain background instead of stalling the card.
-- **Profile share links now include a site name and fuller description**, and declare the image's type and secure URL so LinkedIn renders the large card instead of falling back to a small one.
-- **The signed-in dashboard loads faster.** It was re-reading your entire trip history a second time just to build the agency list, blocking everything else until that finished; agencies are now built from the trip data the map and stats already fetch.
-
-### Security
-
-- **Updated the Functions query-string parser to the patched release**, closing two denial-of-service vulnerabilities in SMS webhook input handling.
+- **Start by texting.** People on the invite list can text the number to get set up: the account is created, the phone is linked, and a website sign-in link arrives by email. Everyone gets a one-time welcome text when added, and replying STOP is respected.
+- **Monthly Recap.** A shareable transfer-ticket card for last month's rides (day grid, trips, hours, top routes, favourite stop, busiest day), linked from the top menu and sized to fit a laptop window. Imported PRESTO rides count too, and a ride both logged and imported counts once.
+- **PRESTO import for everyone.** Any signed-in user can import their PRESTO history from the import page or Settings, with step-by-step instructions for getting the file and a preview that lists what it skips and separates fares from card top-ups. New accounts with no rides see an import prompt.
+- **Travel corridor map.** A private heatmap that draws your repeated trips along real route shapes, shaded by how often you ride them, opening on your busiest area.
+- **"Usual trip" end-stop prediction (admins only).** When a trip from that stop at that time usually ends in the same place, the start reply leads with that stop, still followed by the numbered list. It's right 84% of the time it shows.
+- **Clicking map lines and stops shows the route or stop name.**
+- **Phone-only accounts can link an email in Settings**, so signing in with email reaches the same account instead of creating an empty one.
+- **Public profiles are open to every account**, and the dashboard links to your public profile when sharing is on.
+- **Terms of Service and Privacy Policy pages**, linked from the login screen.
+- **Tap-to-end buttons (switched off).** Trip-start texts can show likely stops as buttons on phones that support RCS; they turn on once the carrier approves the sender.
+- **A lightning-bolt browser tab icon** on every page.
+- **End-stop guesses are right on 46% of trips, up from 28%.** New trips fall back to the same route or stop and look further back in your history, and the text only suggests a stop when fairly sure.
+- **Predictions keep each agency separate.** Same route numbers or stop names in different cities can no longer mix, and a one-off trip elsewhere no longer affects your habits or predictions.
+- **Settings is a panel instead of a separate page.** It opens over the map with Account, Map, Profile and Sharing tabs, and shows your plan (Free, Premium or Admin).
+- **Pages load faster.** Saved map dots show before the full history loads, the dashboard no longer reads your trip history twice, signed-in pages don't wait on session sync, and icons ship with the app instead of loading from another site.
+- **Signed-out visitors go straight to login on every page**, and come back to the page they wanted after signing in.
+- **Texts to an unlinked number explain how to link it** with REGISTER, instead of mentioning an invite list.
+- **Login texts say codes expire after 10 minutes.**
+- **The sign-in screen is clearer on phones.** It says what TransitStats is, lets you go back if you mistype your number, and lets iPhone fill in your number. The email option is hidden on the main login, since email-only accounts can't log trips by text.
+- **The login map shows the real TTC network** (Lines 1, 2, 4, 5) for visitors in Toronto.
+- **Trips with no exit recorded no longer show a guessed exit on your map.**
+- **Social preview cards show the full ride map** over real street tiles, with totals in the post text, and render as large cards on LinkedIn.
+- **Website visits are counted with Google Analytics**, without any trip or location data. The owner's own visits are skipped.
+- **No more all-caps labels.**
+- **Smaller interface polish.** The TransitStats name stands out more on the dashboard, Share sits in the top-right on public profiles, and the PRESTO file picker and text-link buttons match the app's style.
+- **Admins get every premium text feature automatically.**
+- **Removed the Routes page, the Trip Paths beta, the live-trip indicator and the browser admin area**, keeping the personal map as the main view.
+- **Trip texts are less likely to be dropped under load.** The texting function was running out of memory; it now has more and reloads the stop list about once an hour instead of on every trip.
+- **Two texts arriving at the same moment no longer mix up each other's stop data.**
+- **No more false "trip not ended" prompts on spotty signal**, when a phone quietly resent a trip-start text a few minutes later.
+- **Texting YES or START after STOP turns texts back on everywhere**, so invite texts are no longer skipped afterward.
+- **Stop matching finds the right stop more often.** Stations typed as a platform or with different punctuation match, stops entered by code are found in Atlas, Pittsburgh trips use Pittsburgh Regional Transit, routes with backwards directions (such as Bathurst, Keele and King) are corrected, and corrected trips are re-checked. Different stops are never merged.
+- **Texted trips no longer get a made-up agency.** Words like "Downtown" or typos are read as the direction, and known agencies and nicknames (such as GO or NFTA) are recognized however they're typed.
+- **"Up" and "Down" stay as typed** instead of becoming "Up Valley" or "Down Mountain".
+- **PRESTO imports are accurate.** Rides land on the right day, GO tap-ins and tap-outs pair into one trip even after a missed tap-off, refunded fares are left out, rides both logged and imported count once, and imported rides show on the dashboard as well as the public profile.
+- **PRESTO imports fail less.** One bad row no longer blocks a file, CSVs with hidden characters import, a PDF upload explains what file to use instead, errors are plain and safe to retry, and opening the import page without access no longer signs you out.
+- **Idle tabs stay signed in**, and a dashboard refresh shows a loading state instead of a blank or fake empty page while your session restores.
+- **The dashboard no longer hangs** if loading your trips fails.
+- **Saving a public identity works again**, and picking one that's taken says so.
+- **The "Allow others to view your shared stats page" switch no longer shows "Failed to sync trips".**
+- **Settings no longer crashes for a new account** with no agency chosen.
+- **Maps load reliably.** Map tiles no longer need a key, dragging stops where you leave it, and public profile pages load their styling.
+- **The app stays in light mode** even when the browser is set to dark.
+- **Social preview images load for large ride histories** and skip bad coordinates instead of breaking.
+- **Phone sign-in is protected against abuse.** Code requests go through an invisible bot check that blocks when its setting is missing, each source can request 10 codes an hour, and a daily cap keeps a reserve for recent users so one person can't lock everyone out. None of these responses reveal whether a number is registered or opted out.
+- **A number added by invite must be confirmed before it can see or change your data.** It can log trips right away; anything else asks for a code sent to the account's email.
+- **Closed privacy leaks.** Public profiles no longer expose private fields like admin or premium status, other people's Rocket GPS trails are no longer readable, and the unused Rocket page is gone.
+- **Prediction models are no longer public.** They contained real stop and route names, so they now live in private storage and are trained only on approved users.
+- **Server logs mask phone numbers and email addresses** and no longer record message contents.
+- **Updated web and Functions dependencies to patched releases**, clearing open security alerts, including two denial-of-service issues in text-message handling.
 
 ## [1.49.4] — 2026-08-26
 
@@ -230,6 +132,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 ## [1.49.1] — 2026-08-15
 
 ### Fixed
+
 - **Hidden public-profile error cards no longer appear over valid profile maps.**
 - **Public profile cards are shorter on mobile**, keeping more of the map visible while retaining scrolling for the details.
 - **Mobile public-profile stats now stay in one horizontal, scrollable row** instead of stacking into two rows.
@@ -241,6 +144,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 ## [1.49.0] — 2026-08-15
 
 ### Changed
+
 - **Admin now has a protected processing overview** for users, login activity, ride finalization, stop matching, AI queries, and prediction-model usage.
 - **Admin navigation now uses the shared shell and keeps Rocket out of the normal menu** while preserving its protected direct route.
 - **Prediction grading tests now use the normal V3 path explicitly**, so experimental-model access controls cannot make the end-to-end safety check flaky.
@@ -262,11 +166,13 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 ## [1.48.0] — 2026-08-14
 
 ### Changed
+
 - **Promote the redesigned dashboard, map, settings, and sign-in experience from beta to main.**
 
 ## [1.47.16] — 2026-08-14
 
 ### Added
+
 - **Shared sign-in across TransitStats surfaces** — moving between the regular, beta, and admin sites no longer requires another login.
 - **Theme choices and multi-agency route coverage** — choose System, Light, or Dark and see route progress across every agency you have ridden.
 - **Phone-first homepage sign-in** — reopen your ridership dashboard with an SMS code instead of remembering an email or password.
@@ -277,6 +183,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Route Tracker now loads agency route inventories** and compares them with saved rides.
 
 ### Changed
+
 - **Replaced Firebase compatibility APIs with modular Auth and Firestore calls** without changing stored data.
 - **Main, beta, and admin now deploy independently** so each hostname reflects its own branch.
 - **Map basemaps are now quieter and label-free** so personal trip data stays the visual focus.
@@ -297,6 +204,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Routes now hides other-agency coverage until route data is available** so incomplete inventory is not presented as rider-facing information.
 
 ### Fixed
+
 - **Deployment verification now checks downloaded pages safely** so successful admin and beta publishes are not reported as failures.
 - **Route coverage progress bars now display** on agency pages such as HSR instead of showing only the route count.
 - **Map popups now use the resolved stop name** when coordinates identify a stop instead of showing an unknown stop label.
@@ -325,51 +233,61 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 ## [1.47.15] — 2026-08-09
 
 ### Security
+
 - **Patched six root dependency vulnerabilities** in `undici`, `brace-expansion`, and `nanoid`.
 
 ## [1.47.14] — 2026-07-27
 
 ### Security
+
 - **Patched high-severity `postcss` path traversal and `brace-expansion` denial-of-service vulnerabilities** in the root dependency tree.
 
 ## [1.47.13] — 2026-07-24
 
 ### Security
+
 - **Patched a high-severity `fast-xml-parser` vulnerability** (GHSA-8r6m-32jq-jx6q) by overriding and updating its version to the secure `5.10.1` release.
 
 ### Changed
+
 - **Upgraded `firebase-admin` to v14.2.0** and **`firebase-functions` to v7.3.0** (integrating Dependabot PRs #162, #163, and #164) and refactored the Functions codebase to use the new v14 modular app and database APIs.
 - **Upgraded `setup-python` GitHub Action to v7** (integrating Dependabot PR #161).
 - **Expanded stop enrichment** (`functions/lib/atlas-enrich.js`) to support all configured transit agencies (GO, MiWay, YRT, etc.) from Atlas R2 data (shipped for Issue #152).
 
 ### Fixed
+
 - **Fixed chronological age-decay leakage** and **stop canonicalization mismatch** in `NetworkEngine` (resolving V6 end-stop replay regressions for Issue #156).
 
 ## [1.47.11] — 2026-07-18
 
 ### Fixed
+
 - **Patched a high-severity `adm-zip` denial-of-service vulnerability** by forcing the Functions dependency tree to use the first patched release (`0.6.0`).
 
 ## [1.47.12] — 2026-07-19
 
 ### Fixed
+
 - **Closed a gap in the `profiles` Firestore rule** that let an owner write arbitrary extra fields on profile update (only `isAdmin`/`isPremium` were previously pinned) — updates are now restricted to the known client-writable field set.
 
 ## [1.47.10] — 2026-07-15
 
 ### Fixed
+
 - **V6 end-stop evaluation now canonicalizes topology stop aliases**: subway station suffixes no longer count as wrong destinations while directional streetcar platforms remain distinct.
 - **V6 end-stop evaluation now separates transfer gaps from long gaps**: destination buckets no longer pool short connection trips with unrelated later outings from the same stop.
 - **NetworkEngine confidence is now trips-only**: GTFS/topology stop-source metadata no longer makes learned graph edges more trusted than completed-trip observations support.
 - **NetworkEngine replay no longer over-filters strong V6 destination buckets**: trips-only reachability can narrow candidates opportunistically without forcing weaker fallback predictions when the learned graph is sparse.
 
 ### Added
+
 - **Historical end-stop replay evaluator**: V3/V4/V5/V6 can now be compared across clean trip history instead of only the small production shadow-stat slice.
 - **Chronological NetworkEngine replay toggle**: V6 end-stop replay can now measure trips-only learned reachability separately from topology legality.
 
 ## [1.47.9] — 2026-07-15
 
 ### Fixed
+
 - **510 end-stop menus now respect platform direction at Spadina/Nassau**: Southbound trips from Spadina Station no longer offer the northbound-only Nassau platform just because it shares the same logical intersection.
 - **510 Queens Quay platform variants are now direction-specific**: the remaining collapsed side-platform alias no longer lets a trip suggest the physically wrong platform.
 - **GTFS/topology legality now vetoes learned NetworkEngine destination suggestions**: observational trip history can narrow predictions, but it no longer outranks physical route/platform constraints.
@@ -380,47 +298,57 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 ## [1.47.7] — 2026-07-12
 
 ### Fixed
+
 - **Mitigate remaining polynomial ReDoS in SMS email registration regexes (CodeQL alert #49)** (`functions/lib/handlers-commands.js`): The 1.47.6 fix bounded the repeated `(?:\.[^\s@.]+)` group but left the local-part (`[^\s@]+`) and domain-label (`[^\s@.]+`) quantifiers unbounded — two adjacent unbounded quantifiers over overlapping character classes, still exploitable (e.g. a long run of `!` characters with no `@`). Bounded both to RFC-sane lengths (`{1,64}` local-part per RFC 5321, `{1,63}` per domain label per RFC 1035). Verified: legitimate addresses still match, a 50,000-character adversarial string now resolves in ~11ms instead of hanging.
 
 ## [1.47.6] — 2026-07-12
 
 ### Fixed
+
 - **Mitigate Polynomial ReDoS in SMS email registration regexes** (`functions/lib/handlers-commands.js`): Replaced unbounded repetition `+` with a bounded repetition `{1,10}` in both the validation regex (`emailRegex`) and matching regex (`embedded`) within `handleRegister`. This eliminates polynomial backtracking complexity while preserving identical matching/extraction parity.
 
 ## [1.47.5] — 2026-07-11
 
 ### Fixed
+
 - **`functions/`'s `npm test` script never actually excluded `test_integration.js`, only `test_e2e.js`** — another previously-unreachable bug, surfaced now that the `unit` job gets far enough to run functions' tests at all. `test_integration.js` requires a hardcoded local Firebase service account key path (`/Users/ryan/Desktop/Dev/Credentials/...`) and is meant to run only via the separate `test:integration` script, same category as the emulator-only `test:e2e`. Added it to the exclusion glob. Local suite: 237/237 (down from 249, correctly excluding the 12 integration tests).
 
 ## [1.47.4] — 2026-07-11
 
 ### Fixed
+
 - **`unit` job's real, previously-unreachable bug: root tests ran before `functions/` was installed**: with `npm ci` finally out of the way (1.47.3), CI got far enough to hit an actual test failure for the first time — `tests/gemini.test.js` (root) imports `functions/lib/gemini.js`, which needs `@google/generative-ai`, a `functions/`-only dependency. The `unit` job ran root `npm test` before `cd functions && npm install`, so Node's `require()` had nothing to find walking up from `functions/lib/`. Reordered: `functions/` now installs before either test step runs. Reproduced locally by removing `functions/node_modules` and confirmed the fix restores it.
 
 ### Docs
+
 - **Changelog audit**: found and fixed the same duplicate-`###`-header defect (from many work sessions each appending a fresh header instead of merging) in `CHANGELOG.md`'s `[1.46.0]` block and across `CHANGELOG_ARCHIVE.md`. Also fixed two genuine version-numbering bugs in the archive: `[1.4.0]` was used for two different releases six days apart (the March 9 one, same-day successor to `[1.3.1]`, renamed to `[1.3.2]`), and a stray empty `## [1.30.0]` header with no content was removed.
 
 ## [1.47.3] — 2026-07-11
 
 ### Fixed
+
 - **1.47.2 also failed — root cause was `npm ci`'s strict tree-matching itself, not lockfile staleness**: CI wanted `@emnapi/core`/`@emnapi/runtime` at *both* `1.11.1` and `1.11.2` simultaneously (two nested copies), while every local regeneration attempt (plain reinstall, full clean reinstall, npm cache cleared, npm 10 via `npx` to match CI's pinned version, `--os=linux --cpu=x64` to force cross-platform resolution) only ever produced one. This looks like a genuine Node 22 (CI) vs. local Node version difference in how npm resolves a loose `^1.7.1` range for this package's transitive optional dependency, not reproducible locally at all. Rather than keep chasing exact lockfile parity, switched `.github/workflows/test.yml` from `npm ci` to `npm install` in all three jobs — `npm install` resolves and adapts instead of hard-failing on any tree drift. Less strict reproducibility guarantee, but actually reliable for a single-maintainer project where the lockfile drifting slightly between a Mac and a Linux CI runner isn't a real risk worth this much friction.
 
 ## [1.47.2] — 2026-07-11
 
 ### Fixed
+
 - **1.47.1's lockfile fix was incomplete — CI still failed the same way**: a plain `npm install` (both root and `functions/`) synced the version field but still left the tree missing `@emnapi/runtime@1.11.2` and other entries, because it only touches packages that changed rather than fully recomputing the tree. Deleted `node_modules` + `package-lock.json` in both directories and reinstalled from scratch; verified `npm ci` now succeeds clean in both, and the full test suite (165 root + 249 functions) still passes.
 
 ## [1.47.1] — 2026-07-11
 
 ### Fixed
+
 - **CI Test workflow broken on every push since it was added this session**: two separate bugs, found immediately after 1.47.0 pushed and the `Test` workflow failed. (1) `npm ci` failed in both `unit` and `rules` jobs — root and `functions/` `package-lock.json` still had `"version": "1.45.1"` after the 1.47.0 bump; `npm ci` requires the lockfile's own version field to match `package.json` exactly, and separately `@emnapi/runtime` was missing from the lockfile from an earlier unrelated drift. Fixed by running `npm install` in both directories to resync. (2) `rules` and `e2e` jobs failed with `firebase: not found` — `.github/workflows/test.yml` (added this session) never installs `firebase-tools`, which only worked locally because it's installed globally on this machine, not as a project dependency. Added `npm install -g firebase-tools` to both jobs.
 
 ## [1.47.0] — 2026-07-11
 
 ### Added
+
 - **`NetworkEngine.inferStopSequence(graph, direction)`** (`functions/lib/network.js`): reconstructs a best-guess linear stop order for a route/direction from observed edge durations alone — no GTFS, no topology.json, no Atlas input. Anchors on one of the two stops with the largest observed pairwise duration (very likely the true line endpoints) rather than an arbitrary or most-observed stop; anchoring on a middle stop is ambiguous (two stops equidistant on opposite sides look identical) and silently scrambles the order. Includes transitive (2-hop) edges so sparse graphs still resolve pairs never observed directly. Returns only the stops it can actually place — a stop with no real or transitive path to the anchor is honestly omitted, not guessed. Not yet wired into any prediction/handler path; purely additive, unit-tested (`functions/test_network.js`) against synthetic graphs only.
 
 ### Fixed
+
 - **Default Agency Initialization** (`js/profile.js`): Fixed synchronization of `window.currentUserProfile` with `this.data` during cached load, full profile load, profile updates, and identity reservations.
 - **Two-Tap Confirmation Button Pattern** (`js/pages/settings.js`, `js/trips/TripFeed.js`, `js/admin.js`): Replaced browser-native `confirm()` calls with a custom two-tap confirmation pattern (3-second timeout and armed state) for the settings sign-out button, trip feed discard button, and admin buttons (linking all trips, deleting a route, and deleting a stop).
 - **Stop Disambiguation SKIP Loop** (`functions/lib/handlers-utils.js`): Added `stopInput: parsedStop.stopName || null` to the `confirm_stop` pending state in the active-trip conflict path to resolve a potential skip loop.
@@ -443,10 +371,12 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
   - Confirmed but **not** changed: an unregistered user who doesn't finish REGISTER within the pending-state window goes fully silent for up to an hour (the unknown-number auto-reply is capped at once/hour, by design, to prevent this endpoint being used as an SMS relay/spam vector). Flagged in the issue for a product decision rather than silently loosening the anti-abuse limit.
 
 ### Test infra
+
 - **`test:rules` was excluded from its own vitest config** (`vite.config.js`, `vitest.rules.config.js` new, `package.json`): `tests/firestore.rules.test.js` was listed in `vite.config.js`'s test exclude list, so `npm run test:rules` always reported "No test files found" — it has likely never actually run. Gave it a dedicated vitest config. Added a regression test for the Public Profile incident above (verified it fails against the pre-fix rule, passes against the current one).
 - **`functions/test_e2e.js` never actually exercised `onTripFinalized`** — three separate blockers, found while getting it running for the first time: (1) it connected to a different Firestore emulator project ID than the one `.firebaserc`/the Functions emulator uses, so the trigger's Eventarc listener never saw its writes at all; (2) the FieldValue/Timestamp emulator bug above; (3) `NetworkEngine.observe()` requires a non-zero trip `duration`, but back-to-back START+END in a test produces `duration: 0` and silently no-ops — added a `backdateActiveTripStart()` helper; (4) journey-linking history requires `stop_matched: true`, which needs a seeded `stops` collection the test never had — added one. Also fixed a stale `networkGraph` doc-ID format in the test's own assertion helper (`user_{id}_...` — the real format has no `user_` prefix). All 3 e2e tests pass now, reproducibly. Excluded `test_e2e.js` from the plain `node --test` glob (needs the emulator) and wired `unit`/`rules`/`e2e` into a new CI workflow (`.github/workflows/test.yml`) so none of this goes unrun again.
 
 ### Changed
+
 - **Docs cleanup after the Atlas integration landed** (`README.md`, `SECURITY.md`, `DOCUMENTS.md`, `Tools/README.md`, `docs/ROADMAP_TECHNICAL.md`, `.gitignore`): README now credits Atlas as the data provider. SECURITY.md lists it as a read-only third-party data source. DOCUMENTS.md's dead link to a legacy `setup-admin.md` (never tracked, lives under gitignored `_legacy_v1/`) is removed. Tools/README.md documents six scripts that existed but weren't listed (stop-metadata backfill, trip-hub migration/rollback, trip-based stop enrichment). ROADMAP_TECHNICAL.md's "Broader GTFS stop import" and "Scheduled GTFS refresh" items are checked off — both now handled by Atlas's weekly refresh. `.gitignore` typo fixed (`**/ .npm-cache/` → `**/.npm-cache/`).
 - **`Tools/README.md`**: documented the interim cadence for `backfill-stop-metadata.js` (rerun quarterly until Atlas#161 ships) — Phase 1 of Transit-Stats#152's layered stop-data plan.
 - **`.gitignore`**: added `.agents/` — working-state scratch from a separate agent-orchestration tool that ran against this repo, not meant to be tracked.
@@ -455,18 +385,22 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 ## [1.46.0] — 2026-07-10
 
 ### Added
+
 - **Route Tracker on the dashboard, powered by Atlas** (`js/route-tracker.js`, `js/pages/dashboard.js`, `dashboard.html`): The per-agency route completion tracker now loads route definitions from Atlas's public R2 GeoJSON (`atlas/{slug}.json`) instead of the manually imported Firestore `routes` collection — route lists stay current with Atlas's weekly refresh, no admin GTFS uploads. Parsed client-side (189 unique TTC routes), cached in IndexedDB keyed by refresh week, Firestore fallback kept for agencies Atlas doesn't carry. Tracker card now lives on the main dashboard (8 GTHA/Ottawa agencies selectable); admin copy unchanged.
 - **Stops now enrich themselves from Atlas on creation** (`functions/lib/atlas-enrich.js`, `functions/index.js`, `functions/test_atlas_enrich.js`): New Firestore trigger `onStopCreated` fills Layer-2 facts (direction, routes, official-name alias, `stopRoutes` doc) on any newly created stop doc from Atlas's published `atlas/{slug}-stops-meta.json` — the manual-paste decay problem can't restart. Layering rules enforced in code: `name` is never touched, official names land in `aliases` verbatim, only missing fields are filled, and paired platforms sharing a code only contribute facts every entry agrees on. No-ops gracefully until the Atlas artifact exists on R2; TTC mapped first, other agencies are one slug entry each. 4 unit tests.
 
 ### Data
+
 - **TTC stop metadata backfilled from GTFS** (`Tools/backfill-stop-metadata.js`, `Tools/backfill-stop-metadata-dryrun.js`, Firestore `stops` + `stopRoutes`): Months of manually pasted stop info had been saved without its direction/route fields — 104 of 169 manual stops were name+code only, and the `stopRoutes` collection (which all route-aware narrowing reads) had zero docs since it was built. One pass against the official TTC GTFS fixed it: 127 stop docs updated (89 directions, 117 route lists, 92 official-name aliases), 131 `stopRoutes` docs created. Guardrails: never overwrites curated values, direction only written when ≥90% of scheduled visits agree and the official name suffix doesn't contradict it (14 genuinely bidirectional stops left direction-less on purpose). Verified live: `510 + Spadina/Dundas + Northbound` now narrows to stop 7349 with no prompt. Script is idempotent — rerun after future GTFS updates.
 
 ### Changed
+
 - **SMS: stop clarification is no longer an interrogation** (`functions/lib/handlers-utils.js`, `functions/lib/dispatcher.js`, `functions/test_handlers.js`, `functions/test_dispatcher.js`): Three changes to the "Multiple stops match" flow. (1) When every candidate shows the same name and none has a direction, the prompt is skipped entirely — "Spadina / Dundas (stop 8121) vs (stop 7349) vs (stop 2190)" is unanswerable for a rider; the trip now starts silently with the shared name and `stop_matched:false`. Prompts still appear when candidates are human-distinguishable (different names or direction labels). (2) New `SKIP` reply dismisses the clarification and keeps the trip — previously the only exit was DISCARD, which cancels the whole trip. (3) Prompt copy now says the choice can be made anytime during the trip and that DISCARD cancels the trip, not just the choice. Added 2 regression tests.
 - **Dependency updates** (`package.json`, `functions/package.json`, `.github/workflows/retrain.yml`): `firebase` 12.14.0 → 12.15.0, `vitest`/`@vitest/ui` 4.1.8 → 4.1.10, `playwright` 1.60.0 → 1.61.1, root `firebase-admin` 13.10.0 → 14.1.0, `eslint` 10.4.1 → 10.6.0, `globals` 17.6.0 → 17.7.0, `onnxruntime-node` 1.26.0 → 1.27.0, `actions/checkout` v4 → v7. Held back `functions/firebase-admin` at 13.10.0 — `firebase-functions@7.2.5`'s peer range tops out at admin v13, so bumping it to 14 would create a real peer conflict, not just an npm warning.
 - **Retrain workflow now records results to MODEL_LOG.md automatically** (`.github/workflows/retrain.yml`, `ml/train_endstop.py`, `ml/train_routes.py`): V4 accuracy is now saved to meta files (`model_v4_endstop_meta.json`, `model_v4_meta.json`) alongside existing V5 metas. After each retrain, a dated entry covering all four models (V4/V5 route + end-stop) is prepended to `ml/MODEL_LOG.md` and committed with the artifacts. Route models are now also retrained automatically — previously only end-stop ran in CI.
 
 ### Fixed
+
 - **Two stale unit tests brought back in line with shipped behavior** (`functions/test_dispatcher.js`, `functions/test_handlers.js`): The MMS unknown-user test still expected the pre-v1.45.0 "Text REGISTER [email]" reply (now conversational onboarding + `awaiting_email` state), and the anomaly-note tests mocked the pre-v1.44.0 `NetworkEngine.load` path — `detectAnomaly` now reads the personal `networkGraph` doc directly, so the harness never served it and the note path was silently untested. Harness now serves a `networkGraph` doc and defines `_docId`; both features were working in production all along. Functions suite: 244/248, only the emulator-dependent e2e file remains red without an emulator.
 - **SMS: stop-disambiguation reply "1" died with "Could not understand" if sent more than 5 minutes after the prompt** (`functions/lib/handlers-utils.js`, `functions/lib/dispatcher.js`, `functions/test_dispatcher.js`): The `confirm_stop` pending state expired after the 5-minute default TTL — too short for a rider mid-trip — so the numeric reply fell through every parser to the fallback, which also logged a junk `needs_review` trip for the bare "1". Three changes: (1) `confirm_stop` TTL raised to 60 minutes; (2) `END`/`STOP` now pass through `confirm_stop` so a trip can be ended before its start stop is picked (previously the longer-lived state would have nagged "Reply with a number" instead of ending); (3) a bare number reaching the fallback now gets "That choice expired..." instead of "Could not understand", and no junk trip is written. Added 2 regression tests.
 - **Weekly retrain workflow's YAML was invalid and would have failed on its next scheduled run** (`.github/workflows/retrain.yml`): The `MODEL_LOG.md` entry was built from a triple-quoted Python f-string embedded inside a YAML block literal (`run: |`); its markdown headers and `---` separator started at column 0, which is less-indented than the block literal requires — a hard YAML parse error, confirmed by GitHub's own workflow validator. Rebuilt the entry as a list of consistently-indented lines joined with `\n` instead of a multi-line string, sidestepping the indentation trap. Output is byte-for-byte identical to the original intended format.
@@ -476,73 +410,87 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 ## [1.45.2] — 2026-06-22
 
 ### Fixed
+
 - **Weekly model retrain workflow had been silently failing for 6+ weeks** (`.github/workflows/retrain.yml`, `ml/train_endstop.py`, `ml/requirements.txt`): Four separate issues resolved: (1) missing `requirements.txt` caused pip cache step to abort before any code ran; (2) `onnxmltools` dependency on `packaging` wasn't installed; (3) `evaluate()` assumed `le.classes_` and `model.classes_` always matched — if a rare end-stop class got no training samples, `LogisticRegression` output fewer probability columns and crashed `top_k_accuracy_score`; (4) `FIREBASE_TOKEN` secret was unset, blocking deploy. Also raised the minimum end-stop class threshold from 3 → 10 trips so classes with too little data are dropped before training.
 
 ## [1.45.1] — 2026-06-20
 
 ### Security
+
 - **Resolved CodeQL polynomial regular expression ReDoS alert** (`functions/lib/handlers-commands.js`): Fixed the `AGENCY` command parsing regex which was vulnerable to catastrophic backtracking when given multiple spaces. The pattern now strictly anchors on a non-whitespace character (`\S`), preventing overlapping matches.
 - **Dependency updates** (root `package.json`, `package-lock.json`): Upgraded `undici` override to `^7.28.0` to patch CVEs relating to TLS validation bypass via SOCKS5 and shared cache whitespace bypass. Regenerated package lock.
 
 ## [1.45.0] — 2026-06-18
 
 ### Security
+
 - **Verification code brute-force via repeated REGISTER** (`functions/lib/handlers-commands.js`, `functions/lib/db/users.js`): After 3 failed code attempts, phone is locked for 10 minutes — re-calling REGISTER during lockout is blocked with a countdown message. `getVerificationData` no longer deletes a locked doc on expiry so the lockout survives the code TTL.
 - **Removed verbose debug logging from Twilio signature validation** (`functions/lib/twilio.js`): `console.info` calls on every request were logging URL structure and body keys to Cloud logs. Now only warns on genuine validation failure.
 
 ### Fixed
+
 - **SMS registration: verification code pending state expired in 5 minutes** (`functions/lib/db/trips.js`, `functions/lib/handlers-commands.js`): The default `setPendingState` TTL is 5 min — too short for email delivery + user response. Verification state now uses a 20-minute TTL via a new optional `ttlMs` parameter. Confirmation message now tells the user they have 20 minutes.
 - **SMS registration: dead-end messages gave no URL** (`functions/lib/handlers-commands.js`, `functions/lib/dispatcher.js`): "No account found" and the unknown-number welcome now include transitstats.fyi so users know where to sign up.
 - **`checkOutboundLoop` catch block referenced undefined `trace`** (`functions/lib/dispatcher.js`): If the Firestore get ever threw, the catch block itself would throw a `ReferenceError` that propagated uncaught through dispatch. Removed the undefined reference.
 - **`resolveTripAgency` prompted agency disambiguation when stop only existed in default agency** (`functions/lib/handlers-utils.js`): The third branch fired `promptAgencyChoice` even when `stopInLast` was false — i.e. the user's last-trip agency didn't even have that stop, yet both were offered. Now silently uses the default agency in that case.
 
 ### Changed
+
 - **Dependencies: bumped `form-data` and `protobufjs`** (root and `functions/package-lock.json`): Fixed 3 high `form-data` CRLF injection alerts and 1 moderate `protobufjs` schema-shadowing alert via `npm audit fix`.
 
 ## [1.44.0] — 2026-06-18
 
 ### Fixed
+
 - **SMS: `confirm_start` handler fell through to "Could not understand"** (`functions/lib/dispatcher.js`): Replies that weren't START/DISCARD/FORGOT (e.g. "1" from a prior agency disambiguation) returned `false` from `handleConfirmStartState`, falling all the way through to the fallback. Now passes STATUS/STATS/etc. through and sends a reminder for everything else. Same fix class as the v1.42.0 `confirm_stop` regression.
 - **SMS: agency disambiguation labels "Toronto / GTA" vs "Toronto" were confusingly similar** (`functions/lib/handlers-utils.js`): Disambiguation prompt now shows the agency names directly (e.g. "1. GO Transit" / "2. TTC") instead of city labels, which were identical enough to be misleading.
 - **SMS: anomaly detection "took longer than usual" used global trip data** (`functions/lib/finalization.js`): `NetworkEngine.load()` falls back to the all-users global graph when personal history is sparse. This caused "typical X min" to reflect other users' trips. `detectAnomaly` now reads the personal graph document directly — if it doesn't exist, no anomaly is reported. Also removed the boarding-stop-wide median fallback; anomaly only fires when the specific start→end edge has personal history.
 
 ### Added
+
 - **SMS: SKIP reply for agency disambiguation** (`functions/lib/dispatcher.js`): When asked "Which [stop]? 1. GO Transit 2. TTC", replying SKIP uses the default agency and skips the prompt. Prompt now shows all three options.
 - **SMS: SETTINGS command** (`functions/lib/handlers-commands.js`, `functions/lib/dispatcher.js`): `SETTINGS` shows current default agency. `SETTINGS AGENCY [name]` changes it (validates against known agency list). Shown in HELP output.
 
 ## [1.43.3] — 2026-06-17
 
 ### Fixed
+
 - **Parser: "Down Mountain" / "Uphill" wrongly parsed as agency** — added "Down Mountain", "Downhill", "Up Mountain", "Uphill" (and hyphenated/no-space variants) to `normalizeDirection` and `CANONICAL_DIRECTIONS`, so escarpment-style direction terms on line 3 are recognized correctly instead of falling through to the agency slot.
 - **Data: corrected agency on 7 trips from today** — Route 20 ×2, Route 25, Route 41, Route 5A (all → HSR) and Lakeshore West ×2 (→ GO Transit), where "Down Mountain" or "Uphill" had been stored as the agency.
 
 ## [1.43.2] — 2026-06-17
 
 ### Changed
+
 - **Security**: bumped `vite` to 8.0.16 (CVE fixes for Windows alternate-path bypass and NTLMv2 hash disclosure via UNC paths); updated both `devDependencies` and `overrides` so vitest's transitive dep resolves to the patched version.
 
 ## [1.43.1] — 2026-06-12
 
 ### Changed
+
 - **Dependency updates**: bumped `firebase` to 12.14.0, `eslint` to 10.4.1 in `/functions`, `vitest` and `@vitest/ui` to 4.1.8 in root. `firebase-admin` held at 13 — `firebase-functions@7.2.5` peer dep does not yet declare support for v14.
 - **CI: upgrade to Node.js 24 actions** (`.github/workflows/`): Updated `actions/checkout` to v6 and `actions/setup-node` to v6 ahead of GitHub's June 16 Node.js 20 deprecation deadline.
 
 ## [1.43.0] — 2026-06-11
 
 ### Fixed
+
 - **Gemini model deprecated** (`functions/lib/gemini.js`): Updated model from `gemini-2.0-flash` (404 Not Found) to `gemini-2.5-flash`, now centralized as `GEMINI_MODEL` constant so future upgrades are a one-line change. ASK, MMS, and parsing commands were all failing silently. Also added 404/"no longer available" to the no-retry list in `retryWithBackoff` so permanent failures fast-fail instead of burning 3 attempts.
 
 ### Added
+
 - **ML check-in task system** (`functions/lib/ml-tasks.js`, `functions/lib/handlers-trip.js`): After each trip ends, checks Firestore `mlTasks` collection for pending check-ins scoped to the user. When a task's trip threshold is crossed, fires an SMS reminder and marks the task triggered. Phone number is looked up from `phoneNumbers` at fire time so the system works for any user. First task seeded: audit V4/V5 shadow accuracy after 30 TTC trips since 2026-06-09 (stop feature fix).
 
 ## [1.42.0] — 2026-06-09
 
 ### Fixed
+
 - **`lastEndStopName` missed legacy `endStop` field** (`functions/lib/handlers-trip.js`): Inference read only `endStopName`, but older trips in history only have `endStop`. Training export uses both (`endStopName or endStop`). `last_end_stop` would be null for the next trip after any legacy trip, firing `last_stop_none` instead of the actual prior stop. Fixed with a one-line fallback.
 - **Training/inference skew: multiple feature mismatches** (`functions/lib/ml_utils.js`, `functions/lib/predict_v4.js`, `functions/lib/predict_v5.js`, `ml/train_endstop.py`, `ml/train_routes.py`): (1) All `stop_*` and `last_stop_*` features were silently zero in every production inference call — Python exported feature names with spaces/slashes (`stop_bay station`) but JS generated underscores (`stop_bay_station`); (2) `" and "` separator not handled in JS `canonicalizeStop`; (3) `last_stop_none` vs `last_stop_unknown` mismatch on first trip of the day; (4) V4 route `transfer_rarity` never set in inference (always 0); (5) V5 `transfer_rarity` took first route match instead of averaging. Models were predicting on time + route + direction only — no stop identity signal — since V4/V5 were introduced.
 - **SMS stop disambiguation ignores reply "1"** (`functions/lib/dispatcher.js`, `functions/test_dispatcher.js`): When a user replied with a number during stop disambiguation, a concurrent iOS API trip command could fall through the `confirm_stop` handler and overwrite the pending state with `confirm_start`. The user's next "1" then hit the wrong handler and fell through to "Could not understand." Fix: unrecognized input in `confirm_stop` now sends a reminder and returns early. STATUS/STATS/ASK/FORGOT/INFO still pass through normally. Added 3 regression tests.
 
 ### Changed
+
 - **V5.5/V4.5 end-stop models** (`ml/train_endstop.py`): Retrained on 288 cleaned trips (573 exported). End-stop V5.5 84.5% top-1 (+7.9pp vs V5.3), V4.5 75.9% (+7.8pp). Direction (northbound/southbound/eastbound/westbound) added as one-hot feature — root cause of prior low production accuracy was Route 1 northbound/southbound trips being indistinguishable. New 19th end-stop class. `normalizeDirectionForMl` added to `ml_utils.js`.
 - **V5.5/V4.5 route models** (`ml/train_routes.py`): Route V5.5 81.9% top-1 (+14.9pp vs V5.3), V4.5 63.8% (+3.6pp). Stop feature name fix applies here too.
 - **Stop library additions**: Added College St at St George St (stop 845, Westbound, route 506); updated College / Beverley (stop 815, Eastbound) with aliases; added Dufferin St at Dufferin Park Ave (stop 2040, Northbound, routes 29/929); added directions to Bathurst / King stops 161 (Northbound) and 162 (Southbound, route 511). Backfilled `stop_matched=true` on 35 trips.
@@ -555,6 +503,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 ## [1.41.0] — 2026-06-05
 
 ### Added
+
 - **Strictly Normalized Hub Model** (functions/lib/transfer.js, functions/lib/finalization.js, iOS App): Refactored the entire project to follow a strictly normalized data architecture: Trips link to Stops, and Stops link to Hubs. Hub resolution is now performed dynamically at the reasoning layer (e.g., during journey linking) rather than being denormalized onto the trip record.
 - **Hub-Aware Transfer Engine** (functions/lib/transfer.js): Upgraded the journey linking logic to prioritize dynamic hubId resolution via the stops library. Trips sharing a verified Hub ID now achieve high-confidence transfer status automatically, bypassing fragile name-matching heuristics.
 - **Database-Driven Hub Model** (firestore.rules, stops collection): Migrated hardcoded stop complexes from transfer-connections.js into the Firestore stops collection using a new hubId field. This enables dynamic, shared stop grouping that can be updated without code deployments.
@@ -563,17 +512,18 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **iOS API Endpoint** (functions/api.js, functions/index.js): Added a secure HTTP API endpoint in Firebase Cloud Functions that authenticates iOS client users via Firebase Auth ID tokens, performs user phone lookup, and runs the dispatcher inside an AsyncLocalStorage context.
 
 ### Fixed
+
 - **Security Hardening (ReDoS & Dynamic Dispatch)** (functions/lib/parsing.js, functions/lib/ml_utils.js): Resolved CodeQL security alerts (js/polynomial-redos and js/unvalidated-dynamic-method-call). Fixed polynomial backtracking in vehicle matching regex and secured the ML policy registry against prototype pollution by using null-prototype objects.
 - **Data Restoration (Denormalization Cleanup)** (Tools/rollback-trip-hubs.js): Successfully executed a restoration script to remove denormalized startHubId and endHubId fields from 416 historical trip records, ensuring the production database adheres to the strictly normalized architectural mandate.
-
-
 
 ## [1.40.0] — 2026-05-27
 
 ### Added
+
 - **SMS request tracing** (`functions/lib/logger.js`, `functions/lib/dispatcher.js`, `functions/sms.js`, all handlers): Every SMS request now carries a short correlation ID (`t:xxxxxxxx`) through the full dispatch lifecycle. Logger now emits `[INFO][t:abc12345]` style prefixes and accepts `traceId` in data objects (or as a convenience parameter). Dispatcher, trip handlers, query handlers, command handlers, and key intelligence paths all propagate the ID. This enables end-to-end correlation of complex flows (pending states, disambiguation, prediction paths, Gemini calls) in Cloud Logging without changing any existing call sites.
 
 ### Changed
+
 - **ML route normalization policy layer complete** (`ml/route_normalization.py`, `functions/lib/ml_utils.js`, `ml/train_routes.py`, `ml/train_endstop.py`, `ml/calibrate_v4.py`, `functions/lib/handlers-trip.js`, `functions/lib/predict_v4.js`, `functions/lib/predict_v5.js`): Fully replaced TTC-biased hardcoded normalization with a neutral per-agency policy system. Added PRIMARY policy support (with `primary_agency` parameter) so the special collapse behavior follows each user's dynamically computed default agency from recent trips. Training and calibration scripts are now PRIMARY-aware. Automatic recompute of `defaultAgency` added on trip end. All configs use "PRIMARY" + "DEFAULT" (no hardcoded agency names). Live V4/V5 paths updated. Task delivered consistently on training + inference sides.
 - **V6 analysis stop normalization** (`ml/v6_sequence_audit.py`, `ml/calibrate_v4.py`): Updated the main V6 sequence/transfer experiment script and V4 calibration backtest to load the curated stops library and canonicalize stop names (instead of using raw values). This makes the signal measurements consistent with the normalized stops + aliases system.
 - **Correction auto-re-finalization blocked** (`functions/index.js`, `functions/lib/finalization.js`): High-impact corrections (correctedFields, needs_reprocess, exclude_from_*) now strictly prevent automatic background re-runs of `runPostEndFinalization`. Trigger only fires on new `endTime`; idempotency guard skips on `backgroundFinalizedAt` unless `force` (manual only via `triggerManualFinalization`). Protects V3/V4/V5 accuracy % and Network/Transfer/Habit learning from known-bad original data. Matches TRIP_CORRECTIONS.md intent and explicit user decision. (Reverses prior "safer corrections" auto path.)
@@ -597,9 +547,11 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 ## [1.39.1] — 2026-05-26
 
 ### Fixed
+
 - **SMS stop disambiguation now uses route metadata before prompting** (`functions/lib/handlers-utils.js`, `functions/test_handlers.js`): Named-stop trip starts now enrich ambiguous candidates from `stopRoutes` before deciding whether to ask for clarification, and direction narrowing now prefers explicit direction matches over generic directionless candidates. This reduces unnecessary prompts for cases like `506 + Dufferin / College + Eastbound` once normalized stop records include the correct physical stop direction. Multi-stop SMS prompts also now include blank lines around the choice list for better readability.
 
 ### Security
+
 - **Dependency updates** (`package.json`, `package-lock.json`): Resolved 9 security vulnerabilities identified by Dependabot and `npm audit`.
   - Updated `firebase-admin` to `^13.10.0`.
   - Updated `playwright` to `^1.60.0`.
@@ -610,9 +562,11 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 ## [1.39.0] — 2026-05-24
 
 ### Added
+
 - **Vehicle field tracking** (`functions/lib/parsing.js`, `functions/lib/gemini.js`, `functions/lib/handlers-trip.js`, `functions/lib/dispatcher.js`, `dashboard.html`, `js/pages/dashboard.js`, `js/trips/TripFeed.js`, `functions/test_parsing.js`): Added end-to-end support for tracking vehicle numbers/names. Includes heuristic extraction from SMS lines or inline stop names, updated Gemini AI extraction, Firestore storage, and display/edit capability in the Web UI.
 
 ### Changed
+
 - **STATS — "Top route" on its own line** (`functions/lib/handlers-query.js`): Top route summary in the 30-day stats response is now a separate paragraph (e.g., "Top route: 1 (39×)") and the word "Ridden" has been replaced for a cleaner, more conversational tone.
 - **Route validation now rejects obvious direction/street/transit fragments without breaking legitimate named services** (`functions/lib/utils.js`, `tests/utils.test.js`, `functions/test_utils.js`): Tightened the permissive named-route fallback so generic tokens like `NB`, `BUS`, `ST`, and `TRAIN` no longer pass as valid routes, while keeping support for real labels such as `Orange`, `Green Line`, and `Pacific Surfliner`.
 - **Default Vitest discovery now stays inside the real repo test surface** (`vite.config.js`): Scoped the default test run to `tests/**/*.test.js`, excluded agent/worktree folders, and left Firestore rules coverage on the explicit emulator-backed `npm run test:rules` path so `npm test` remains a local unit-test command.
@@ -621,44 +575,53 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 ## [1.38.0] — 2026-05-20
 
 ### Added
+
 - **Post-trip SMS notes command** (`functions/lib/dispatcher.js`, `functions/lib/handlers-commands.js`, `functions/lib/handlers-trip.js`, `functions/test_dispatcher.js`, `functions/test_handlers.js`): Trip-end replies now advertise `Reply NOTES (your note) to add a note.`, and `NOTES ...` attaches text to the most recent completed trip.
 - **Correction metadata foundation** (`functions/lib/db/trips.js`, `functions/lib/db/index.js`, `ml/export_trips.py`, `ml/analyze_predictions.py`): High-impact trip corrections can now be marked for reprocessing/exclusion so corrected trips do not silently remain in training and accuracy-analysis paths as if they were untouched.
 
 ### Changed
+
 - **Transfer-complex stop resolution now prefers the right physical stop class by route mode** (`functions/lib/db/stops.js`, `functions/lib/handlers-utils.js`, `functions/test_handlers.js`): Resolver narrowing now uses TTC route-mode heuristics to prefer station-like candidates for rapid transit and surface-platform candidates for streetcar/bus routes, reducing needless ambiguity across shorthand like `College`.
 
 ### Fixed
+
 - **End-trip text resolution no longer drops single matched candidates that lack a stop code** (`functions/lib/handlers-trip.js`, `functions/test_handlers.js`): When the end-stop matcher narrows text input to one stop-library candidate, that candidate is now used directly instead of being lost on a second code-only lookup.
 - **Admin prediction-accuracy panel removed from Settings** (`settings.html`, `js/pages/settings.js`): Stale incremental accuracy counters are no longer surfaced in the Settings UI; raw `predictionStats` remains the truth source for manual model evaluation.
 
 ## [1.37.1] — 2026-05-20
 
 ### Fixed
+
 - **Prediction audit rows now retain the originating trip ID** (`functions/lib/handlers-trip.js`): All `predictionStats` writes now include `tripId`, so route/end-stop grading rows can be traced back to the exact trip that produced them instead of relying on fuzzy matching by timestamp, version, or labels.
 
 ## [1.37.0] — 2026-05-18
 
 ### Added
+
 - **Transfer-pair candidate audit tool** (`Tools/audit-transfer-pair-candidates.js`, `functions/lib/transfer.js`, `functions/test_transfer.js`):
   - **Evidence-only mining**: Added `TransferEngine.suggestConnectedPairs()` to surface repeated short-gap stop-pair candidates from real linked journeys without auto-mutating the canonical transfer map.
   - **Review script**: New Firestore-backed audit tool prints candidate connected pairs for a user with count, median gap, gap range, and route-pair evidence so recurring handoffs can be reviewed before promotion into `transfer-connections.js`.
 
 ### Fixed
+
 - **Generic TTC transfer names now resolve through the transfer-complex layer** (`functions/lib/db/stops.js`, `functions/lib/handlers-trip.js`, `functions/lib/handlers-utils.js`, `functions/test_stops.js`, `functions/test_handlers.js`): Stop lookup no longer depends only on exact stop-library aliases for generic names like `College`. The resolver now gathers exact and transfer-complex-connected candidates together, then narrows them by `route` and `direction`. This allows behaviors like `506 + College + Westbound -> westbound surface stop`, `1 + College -> subway station`, while still falling back to clarification when direction is missing or ambiguity remains.
 - **Stop clarification prompts now expose the physical stop more clearly** (`functions/lib/handlers-utils.js`, `functions/test_handlers.js`): Multi-match SMS prompts now include stronger labels like direction plus `stop ####` when candidates share the same display name or transfer complex, making fallback prompts for cases like `College` materially clearer than a list of near-identical names.
 
 ## [1.36.1] — 2026-05-17
 
 ### Added
+
 - **Firestore privilege-boundary rules tests** (`tests/firestore.rules.test.js`, `package.json`): Added emulator-backed security tests covering normal profile creation, blocked self-promotion to `isPremium`/`isAdmin`, and admin-only privileged profile updates.
 
 ### Fixed
+
 - **Profile privilege escalation via user-writable flags** (`firestore.rules`, `functions/lib/db/users.js`, `functions/lib/handlers-query.js`, `functions/lib/handlers-trip.js`, `functions/test_handlers.js`, `functions/test_dispatcher.js`): Users can no longer promote themselves by editing `profiles/{userId}`. Profile writes now preserve `isPremium` and `isAdmin` unless performed by an actual admin from `allowedUsers`, and backend admin-only behavior now checks `allowedUsers` directly instead of trusting mutable profile fields.
 - **Twilio webhook validation logs exposed auth-derived material** (`functions/lib/twilio.js`): Removed `secretPrefix` and full `X-Twilio-Signature` values from production logs while keeping request-shape diagnostics for webhook debugging.
 
 ## [1.36.0] — 2026-05-17
 
 ### Added
+
 - **NetworkEngine v2.1 — Pure Empirical Learner** (`functions/lib/network.js`, `functions/lib/handlers-trip.js`, `Tools/diagnose-naming-drift.js`):
   - **Discovery Mission**: De-coupled the engine from `topology.json`, restoring it as a pure learner that must "earn" its knowledge of the network through observation rather than reading from a hardcoded map.
   - **Temporal Deduction**: Surface routes (buses/streetcars) now learn adjacency by comparing trip durations. If A→C is 30m and A→B is 15m, the engine infers B precedes C and injects the B→C segment as an `inferred_temporal` edge.
@@ -679,6 +642,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
   - **Intersection-style connection pairs**: Added a second, narrower relationship layer for proven adjacent-stop handoffs like `College / Bay ↔ College Station`, `Spadina / Queens Quay ↔ Spadina / Queens Quay West`, and similar corner-to-corner TTC transfers without broadening station-complex groups.
 
 ### Fixed
+
 - **Topology-covered routes now enforce a true legal downstream menu** (`functions/lib/predict.js`, `js/predict.js`, `tests/predict.test.js`): For covered route/boarding-stop/direction contexts, destinations outside the downstream stop sequence are now removed as physically impossible instead of being kept as "unknown." This closes the remaining loophole where a popular off-route stop like `Spadina Station` could survive alias drift and still win by historical weight on route `506`.
 - **Topology alias matching normalized for slash/at variants** (`functions/lib/predict.js`, `functions/lib/predict_v4.js`, `functions/lib/predict_v5.js`, `js/predict.js`, `tests/predict.test.js`): Topology lookups now canonicalize stop names before matching, so rider text like `Spadina / College`, `College / Spadina`, and similar variants resolve to the same topology stop instead of silently disabling route constraints.
 - **Journey linking can now bridge exact-stop boundaries inside a transfer complex** (`functions/lib/transfer.js`, `functions/lib/handlers-trip.js`, `functions/test_transfer.js`, `functions/test_handlers.js`): A `506` trip ending at the normalized surface stop outside `College Station` can now link correctly to a `Line 1` trip starting at `College Station`, without merging the two stops in the normalized stop library or changing displayed stop names.
@@ -690,22 +654,26 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Stop trust falls back to topology for covered routes** (`functions/lib/db/stops.js`, `tests/stops.test.js`): Stop resolution now checks the vetted normalized stop library first, then falls back to `topology.json` for route-covered subway/LRT stops before failing unresolved. This lets stops like `Davisville` on TTC Line 1 remain trusted for trip learning even when the normalized stop library is incomplete.
 
 ### Changed
+
 - **Vetted TTC stop library expanded** (Firestore `stops` collection): Added `Davisville` as a manual TTC stop record so current Line 1 commute trips can resolve cleanly against the canonical stop library instead of falling through to unresolved raw text.
 
 ## [1.35.2] — 2026-05-12
 
 ### Fixed
+
 - **Dependabot Alerts**: Resolved 8 high/moderate security vulnerabilities in `functions` by updating the `protobufjs` dependency tree to `7.5.8` via `npm audit fix`.
 
 ## [1.35.1] — 2026-05-12
 
 ### Fixed
+
 - **CI Build Failure**: Removed `--omit=optional` from the root `npm install` command in GitHub Action workflows. Vite/Rolldown native bindings are installed as optional dependencies, and omitting them was causing `MODULE_NOT_FOUND` errors during the `npm run build` step.
 - **SSRF CodeQL Alert**: Hardened MMS URL processing in `functions/lib/handlers-intelligence.js` by expanding the trusted Twilio domain whitelist, fully reconstructing target URLs to prevent bypasses, and ensuring guards and the `fetch` sink occur in the same try-block to resolve CodeQL alert #44.
 
 ## [1.35.0] — 2026-05-12
 
 ### Fixed
+
 - **Next-leg suggestion displays original route label** (`functions/lib/network.js`, `functions/lib/handlers-trip.js`): Transfer index now stores `toLabels[connKey] = originalRoute` alongside counts. `getConnectionLabels()` retrieves them. Handlers-trip uses the original label for the "Usually take the X from here" SMS — fixing "510a" displaying instead of "510A", "greenline" instead of "Green Line", etc.
 - **Anomaly detection uses destination-specific edge median** (`functions/lib/network.js`, `functions/lib/handlers-trip.js`): Added `getEdgeMedianDuration(graph, fromStop, toStop, hour)` to look up the specific A→C edge duration rather than aggregating across all edges leaving the boarding stop. Anomaly detection now calls this first and falls back to the aggregate only when no direct observation exists for the actual start→end pair. Prevents false positives on routes with diverse destinations (short ride to stop B vs. long ride to stop C from the same boarding stop).
 - **SSRF guard restructured** (`functions/lib/handlers.js`): Merged the MMS URL validation and fetch into a single try block so the allowlist check directly guards the `fetch()` call. Also replaced an undefined `logger.warn` reference with `console.warn`, which was causing the two `handleMmsTrip` tests to fail with `ReferenceError`. Test URLs updated to use a trusted Twilio domain to match the validation.
@@ -716,6 +684,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **NetworkEngine wired into V4/V5 end stop prediction** (`functions/lib/network.js`, `functions/lib/predict_v4.js`, `functions/lib/predict_v5.js`, `functions/lib/handlers.js`): V4/V5 end stop predictions now filter impossible stops via NetworkEngine before falling back to topology.json — the same priority order V3 uses. Previously topology.json only covered subway lines (1, 2, 4, 5), so surface route predictions (e.g. 510 streetcar) had no impossibility filter, causing the model to over-predict dominant destinations like Spadina & Nassau regardless of direction or boarding stop.
 
 ### Added
+
 - **Habit change detection** (`functions/lib/habit.js`): `rebuild()` now detects when a different route/direction is emerging in the same (stop, day, 2-hour bucket) slot within the last 30 days. Old habits with a newer replacement pattern are marked `stale: true` with a `replacedBy` field. Stale habits are filtered out by `match()` so they stop firing immediately. 3 new tests.
 - **Trip start reply formatting** (`functions/lib/handlers-utils.js`): Tightened `getPredictionPrompt` — removed "FORGOT if you forgot to end" and "INFO for help" from all cases, removed "Reply" prefix, split single-prediction reply into three clean paragraphs (start confirmation / destination guess / END instruction).
 - **Anomaly detection** (`functions/lib/handlers-trip.js`): END reply now flags trips that took 2× or more the hour-specific median — "This trip took longer than usual (40 min vs. typical 10 min)." Uses the NetworkEngine hour-slot median for the trip's start hour. Suppressed for short typical trips (median < 5 min) to avoid noise. 2 new tests.
