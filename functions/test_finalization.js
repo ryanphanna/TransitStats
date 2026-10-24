@@ -280,6 +280,22 @@ test('gradeAllPredictions grades V3 and the habit separately on a habit trip', a
   assert.ok(stats.every((d) => 'endStopPredicted' in d));
 });
 
+test('gradeAllPredictions tolerates trips with no V4/V5 guesses (ML_ENDSTOP_LIVE off): only V3 and habit rows', async () => {
+  for (const missing of [undefined, null]) {
+    const { finalization, calls } = loadFinalization();
+    const activeTrip = {
+      id: 't3', route: '510', agency: 'TTC', startStopName: 'King / Spadina',
+      endStopPrediction: { stop: 'Bathurst', confidence: 70 },
+      habitPrediction: { stop: 'King / Spadina', endStop: 'Spadina Station', confidence: 0.8 },
+    };
+    if (missing === null) Object.assign(activeTrip, { endStopPredictionV4: null, endStopPredictionV5: null });
+    await finalization.gradeAllPredictions(activeTrip, { userId: 'u1' }, { stopName: 'Spadina Station' }, 12);
+    const versions = calls.collectionAdds.filter((c) => c.collection === 'predictionStats').map((c) => c.data.version).sort();
+    assert.deepEqual(versions, ['habit-endstop', 'v3-endstop']);
+    assert.equal(calls.loggerError.length, 0);
+  }
+});
+
 // --- triggerManualFinalization: throw paths ---
 
 test('triggerManualFinalization throws when tripId is missing', async () => {

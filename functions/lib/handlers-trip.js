@@ -37,9 +37,6 @@ const { TransferEngine } = require('./transfer.js');
 const { NetworkEngine } = require('./network.js');
 const { HabitEngine } = require('./habit');
 const { isPhoneConfirmed, phoneTag, tripStartedByPhone, LOCKED_TRIP_TEXT } = require('./phone-confirmation');
-const { PredictionEngineV4 } = require('./predict_v4.js');
-const { PredictionEngineV5 } = require('./predict_v5.js');
-const ModelStore = require('./model-store');
 const logger = require('./logger');
 const finalization = require('./finalization');
 const { checkMlTasks } = require('./ml-tasks');
@@ -59,7 +56,13 @@ const { getEligibility, artifactSupportsAgency } = require('./intelligence-eligi
 
 // V3 votes over a longer window (3.5.0): the eval showed the 100-trip window was V3's main
 // coverage gap. V4/V5 eligibility keeps its original 100-trip window.
-const { PREDICTION_HISTORY_LIMIT, ELIGIBILITY_HISTORY_LIMIT } = require('./constants');
+const { PREDICTION_HISTORY_LIMIT, ELIGIBILITY_HISTORY_LIMIT, ML_ENDSTOP_LIVE } = require('./constants');
+const { buildEndStopContext } = require('./endstop-context');
+// V4/V5 only load when they run live (ML_ENDSTOP_LIVE, constants.js). Off, the sms function never
+// downloads the model files or loads the ONNX runtime; the models are graded weekly instead.
+const { PredictionEngineV4 } = ML_ENDSTOP_LIVE ? require('./predict_v4.js') : {};
+const { PredictionEngineV5 } = ML_ENDSTOP_LIVE ? require('./predict_v5.js') : {};
+const ModelStore = ML_ENDSTOP_LIVE ? require('./model-store') : null;
 const {
   agencySuffix,
   isStopMatched,
@@ -269,11 +272,12 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       || resolvedAgency
       || null;
     // Models are private and only trained on allowlisted users; everyone else gets rule-based predictions.
-    const mlModels = ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
+    // With ML_ENDSTOP_LIVE off nothing is loaded and V4/V5 don't run.
+    const mlModels = ML_ENDSTOP_LIVE && ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
     const { endStopV4Meta, endStopV5Meta } = mlModels || {};
     const now = new Date();
     const eligibility = getEligibility(history.slice(0, ELIGIBILITY_HISTORY_LIMIT), resolvedAgency);
-    const mlEndStopReady = eligibility.endStopEligible &&
+    const mlEndStopReady = ML_ENDSTOP_LIVE && eligibility.endStopEligible &&
       artifactSupportsAgency(endStopV4Meta, resolvedAgency, 'agency::end_stop') &&
       artifactSupportsAgency(endStopV5Meta, resolvedAgency, 'agency::end_stop');
     const mlReady = experimentalIntelligence && mlEndStopReady;
@@ -294,25 +298,19 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       count: habitMatch.count,
       version: `habit_v${HabitEngine.VERSION.split('.')[0]}`,
     } : null;
-    const lastTrip = history.length > 0 ? history[0] : null;
-    const lastEndStopName = lastTrip?.endStopName || lastTrip?.endStop || null;
-    const lastRoute = lastTrip?.route || null;
-    const minutesSinceLastTrip = lastTrip?.startTime?.toDate
-      ? Math.max(0, Math.round((now.getTime() - lastTrip.startTime.toDate().getTime()) / 60000))
-      : null;
-    const endStopContext = {
+    // Shared with the weekly V4/V5 grading replay (scripts/weekly-shadow-grade.js), so both build
+    // the same inputs.
+    const endStopContext = buildEndStopContext({
       route,
       startStopName,
       direction,
-      time: now,
-      lastEndStopName,
-      lastRoute,
-      minutesSinceLastTrip,
+      now,
+      history,
       agency: resolvedAgency,
       primaryAgency: defaultAgency,
       stopsLibrary,
-      networkGraph: networkGraph || null,
-    };
+      networkGraph,
+    });
     const endStopConstraint = engine.getEndStopConstraint(endStopContext);
     endStopConstraintSource = endStopConstraint.source;
     logger.info('Trip-start end-stop constraint', {
@@ -340,10 +338,10 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
       }, traceId);
     }
 
-    // V3/V4/V5 end-stop guesses always run and are stored, even when a habit fires, so live
+    // V3 end-stop guesses always run and are stored, even when a habit fires, so live
     // predictionStats stay complete and comparable. Only the SMS reply changes.
     // Route guesses are not made: the route arrives in the texted message.
-    // Experimental models only run after both clean-history and artifact coverage checks.
+    // V4/V5 only run when ML_ENDSTOP_LIVE is on, after the clean-history and artifact coverage checks.
     if (mlReady) {
       const [topEndV4, topEndV5] = await Promise.all([
         PredictionEngineV4.guessTopEndStops(endStopContext, 1),
@@ -461,11 +459,11 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
       || newTrip.agency
       || null;
     // Models are private and only trained on allowlisted users; everyone else gets rule-based predictions.
-    const mlModels = ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
+    const mlModels = ML_ENDSTOP_LIVE && ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
     const { endStopV4Meta, endStopV5Meta } = mlModels || {};
     const now = new Date();
     const confirmEligibility = getEligibility(history.slice(0, ELIGIBILITY_HISTORY_LIMIT), newTrip.agency);
-    const confirmMlEndStopReady = confirmEligibility.endStopEligible &&
+    const confirmMlEndStopReady = ML_ENDSTOP_LIVE && confirmEligibility.endStopEligible &&
       artifactSupportsAgency(endStopV4Meta, newTrip.agency, 'agency::end_stop') &&
       artifactSupportsAgency(endStopV5Meta, newTrip.agency, 'agency::end_stop');
     const confirmMlReady = experimentalIntelligence && confirmMlEndStopReady;

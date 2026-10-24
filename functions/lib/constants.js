@@ -129,3 +129,9 @@ exports.AGENCY_CITY = {
 // serving filter.
 exports.PREDICTION_HISTORY_LIMIT = 500;
 exports.ELIGIBILITY_HISTORY_LIMIT = 100;
+
+// V4/V5 ML end-stop models at trip start (CIV-425). Off: trips get V3 + habit only, and the sms
+// function never loads the model files or the ONNX runtime. The models are graded weekly instead,
+// on the past week's real trips (functions/scripts/weekly-shadow-grade.js, run by retrain.yml).
+// Set to true to run and store them live again (endStopPredictionV4/V5, graded at finalization).
+exports.ML_ENDSTOP_LIVE = false;
