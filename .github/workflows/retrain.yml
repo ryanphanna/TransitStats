@@ -57,6 +57,32 @@ jobs:
           print(f"Stops library: {len(lib)} stops")
           EOF
 
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install functions dependencies
+        run: npm ci --prefix functions
+
+      # V4/V5 don't run live (ML_ENDSTOP_LIVE in functions/lib/constants.js). Grade the PUBLISHED
+      # models, the ones that served this past week, on the past 7 days of real trips, before this
+      # run retrains on those trips. Read-only on trips; writes mlShadowGrades/{date}__{userId}
+      # (not on a dry run). Never blocks the retrain.
+      - name: Weekly V4/V5 shadow grading
+        continue-on-error: true
+        env:
+          TZ: UTC
+          TRAIN_USER_IDS: ${{ secrets.TRAIN_USER_IDS }}
+          FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_TRANSITSTATS_21BA4 }}
+          DRY_RUN_FLAG: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$FIREBASE_KEY" > "$RUNNER_TEMP/sa.json"
+          trap 'rm -f "$RUNNER_TEMP/sa.json"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          node functions/scripts/weekly-shadow-grade.js --days 7 --json-out "$RUNNER_TEMP/shadow.json" $DRY_RUN_FLAG
+
       - name: Retrain end-stop models (V4 + V5)
         run: |
           set -euo pipefail
@@ -88,16 +114,6 @@ jobs:
         run: |
           echo "Dry run: training and the gate passed. Nothing was uploaded and models/latest.json is unchanged."
 
-      - name: Set up Node
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-
-      - name: Install functions dependencies
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
-        run: npm ci --prefix functions
-
       - name: Upload models to private storage
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         env:
@@ -114,7 +130,7 @@ jobs:
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         run: |
           python3 - <<'EOF'
-          import json, datetime, pathlib
+          import json, datetime, os, pathlib
 
           es_v4 = json.loads(pathlib.Path("ml/model_v4_endstop_meta.json").read_text())
           es_v5 = json.loads(pathlib.Path("ml/model_v5_endstop_meta.json").read_text())
@@ -130,9 +146,27 @@ jobs:
               f"| V5 XGBoost | {es_v5['top1_accuracy']:.1%} | {es_v5['top3_accuracy']:.1%} | {len(es_v5['classes'])} | {es_v5['n_trips']} |",
               f"| V4 LogReg  | {es_v4['top1_accuracy']:.1%} | {es_v4['top3_accuracy']:.1%} | {len(es_v4['classes'])} | {es_v4['n_trips']} |",
               "",
-              "---",
-              "",
           ]
+
+          # Weekly shadow grading (weekly-shadow-grade.js): last week's published models on the past
+          # 7 days of real trips. Counts and rates only.
+          pct = lambda v: "n/a" if v is None else f"{v:.1%}"
+          shadow_path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "shadow.json"
+          if shadow_path.exists():
+              for s in json.loads(shadow_path.read_text())["summaries"]:
+                  e, p = s["engines"], s["paired"]
+                  entry_lines += [
+                      f"### Shadow grading: past 7 days (models {s['modelVersion']}, {s['graded']} trips)",
+                      "",
+                      "| Model | Top-1 | Answered | Right when answered | Paired top-1 (n=" + str(p["n"]) + ") |",
+                      "|---|---|---|---|---|",
+                  ] + [
+                      f"| {name} | {pct(e[k]['top1'])} | {pct(e[k]['coverage'])} | {pct(e[k]['top1WhenAnswered'])} | {pct(p[k + 'Top1'])} |"
+                      for k, name in (("v3", "V3 (live)"), ("v4", "V4"), ("v5", "V5"))
+                  ] + [""]
+          else:
+              entry_lines += ["Shadow grading did not run this week.", ""]
+          entry_lines += ["---", ""]
           entry = "\n".join(entry_lines)
 
           log = pathlib.Path("ml/MODEL_LOG.md")

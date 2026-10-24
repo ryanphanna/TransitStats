@@ -244,7 +244,7 @@ function loadHandlers(overrides = {}) {
       ...(overrides.predictV5?.PredictionEngineV5 || {}),
     },
   };
-  const constants = { AGENCY_CITY: { TTC: 'Toronto' } };
+  const constants = { AGENCY_CITY: { TTC: 'Toronto' }, ...overrides.constants };
 
   const originalFetch = global.fetch;
   global.fetch = async () => ({
@@ -488,7 +488,7 @@ test('handleTripLog: Line 1 College auto-resolves to subway station', async () =
   assert.equal(calls.createTrip[0].startStopName, 'College');
 });
 
-test('handleTripLog: a firing habit changes only the reply; V3/V4/V5 end-stop guesses still run and are stored', async () => {
+test('handleTripLog: a firing habit changes only the reply; V3/V4/V5 end-stop guesses still run and are stored (ML_ENDSTOP_LIVE on)', async () => {
   let matchArgs = null;
   const v3End = { stop: 'Bathurst', confidence: 55 };
   const { handlers, calls, restore } = loadHandlers({
@@ -518,6 +518,7 @@ test('handleTripLog: a firing habit changes only the reply; V3/V4/V5 end-stop gu
         _stopMatch: () => false,
       },
     },
+    constants: { ML_ENDSTOP_LIVE: true },
     predictV4: { PredictionEngineV4: {
       guessTopEndStops: () => [{ stop: 'Bathurst', confidence: 55 }],
     } },
@@ -990,8 +991,9 @@ test('fillPredictions: fallback inference stays off without eligible agency arti
   assert.equal(endStopContext, undefined);
 });
 
-test('fillPredictions: stores V4/V5 end-stop guesses only, never a route guess', async () => {
+test('fillPredictions: stores V4/V5 end-stop guesses only, never a route guess (ML_ENDSTOP_LIVE on)', async () => {
   const { handlers, calls, restore } = loadHandlers({
+    constants: { ML_ENDSTOP_LIVE: true },
     eligibility: { isModelReady: () => true },
     predictV4: { PredictionEngineV4: { guessTopEndStops: () => [{ stop: 'Bathurst', confidence: 55 }] } },
     predictV5: { PredictionEngineV5: { guessTopEndStops: async () => [{ stop: 'Strachan', confidence: 50 }] } },
@@ -1006,6 +1008,131 @@ test('fillPredictions: stores V4/V5 end-stop guesses only, never a route guess',
   assert.equal(update.endStopPredictionV4.stop, 'Bathurst');
   assert.equal(update.endStopPredictionV5.stop, 'Strachan');
   assert.ok(!('predictionV4' in update) && !('predictionV5' in update));
+});
+
+// CIV-425: V4/V5 are graded weekly (scripts/weekly-shadow-grade.js) instead of running live.
+function mlSpies() {
+  const counts = { v4: 0, v5: 0 };
+  return {
+    counts,
+    predictV4: { PredictionEngineV4: { guessTopEndStops: () => { counts.v4 += 1; return [{ stop: 'Bathurst', confidence: 55 }]; } } },
+    predictV5: { PredictionEngineV5: { guessTopEndStops: async () => { counts.v5 += 1; return [{ stop: 'Strachan', confidence: 50 }]; } } },
+  };
+}
+const ML_ELIGIBLE = {
+  getEligibility: () => ({ endStopEligible: true, cleanTripCount: 50 }),
+  artifactSupportsAgency: () => true,
+  isModelReady: () => true,
+};
+
+test('ML_ENDSTOP_LIVE off: trip start runs V3 only and stores no V4/V5 guesses, even when fully eligible', async () => {
+  const spies = mlSpies();
+  const v3End = { stop: 'Bathurst', confidence: 70, version: '3.6.0' };
+  const { handlers, calls, restore } = loadHandlers({
+    constants: { ML_ENDSTOP_LIVE: false },
+    eligibility: ML_ELIGIBLE,
+    predict: { PredictionEngine: {
+      stopsLibrary: [], networkGraph: null,
+      guessEndStop: () => v3End,
+      guessTopEndStops: () => [v3End],
+      getEndStopConstraint: () => ({ source: 'none', legalStops: null }),
+      _stopMatch: () => false,
+    } },
+    predictV4: spies.predictV4,
+    predictV5: spies.predictV5,
+  });
+  try {
+    await handlers.handleTripLog('+14165550041', { userId: 'u41', email: 'user@example.com' }, '11985', '510', 'Westbound', 'TTC');
+  } finally {
+    restore();
+  }
+  assert.deepEqual(spies.counts, { v4: 0, v5: 0 });
+  const trip = calls.createTrip[0];
+  assert.deepEqual(trip.endStopPrediction, v3End);
+  assert.equal(trip.endStopPredictionV4, null);
+  assert.equal(trip.endStopPredictionV5, null);
+});
+
+test('ML_ENDSTOP_LIVE on: the same eligible trip start runs and stores V4/V5 (switch-back works)', async () => {
+  const spies = mlSpies();
+  const { handlers, calls, restore } = loadHandlers({
+    constants: { ML_ENDSTOP_LIVE: true },
+    eligibility: ML_ELIGIBLE,
+    predictV4: spies.predictV4,
+    predictV5: spies.predictV5,
+  });
+  try {
+    await handlers.handleTripLog('+14165550042', { userId: 'u42', email: 'user@example.com' }, '11985', '510', 'Westbound', 'TTC');
+  } finally {
+    restore();
+  }
+  assert.deepEqual(spies.counts, { v4: 1, v5: 1 });
+  assert.equal(calls.createTrip[0].endStopPredictionV4.stop, 'Bathurst');
+  assert.equal(calls.createTrip[0].endStopPredictionV5.stop, 'Strachan');
+});
+
+test('ML_ENDSTOP_LIVE off: confirming a new start over an active trip runs no V4/V5', async () => {
+  const spies = mlSpies();
+  const { handlers, calls, restore } = loadHandlers({
+    constants: { ML_ENDSTOP_LIVE: false },
+    eligibility: ML_ELIGIBLE,
+    predictV4: spies.predictV4,
+    predictV5: spies.predictV5,
+  });
+  try {
+    await handlers.handleConfirmStart('+14165550043', { userId: 'u43', email: 'user@example.com' }, {
+      activeTrip: { id: 'old', route: '504', direction: 'Eastbound', agency: 'TTC', startStopName: 'Broadview',
+        startTime: { toDate: () => new Date(Date.now() - 10 * 60000) } },
+      newTrip: { stopCode: '1', stopName: 'Spadina', route: '510', direction: 'Southbound', agency: 'TTC' },
+    });
+  } finally {
+    restore();
+  }
+  assert.deepEqual(spies.counts, { v4: 0, v5: 0 });
+  assert.equal(calls.createTrip.length, 1);
+  assert.equal(calls.createTrip[0].endStopPredictionV4, null);
+  assert.equal(calls.createTrip[0].endStopPredictionV5, null);
+});
+
+test('ML_ENDSTOP_LIVE off: fillPredictions returns before any reads or writes', async () => {
+  const spies = mlSpies();
+  let profileReads = 0;
+  const { handlers, calls, restore } = loadHandlers({
+    constants: { ML_ENDSTOP_LIVE: false },
+    eligibility: ML_ELIGIBLE,
+    dbModule: { getUserProfile: async () => { profileReads += 1; return {}; } },
+    predictV4: spies.predictV4,
+    predictV5: spies.predictV5,
+  });
+  try {
+    await handlers.fillPredictions({ userId: 'u44', email: 'user@example.com' }, 'trip_44', 'Spadina Station', '510', 'Southbound', 'TTC');
+  } finally {
+    restore();
+  }
+  assert.equal(profileReads, 0);
+  assert.deepEqual(spies.counts, { v4: 0, v5: 0 });
+  assert.equal(calls.docUpdates.length, 0);
+});
+
+test('ML_ENDSTOP_LIVE ships off, and the sms handlers then never load the models or the ONNX runtime', () => {
+  assert.equal(require('./lib/constants').ML_ENDSTOP_LIVE, false);
+  // A fresh process, so this file's other requires can't pollute require.cache.
+  const { spawnSync } = require('node:child_process');
+  const script = `
+    require('./lib/handlers');
+    const loaded = Object.keys(require.cache);
+    const has = name => loaded.some(p => p.includes(name));
+    console.log(JSON.stringify({
+      handlers: has('/lib/handlers-trip.js'),
+      v4: has('/lib/predict_v4.js'),
+      v5: has('/lib/predict_v5.js'),
+      modelStore: has('/lib/model-store.js'),
+      onnx: has('onnxruntime-node'),
+    }));`;
+  const run = spawnSync(process.execPath, ['-e', script], { cwd: __dirname, encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  const loaded = JSON.parse(run.stdout.trim().split('\n').pop());
+  assert.deepEqual(loaded, { handlers: true, v4: false, v5: false, modelStore: false, onnx: false });
 });
 
 test('handleTripLog: skips V4/V5 shadow inference when experimental access is disabled', async () => {

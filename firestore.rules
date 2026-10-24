@@ -217,6 +217,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Weekly V4/V5 shadow grading summaries, written by the retrain workflow (Admin SDK) only.
+    match /mlShadowGrades/{docId} {
+      allow read, write: if false;
+    }
+
     // Server-only settings (e.g. config/turnstile mode), changed via the console.
     match /config/{docId} {
       allow read, write: if false;
