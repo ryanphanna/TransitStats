@@ -4,7 +4,7 @@
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { gradeWindow, publicSummary, isGradableTrip } = require('./scripts/weekly-shadow-grade');
+const { gradeWindow, publicSummary, isGradableTrip, windowStart } = require('./scripts/weekly-shadow-grade');
 
 const DAY = 24 * 60 * 60 * 1000;
 const END = new Date('2026-10-26T04:00:00Z');
@@ -151,4 +151,13 @@ test('shadow grading: trips live would not have run V4/V5 on are skipped, not co
     engines: engines({}), metas: { v4: { ...META, agencies: ['GO'] }, v5: META }, hasBlockingCorrection: noCorrection,
   });
   assert.equal(noAgency.ineligible, 1);
+});
+
+test('shadow grading: the window never reaches back before the published models were trained', () => {
+  // Published Monday 2026-10-19 09:37 UTC; a 14-day window would grade trips the models trained on.
+  assert.equal(windowStart(END, 14, '20261019T093750Z').toISOString(), '2026-10-19T09:37:50.000Z');
+  // Published before the 7-day window: the window is unchanged.
+  assert.equal(windowStart(END, 7, '20261012T040000Z').toISOString(), START.toISOString());
+  // Local model folders have no version time.
+  assert.equal(windowStart(END, 7, 'local').toISOString(), START.toISOString());
 });

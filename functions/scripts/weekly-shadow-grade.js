@@ -10,7 +10,9 @@
  *
  * - Users: TRAIN_USER_IDS (comma-separated), the same users the models are trained on.
  * - Models: the PUBLISHED set (models/latest.json in private storage), i.e. the set that served
- *   during the week. Run it before the retrain publishes, so the models never saw these trips.
+ *   during the week. Run it before the retrain publishes, so the models never saw these trips. The
+ *   window never starts before that set's version time, so a mid-week publish or a longer --days
+ *   can't grade V4/V5 on trips they were trained on.
  * - Each trip is replayed the way live does it at trip start: the newest PREDICTION_HISTORY_LIMIT
  *   completed trips before it with the serving filter, the same V4/V5 eligibility gate, the same
  *   context builder (lib/endstop-context.js), and hits scored with V3's _stopMatch like
@@ -199,6 +201,22 @@ function formatSummary(result) {
   return lines.join('\n');
 }
 
+/** Publish time from a models/<version> name (YYYYMMDDTHHMMSSZ), or null. */
+function versionTime(version) {
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(String(version || ''));
+  return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])) : null;
+}
+
+/**
+ * Window start: `days` before `end`, but never before the published set was trained. The retrain
+ * fits on every trip exported up to then, so earlier trips would be graded in-sample for V4/V5.
+ */
+function windowStart(end, days, modelVersion) {
+  const byDays = new Date(end.getTime() - days * DAY_MS);
+  const published = versionTime(modelVersion);
+  return published && published > byDays ? published : byDays;
+}
+
 function parseArgs(argv) {
   const args = { days: 7, end: null, dryRun: false, jsonOut: null };
   for (let i = 0; i < argv.length; i += 1) {
@@ -236,7 +254,10 @@ async function main() {
   }
 
   const end = args.end ? new Date(args.end) : new Date();
-  const start = new Date(end.getTime() - args.days * DAY_MS);
+  const start = windowStart(end, args.days, modelVersion);
+  if (start.getTime() !== end.getTime() - args.days * DAY_MS) {
+    console.log(`Window starts at the published models' training time (${modelVersion}), not ${args.days} days back.`);
+  }
   const stopsLibrary = await getStopsLibrary(); // the same library live trip starts read
 
   const summaries = [];
@@ -280,4 +301,6 @@ if (require.main === module) {
   });
 }
 
-module.exports = { gradeWindow, publicSummary, formatSummary, servesAsHistory, isGradableTrip, parseArgs, EVAL_SOURCES };
+module.exports = {
+  gradeWindow, publicSummary, formatSummary, servesAsHistory, isGradableTrip, parseArgs, windowStart, EVAL_SOURCES,
+};

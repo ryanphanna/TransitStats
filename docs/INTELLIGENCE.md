@@ -135,7 +135,7 @@ Until October 2026, V4 and V5 ran on every trip start for allowlisted users (`al
 - `fillPredictions` (after stop disambiguation) does nothing.
 
 **Weekly grading:** `functions/scripts/weekly-shadow-grade.js` runs in `retrain.yml` every Monday, before the retrain. It replays the past 7 days of `TRAIN_USER_IDS` trips through V3, V4 and V5.
-- **Models:** the published set (`models/latest.json`), i.e. the models that would have served that week, so they never trained on those trips.
+- **Models:** the published set (`models/latest.json`), i.e. the models that would have served that week. The window never starts before that set's version time, so they never trained on the graded trips, even after a mid-week publish.
 - **Trips:** texted only (`sms`, `sms_fallback`, `mms`; no `outage-recovery` or imports), finished, and clean (no `needs_review`, no blocking correction, stop matched).
 - **Inputs:** each trip gets the live trip-start inputs. That's the 500-trip serving history before it, the same V4/V5 eligibility gate, and the same context builder (`functions/lib/endstop-context.js`, shared with `handlers-trip.js`). Hits are scored with V3's `_stopMatch`, as finalization does.
 - **Network graph:** the learned graph can't be rewound, so all three engines run without it. V3's numbers here can differ slightly from live.
@@ -147,7 +147,7 @@ Results:
 
 Each records per engine top-1 over all graded trips, coverage, top-1 when answered (what `predictionStats` measured), and top-1 on the paired slice where all three answered. Compare engines on the paired slice.
 
-**Switching back on:** if V4 or V5 pulls ahead of V3 on the paired slice for several weeks, set `ML_ENDSTOP_LIVE = true` and deploy functions. Trip starts then run and store them again, and finalization grades them as before. A one-off check: `TZ=UTC GOOGLE_APPLICATION_CREDENTIALS=<admin key> TRAIN_USER_IDS=<uid> node functions/scripts/weekly-shadow-grade.js --dry-run [--days 14]`.
+**Switching back on:** if V4 or V5 pulls ahead of V3 on the paired slice for several weeks, set `ML_ENDSTOP_LIVE = true` and deploy functions. Trip starts then run and store them again, and finalization grades them as before. A one-off check: `TZ=UTC GOOGLE_APPLICATION_CREDENTIALS=<admin key> TRAIN_USER_IDS=<uid> node functions/scripts/weekly-shadow-grade.js --dry-run` (a longer `--days` is cut at the published set's version time).
 
 ## Shared Prediction Files
 
