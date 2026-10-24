@@ -490,7 +490,7 @@ test('handleTripLog: Line 1 College auto-resolves to subway station', async () =
 
 test('handleTripLog: a firing habit changes only the reply; V3/V4/V5 end-stop guesses still run and are stored', async () => {
   let matchArgs = null;
-  const v3End = { stop: 'Bathurst', confidence: 70 };
+  const v3End = { stop: 'Bathurst', confidence: 55 };
   const { handlers, calls, restore } = loadHandlers({
     dbModule: { isEmailAdmin: async () => true },
     habit: {
