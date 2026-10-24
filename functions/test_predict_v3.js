@@ -112,3 +112,46 @@ test('stop canonicalization follows the current stops library', () => {
   V3.stopsLibrary = [];
   assert.equal(V3._canonicalizeStop('Union Stn'), 'union stn');
 });
+
+test('3.6.0: one past trip is not certainty; confidence grows with matching trips', () => {
+  const conf = n => V3.guessTopEndStops(
+    Array.from({ length: n }, (_, i) => trip('99', 'Oak St', 'Elm St', { daysAgo: i + 1 })),
+    at('99', 'Oak St'),
+  )[0].confidence;
+  // Every past trip agrees, so the raw share is 100%; the sample-size factor is n / (n + 2).
+  assert.equal(conf(1), 33);
+  assert.equal(conf(2), 50);
+  assert.equal(conf(6), 75);
+  assert.equal(conf(18), 90);
+  // A guess backed by one or two trips never clears the admin display gate.
+  const { SHOWN_END_STOP_MIN_CONFIDENCE } = require('./lib/handlers-utils');
+  assert.ok(conf(2) < SHOWN_END_STOP_MIN_CONFIDENCE);
+  assert.ok(conf(3) >= SHOWN_END_STOP_MIN_CONFIDENCE);
+});
+
+test('3.6.0: sample-size scaling never changes which stops are guessed or their order', () => {
+  const history = [
+    trip('99', 'Oak St', 'Elm St', { daysAgo: 1 }),
+    trip('99', 'Oak St', 'Elm St', { daysAgo: 2 }),
+    trip('99', 'Oak St', 'Pine St', { daysAgo: 3 }),
+    trip('99', 'Oak St', 'Ash St', { daysAgo: 4 }),
+    trip('99', 'Birch St', 'Cedar St', { daysAgo: 1 }),
+  ];
+  for (const ctx of [at('99', 'Oak St'), at('99', 'Maple St')]) {
+    const scaled = V3.guessTopEndStops(history, ctx, 3);
+    const raw = withConfig({ SAMPLE_PRIOR_TRIPS: 0 }, () => V3.guessTopEndStops(history, ctx, 3));
+    assert.deepStrictEqual(scaled.map(p => [p.stop, p.tier]), raw.map(p => [p.stop, p.tier]));
+    scaled.forEach((p, i) => assert.ok(p.confidence <= raw[i].confidence));
+  }
+  // 4 voting trips on the exact tier: factor 4 / 6.
+  const exact = V3.guessTopEndStops(history, at('99', 'Oak St'), 3);
+  const exactRaw = withConfig({ SAMPLE_PRIOR_TRIPS: 0 }, () => V3.guessTopEndStops(history, at('99', 'Oak St'), 3));
+  exact.forEach((p, i) => assert.ok(Math.abs(p.confidence - exactRaw[i].confidence * 4 / 6) <= 1));
+});
+
+test('3.6.0: SAMPLE_PRIOR_TRIPS 0 restores the 3.5.0 confidence', () => {
+  const history = [trip('99', 'Oak St', 'Elm St')];
+  const top = withConfig({ SAMPLE_PRIOR_TRIPS: 0 }, () => V3.guessTopEndStops(history, at('99', 'Oak St')));
+  assert.equal(top[0].confidence, 100);
+  assert.equal(V3._sampleSizeFactor(0), 0);
+});

@@ -27,6 +27,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **"Usual trip" end-stop prediction (admins only).** When a trip from that stop at that time usually ends in the same place, the start reply leads with that stop, still followed by the numbered list. It's right 84% of the time it shows.
 - **End-stop guesses are right on 46% of trips, up from 28%.** New trips fall back to the same route or stop and look further back in your history, and the text only suggests a stop when fairly sure.
 - **Predictions keep each agency separate.** Same route numbers or stop names in different cities can no longer mix, and a one-off trip elsewhere no longer affects your habits or predictions.
+- **Stop suggestions are only shown when they're likely right.** The engine used to call itself certain on guesses that were right about 6 times in 10.
 
 ### Map and dashboard
 

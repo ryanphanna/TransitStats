@@ -90,6 +90,7 @@ TIME_SIGMA_HOURS: 1.5        // Width of time-of-day Gaussian
 DECAY_HALFLIFE_RIDES: 100    // Recency decay: a trip 100 same-agency rides ago votes at half weight
 SEQUENCE_WINDOW_HOURS: 3     // How recent a prior trip must be to trigger sequence boost
 SEQUENCE_BOOST: 1.5          // Multiplier applied at transfer points
+SAMPLE_PRIOR_TRIPS: 2        // End-stop confidence × n/(n+2) for n voting trips (3.6.0); one trip = 33, not 100
 ```
 
 ### Version History

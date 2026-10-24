@@ -281,7 +281,10 @@ async function maybeHandleStopDisambiguation({
 
 // Admin SMS only lists end-stop guesses this confident. Weaker guesses (mostly V3 backoff
 // tiers) are still stored and graded, but never shown, so END n can't pick one either.
-const SHOWN_END_STOP_MIN_CONFIDENCE = 75;
+// 60 since V3 3.6.0 (sample-size-scaled confidence): the lowest gate where the first shown
+// suggestion is still right about 3 times in 4 on the replay (ml/EVAL.md). The habit's usual
+// stop is shown whenever it fires, independent of this gate.
+const SHOWN_END_STOP_MIN_CONFIDENCE = 60;
 
 /**
  * The stored end-stop guesses an admin is shown, in stored order. END 1/2/3 resolve

@@ -218,6 +218,49 @@ Segments (end-stop top-1), V3 3.5.0 vs 3.4.1:
 
 **Decision:** V3 3.5.0 beats V3 as served by +22.5 points (CI above 0), so it ships on this branch. It does **not** meet the promotion rule against B3 on full history: +3.8, CI [-3.1, +10.6]. It's at parity with B3 or slightly ahead, but not significantly. Merging is for the manager to decide. The validity fix (item 1) stands alone as a correctness fix that doesn't regress (+8.8 at the 100 window).
 
+## V3: 3.6.0 confidence calibration (sample-size scaling)
+
+Live grading showed V3 3.5.0 overconfident: since 2026-10-14, end-stop guesses rated 100 were right 8 of 13 times (all 2026: 72 of 115). The admin SMS shows guesses rated ≥75, so this decides which stops are suggested. Cause: confidence was the winning stop's share of the weighted vote, so a guess backed by one past trip was 100. In the replay, 100-rated guesses backed by 1 trip were right 49% of the time (54/111), by 6+ trips about 85%.
+
+Fix: confidence × n / (n + 2), where n is the number of past trips that voted in the tier that answered (after the topology filter). One factor per guess list, so ranking and top-1/top-3 accuracy are unchanged (checked: identical hits on every replay row). `SAMPLE_PRIOR_TRIPS` = 2 in CONFIG; 0 restores 3.5.0. K=2 was picked over 1 and 1.5 by matching stated confidence to hit rate per bucket; it held when fitted on trips before August and read on August onward.
+
+Data: replay of Ryan's 2026 trips (`replay_js.js` logic, TZ=UTC, 500 window, no learned network graph, so not exactly what was served), excluding `needs_review` and `outage-recovery` trips. 1,024 graded trips, V3 answered 935.
+
+Top-1 calibration, before → after ("said" = mean stated confidence, "right" = hit rate):
+
+| Bucket | 3.5.0 n | said / right | 3.6.0 n | said / right |
+|---|---|---|---|---|
+| <50 | 221 | 26 / 15% | 511 | 27 / 27% |
+| 50-74 | 213 | 59 / 36% | 231 | 60 / 67% |
+| 75-89 | 96 | 83 / 73% | 154 | 82 / 78% |
+| 90-99 | 115 | 95 / 65% | 39 | 93 / 87% |
+| 100 | 290 | 100 / 66% | 0 | n/a |
+
+August onward only (out of the fitting window): 75-89 said 82 / right 73% (n=44), 90-99 said 92 / right 89% (n=9). The post-2026-10-14 slice is only 24 replay rows, too few to read.
+
+Admin trip-start text at the old gate (habit's usual stop if it fires, else V3 guesses ≥75), same 1,024 trips:
+
+| | Shows a suggestion | First suggestion right |
+|---|---|---|
+| 3.5.0 | 504 (49%) | 67% |
+| 3.6.0 | 223 (22%) | 81% |
+| (K=1, not shipped) | 299 (29%) | 77% |
+
+Habit fires on 95 trips in both. V3-only suggestions go from 409 (right 63%) to 128 (right 79%).
+
+**Display gate retuned to 60.** Ryan prefers more suggestions (the END 1 shortcut) as long as the first one is right about 3 times in 4. Same 1,024 trips with 3.6.0 scores; the habit's usual stop is shown whenever it fires at every gate:
+
+| Gate | Trips with a suggestion | First suggestion right | Aug onward (n=205): shown / right |
+|---|---|---|---|
+| 50 | 41.4% | 72.9% | 44.4% / 71.4% |
+| 55 | 34.1% | 73.9% | 37.1% / 72.4% |
+| **60** | **31.7%** | **76.6%** | 35.6% / 75.3% |
+| 65 | 27.2% | 79.2% | 33.7% / 76.8% |
+| 70 | 24.6% | 79.4% | 33.2% / 77.9% |
+| 75 | 21.8% | 81.2% | 31.7% / 78.5% |
+
+**Decision:** ship K=2 with the gate at 60, the lowest gate that stays at or above 75% right, on all rows and on August onward. Against 3.5.0 at 75 (49% shown, 67% right), suggestions are shown on about a third of trips instead of half, and the first one is right about 3 times in 4 instead of 2 in 3. At gate 60, a guess needs at least 3 agreeing past trips (3/5 = 60). Trips started under 3.5.0 and still active at deploy keep their stored, unscaled scores, so for those few trips END 1 may accept a 60-74 guess the start reply didn't list.
+
 ## V4/V5 end stop: fresh fit, relaxed filters, serve-parity features
 
 Scored by `ml/eval/predictors/v45.py` (`--only v45`). "Weekly" rows refit at each Monday 04:00 UTC retrain, as `retrain.yml` does. The shipped row is the exact config the training script now uses. End stop, n=409; deltas are paired top-1 on the last 90 days (n=160), with 95% CIs.

@@ -11,6 +11,8 @@
  *   topology filter - Post-inference for subway/LRT end stop predictions.
  *   v3.5 - End-stop backoff tiers (route, stop, agency) when no exact route+stop history,
  *          library stops with direction words are valid, 500-trip history window.
+ *   v3.6 - Confidence is scaled by sample size, n / (n + 2) for n voting trips, so a guess
+ *          backed by one past trip tops out at 33 instead of 100. Ranking is unchanged.
  */
 
 let _topology = null;
@@ -24,7 +26,7 @@ const _stopIndexByLibrary = new WeakMap();
 const _EMPTY_LIBRARY = [];
 
 const PredictionEngineV3 = {
-  VERSION: '3.5.0',
+  VERSION: '3.6.0',
 
   CONFIG: {
     TIME_SIGMA_HOURS: 1.5,
@@ -38,6 +40,11 @@ const PredictionEngineV3 = {
     BACKOFF: true,
     BACKOFF_ORDER: ['route', 'stop', 'agency'],
     BACKOFF_CONFIDENCE: { route: 0.6, stop: 0.5, agency: 0.3 },
+    // 3.6.0: end-stop confidence is multiplied by n / (n + SAMPLE_PRIOR_TRIPS), where n is the
+    // number of past trips that voted. Before this, one matching trip meant confidence 100, and
+    // 3.5.0 guesses rated 100 were right about 2 times in 3 (1 in 2 when backed by one trip).
+    // 2 was fitted on a replay of Ryan's 2026 trips (ml/EVAL.md). 0 turns the scaling off.
+    SAMPLE_PRIOR_TRIPS: 2,
   },
 
   /**
@@ -222,7 +229,8 @@ const PredictionEngineV3 = {
 
       const ranked = this._voteEndStops(candidates, context, now, atTransferPoint, ridesAfterMap);
       if (ranked.length === 0) continue;
-      const scale = tier === 'exact' ? 1 : this.CONFIG.BACKOFF_CONFIDENCE[tier];
+      const scale = (tier === 'exact' ? 1 : this.CONFIG.BACKOFF_CONFIDENCE[tier]) *
+        this._sampleSizeFactor(candidates.length);
       return ranked.slice(0, topN).map(v => ({
         stop: v.stop,
         confidence: Math.round(v.share * 100 * scale),
@@ -231,6 +239,15 @@ const PredictionEngineV3 = {
       }));
     }
     return [];
+  },
+
+  /**
+   * Shrinks confidence for guesses backed by few past trips: n / (n + SAMPLE_PRIOR_TRIPS).
+   * One factor per guess list, so the order of the guesses never changes.
+   */
+  _sampleSizeFactor: function (n) {
+    const k = this.CONFIG.SAMPLE_PRIOR_TRIPS || 0;
+    return n > 0 ? n / (n + k) : 0;
   },
 
   /**
