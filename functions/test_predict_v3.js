@@ -123,8 +123,10 @@ test('3.6.0: one past trip is not certainty; confidence grows with matching trip
   assert.equal(conf(2), 50);
   assert.equal(conf(6), 75);
   assert.equal(conf(18), 90);
-  // A single-trip guess never clears the admin display gate (75).
-  assert.ok(conf(1) < 75);
+  // A guess backed by one or two trips never clears the admin display gate.
+  const { SHOWN_END_STOP_MIN_CONFIDENCE } = require('./lib/handlers-utils');
+  assert.ok(conf(2) < SHOWN_END_STOP_MIN_CONFIDENCE);
+  assert.ok(conf(3) >= SHOWN_END_STOP_MIN_CONFIDENCE);
 });
 
 test('3.6.0: sample-size scaling never changes which stops are guessed or their order', () => {

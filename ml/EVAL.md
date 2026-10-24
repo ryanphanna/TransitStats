@@ -238,7 +238,7 @@ Top-1 calibration, before → after ("said" = mean stated confidence, "right" = 
 
 August onward only (out of the fitting window): 75-89 said 82 / right 73% (n=44), 90-99 said 92 / right 89% (n=9). The post-2026-10-14 slice is only 24 replay rows, too few to read.
 
-Admin trip-start text (habit's usual stop if it fires, else V3 guesses ≥75), same 1,024 trips:
+Admin trip-start text at the old gate (habit's usual stop if it fires, else V3 guesses ≥75), same 1,024 trips:
 
 | | Shows a suggestion | First suggestion right |
 |---|---|---|
@@ -248,7 +248,18 @@ Admin trip-start text (habit's usual stop if it fires, else V3 guesses ≥75), s
 
 Habit fires on 95 trips in both. V3-only suggestions go from 409 (right 63%) to 128 (right 79%).
 
-**Decision:** ship K=2. Suggestions roughly halve, but a shown suggestion is right about 4 times in 5 instead of 2 in 3. If that's too rare, lowering the display gate (not the score) is the knob: confidence now means roughly the chance of being right.
+**Display gate retuned to 60.** Ryan prefers more suggestions (the END 1 shortcut) as long as the first one is right about 3 times in 4. Same 1,024 trips with 3.6.0 scores; the habit's usual stop is shown whenever it fires at every gate:
+
+| Gate | Trips with a suggestion | First suggestion right | Aug onward (n=205): shown / right |
+|---|---|---|---|
+| 50 | 41.4% | 72.9% | 44.4% / 71.4% |
+| 55 | 34.1% | 73.9% | 37.1% / 72.4% |
+| **60** | **31.7%** | **76.6%** | 35.6% / 75.3% |
+| 65 | 27.2% | 79.2% | 33.7% / 76.8% |
+| 70 | 24.6% | 79.4% | 33.2% / 77.9% |
+| 75 | 21.8% | 81.2% | 31.7% / 78.5% |
+
+**Decision:** ship K=2 with the gate at 60, the lowest gate that stays at or above 75% right, on all rows and on August onward. Against 3.5.0 at 75 (49% shown, 67% right), suggestions are shown on about a third of trips instead of half, and the first one is right about 3 times in 4 instead of 2 in 3. At gate 60, a guess needs at least 3 agreeing past trips (3/5 = 60). Trips started under 3.5.0 and still active at deploy keep their stored, unscaled scores, so for those few trips END 1 may accept a 60-74 guess the start reply didn't list.
 
 ## V4/V5 end stop: fresh fit, relaxed filters, serve-parity features
 
