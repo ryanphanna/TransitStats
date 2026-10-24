@@ -8,33 +8,12 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+### Texting and trips
+
 - **Start by texting.** People on the invite list can text the number to get set up: the account is created, the phone is linked, and a website sign-in link arrives by email. Everyone gets a one-time welcome text when added, and replying STOP is respected.
-- **Monthly Recap.** A shareable transfer-ticket card for last month's rides (day grid, trips, hours, top routes, favourite stop, busiest day), linked from the top menu and sized to fit a laptop window. Imported PRESTO rides count too, and a ride both logged and imported counts once.
-- **PRESTO import for everyone.** Any signed-in user can import their PRESTO history from the import page or Settings, with step-by-step instructions for getting the file and a preview that lists what it skips and separates fares from card top-ups. New accounts with no rides see an import prompt.
-- **Travel corridor map.** A private heatmap that draws your repeated trips along real route shapes, shaded by how often you ride them, opening on your busiest area.
-- **"Usual trip" end-stop prediction (admins only).** When a trip from that stop at that time usually ends in the same place, the start reply leads with that stop, still followed by the numbered list. It's right 84% of the time it shows.
-- **Clicking map lines and stops shows the route or stop name.**
-- **Phone-only accounts can link an email in Settings**, so signing in with email reaches the same account instead of creating an empty one.
-- **Public profiles are open to every account**, and the dashboard links to your public profile when sharing is on.
-- **Terms of Service and Privacy Policy pages**, linked from the login screen.
 - **Tap-to-end buttons (switched off).** Trip-start texts can show likely stops as buttons on phones that support RCS; they turn on once the carrier approves the sender.
-- **A lightning-bolt browser tab icon** on every page.
-- **End-stop guesses are right on 46% of trips, up from 28%.** New trips fall back to the same route or stop and look further back in your history, and the text only suggests a stop when fairly sure.
-- **Predictions keep each agency separate.** Same route numbers or stop names in different cities can no longer mix, and a one-off trip elsewhere no longer affects your habits or predictions.
-- **Settings is a panel instead of a separate page.** It opens over the map with Account, Map, Profile and Sharing tabs, and shows your plan (Free, Premium or Admin).
-- **Pages load faster.** Saved map dots show before the full history loads, the dashboard no longer reads your trip history twice, signed-in pages don't wait on session sync, and icons ship with the app instead of loading from another site.
-- **Signed-out visitors go straight to login on every page**, and come back to the page they wanted after signing in.
 - **Texts to an unlinked number explain how to link it** with REGISTER, instead of mentioning an invite list.
-- **Login texts say codes expire after 10 minutes.**
-- **The sign-in screen is clearer on phones.** It says what TransitStats is, lets you go back if you mistype your number, and lets iPhone fill in your number. The email option is hidden on the main login, since email-only accounts can't log trips by text.
-- **The login map shows the real TTC network** (Lines 1, 2, 4, 5) for visitors in Toronto.
-- **Trips with no exit recorded no longer show a guessed exit on your map.**
-- **Social preview cards show the full ride map** over real street tiles, with totals in the post text, and render as large cards on LinkedIn.
-- **Website visits are counted with Google Analytics**, without any trip or location data. The owner's own visits are skipped.
-- **No more all-caps labels.**
-- **Smaller interface polish.** The TransitStats name stands out more on the dashboard, Share sits in the top-right on public profiles, and the PRESTO file picker and text-link buttons match the app's style.
 - **Admins get every premium text feature automatically.**
-- **Removed the Routes page, the Trip Paths beta, the live-trip indicator and the browser admin area**, keeping the personal map as the main view.
 - **Trip texts are less likely to be dropped under load.** The texting function was running out of memory; it now has more and reloads the stop list about once an hour instead of on every trip.
 - **Two texts arriving at the same moment no longer mix up each other's stop data.**
 - **No more false "trip not ended" prompts on spotty signal**, when a phone quietly resent a trip-start text a few minutes later.
@@ -42,22 +21,63 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Stop matching finds the right stop more often.** Stations typed as a platform or with different punctuation match, stops entered by code are found in Atlas, Pittsburgh trips use Pittsburgh Regional Transit, routes with backwards directions (such as Bathurst, Keele and King) are corrected, and corrected trips are re-checked. Different stops are never merged.
 - **Texted trips no longer get a made-up agency.** Words like "Downtown" or typos are read as the direction, and known agencies and nicknames (such as GO or NFTA) are recognized however they're typed.
 - **"Up" and "Down" stay as typed** instead of becoming "Up Valley" or "Down Mountain".
-- **PRESTO imports are accurate.** Rides land on the right day, GO tap-ins and tap-outs pair into one trip even after a missed tap-off, refunded fares are left out, rides both logged and imported count once, and imported rides show on the dashboard as well as the public profile.
-- **PRESTO imports fail less.** One bad row no longer blocks a file, CSVs with hidden characters import, a PDF upload explains what file to use instead, errors are plain and safe to retry, and opening the import page without access no longer signs you out.
-- **Idle tabs stay signed in**, and a dashboard refresh shows a loading state instead of a blank or fake empty page while your session restores.
+
+### Predictions
+
+- **"Usual trip" end-stop prediction (admins only).** When a trip from that stop at that time usually ends in the same place, the start reply leads with that stop, still followed by the numbered list. It's right 84% of the time it shows.
+- **End-stop guesses are right on 46% of trips, up from 28%.** New trips fall back to the same route or stop and look further back in your history, and the text only suggests a stop when fairly sure.
+- **Predictions keep each agency separate.** Same route numbers or stop names in different cities can no longer mix, and a one-off trip elsewhere no longer affects your habits or predictions.
+
+### Map and dashboard
+
+- **Travel corridor map.** A private heatmap that draws your repeated trips along real route shapes, shaded by how often you ride them, opening on your busiest area.
+- **Clicking map lines and stops shows the route or stop name.**
+- **Settings is a panel instead of a separate page.** It opens over the map with Account, Map, Profile and Sharing tabs, and shows your plan (Free, Premium or Admin).
+- **Trips with no exit recorded no longer show a guessed exit on your map.**
+- **Removed the Routes page, the Trip Paths beta, the live-trip indicator and the browser admin area**, keeping the personal map as the main view.
 - **The dashboard no longer hangs** if loading your trips fails.
-- **Saving a public identity works again**, and picking one that's taken says so.
-- **The "Allow others to view your shared stats page" switch no longer shows "Failed to sync trips".**
 - **Settings no longer crashes for a new account** with no agency chosen.
 - **Maps load reliably.** Map tiles no longer need a key, dragging stops where you leave it, and public profile pages load their styling.
-- **The app stays in light mode** even when the browser is set to dark.
+
+### Recap and PRESTO import
+
+- **Monthly Recap.** A shareable transfer-ticket card for last month's rides (day grid, trips, hours, top routes, favourite stop, busiest day), linked from the top menu and sized to fit a laptop window. Imported PRESTO rides count too, and a ride both logged and imported counts once.
+- **PRESTO import for everyone.** Any signed-in user can import their PRESTO history from the import page or Settings, with step-by-step instructions for getting the file and a preview that lists what it skips and separates fares from card top-ups. New accounts with no rides see an import prompt.
+- **PRESTO imports are accurate.** Rides land on the right day, GO tap-ins and tap-outs pair into one trip even after a missed tap-off, refunded fares are left out, rides both logged and imported count once, and imported rides show on the dashboard as well as the public profile.
+- **PRESTO imports fail less.** One bad row no longer blocks a file, CSVs with hidden characters import, a PDF upload explains what file to use instead, errors are plain and safe to retry, and opening the import page without access no longer signs you out.
+
+### Sign-in, accounts and sharing
+
+- **Phone-only accounts can link an email in Settings**, so signing in with email reaches the same account instead of creating an empty one.
+- **Public profiles are open to every account**, and the dashboard links to your public profile when sharing is on.
+- **Signed-out visitors go straight to login on every page**, and come back to the page they wanted after signing in.
+- **Login texts say codes expire after 10 minutes.**
+- **The sign-in screen is clearer on phones.** It says what TransitStats is, lets you go back if you mistype your number, and lets iPhone fill in your number. The email option is hidden on the main login, since email-only accounts can't log trips by text.
+- **The login map shows the real TTC network** (Lines 1, 2, 4, 5) for visitors in Toronto.
+- **Social preview cards show the full ride map** over real street tiles, with totals in the post text, and render as large cards on LinkedIn.
+- **Idle tabs stay signed in**, and a dashboard refresh shows a loading state instead of a blank or fake empty page while your session restores.
+- **Saving a public identity works again**, and picking one that's taken says so.
+- **The "Allow others to view your shared stats page" switch no longer shows "Failed to sync trips".**
 - **Social preview images load for large ride histories** and skip bad coordinates instead of breaking.
+
+### Security and privacy
+
+- **Website visits are counted with Google Analytics**, without any trip or location data. The owner's own visits are skipped.
 - **Phone sign-in is protected against abuse.** Code requests go through an invisible bot check that blocks when its setting is missing, each source can request 10 codes an hour, and a daily cap keeps a reserve for recent users so one person can't lock everyone out. None of these responses reveal whether a number is registered or opted out.
 - **A number added by invite must be confirmed before it can see or change your data.** It can log trips right away; anything else asks for a code sent to the account's email.
 - **Closed privacy leaks.** Public profiles no longer expose private fields like admin or premium status, other people's Rocket GPS trails are no longer readable, and the unused Rocket page is gone.
 - **Prediction models are no longer public.** They contained real stop and route names, so they now live in private storage and are trained only on approved users.
 - **Server logs mask phone numbers and email addresses** and no longer record message contents.
 - **Updated web and Functions dependencies to patched releases**, clearing open security alerts, including two denial-of-service issues in text-message handling.
+
+### Platform and other
+
+- **Terms of Service and Privacy Policy pages**, linked from the login screen.
+- **A lightning-bolt browser tab icon** on every page.
+- **Pages load faster.** Saved map dots show before the full history loads, the dashboard no longer reads your trip history twice, signed-in pages don't wait on session sync, and icons ship with the app instead of loading from another site.
+- **No more all-caps labels.**
+- **Smaller interface polish.** The TransitStats name stands out more on the dashboard, Share sits in the top-right on public profiles, and the PRESTO file picker and text-link buttons match the app's style.
+- **The app stays in light mode** even when the browser is set to dark.
 
 ## [1.49.4] — 2026-08-26
 
