@@ -25,9 +25,9 @@ This family handles route and end-stop inference at trip start.
 - **V3** — `functions/lib/predict_v3.js`
   Live heuristic weighted-voting model for route and end-stop guesses. (See [detailed history subpage](./intelligence/V3.md) for the v1–v3.3 archive.)
 - **V4** — `functions/lib/predict_v4.js`
-  Candidate logistic-regression end-stop model trained from trip history (the route model was removed).
+  Candidate logistic-regression end-stop model trained from trip history (the route model was removed). Graded weekly, not run live (see [Weekly shadow grading](#weekly-shadow-grading-v4v5)).
 - **V5** — `functions/lib/predict_v5.js`
-  Candidate XGBoost end-stop model exported to ONNX for live inference (the route model was removed).
+  Candidate XGBoost end-stop model exported to ONNX (the route model was removed). Graded weekly, not run live.
 - **V6** — (in design)
   Next-generation model focused on journey/sequence context. See the [V6 design spike](./V6_DESIGN_SPIKE.md).
 
@@ -107,7 +107,7 @@ Current active signals, config, strengths, and data notes are documented above. 
 
 **What it does:** Uses trained logistic-regression models to predict routes and end stops from trip history instead of relying on hand-tuned weights.
 
-**Status:** Candidate. Evaluated in parallel against the live V3 path for users explicitly enabled with `allowedUsers/{email}.experimentalIntelligence`.
+**Status:** Candidate. Not run live since CIV-425 (October 2026); graded weekly against V3 on the past week's real trips (see [Weekly shadow grading](#weekly-shadow-grading-v4v5)).
 
 Detailed version history, benchmarks, and per-iteration notes: [docs/intelligence/V4.md](./intelligence/V4.md).
 
@@ -119,11 +119,35 @@ Detailed version history, benchmarks, and per-iteration notes: [docs/intelligenc
 
 **What it does:** Uses XGBoost models exported to ONNX for richer feature interactions and stronger learned route/end-stop inference than V4.
 
-**Status:** Candidate. Evaluated in parallel against the live V3 path for users explicitly enabled with `allowedUsers/{email}.experimentalIntelligence`.
+**Status:** Candidate. Not run live since CIV-425; graded weekly with V4.
 
 Detailed version history, benchmarks, and per-iteration notes: [docs/intelligence/V5.md](./intelligence/V5.md).
 
 ---
+
+### Weekly shadow grading (V4/V5)
+
+Until October 2026, V4 and V5 ran on every trip start for allowlisted users (`allowedUsers/{email}.experimentalIntelligence`) and were stored as `endStopPredictionV4/V5` and graded into `predictionStats` at finalization. No reply or page used them. They cost a model download, the ONNX runtime (about 50 MB of function memory) and some latency on each trip text.
+
+**Now (CIV-425):** `ML_ENDSTOP_LIVE = false` in `functions/lib/constants.js`. With it off:
+- The sms function never loads `predict_v4.js`, `predict_v5.js`, `model-store.js` or `onnxruntime-node`.
+- New trips store `endStopPredictionV4/V5: null`, so no new `v4-endstop`/`v5-endstop` rows. Grading and readers already skip missing guesses.
+- `fillPredictions` (after stop disambiguation) does nothing.
+
+**Weekly grading:** `functions/scripts/weekly-shadow-grade.js` runs in `retrain.yml` every Monday, before the retrain. It replays the past 7 days of `TRAIN_USER_IDS` trips through V3, V4 and V5.
+- **Models:** the published set (`models/latest.json`), i.e. the models that would have served that week, so they never trained on those trips.
+- **Trips:** texted only (`sms`, `sms_fallback`, `mms`; no `outage-recovery` or imports), finished, and clean (no `needs_review`, no blocking correction, stop matched).
+- **Inputs:** each trip gets the live trip-start inputs. That's the 500-trip serving history before it, the same V4/V5 eligibility gate, and the same context builder (`functions/lib/endstop-context.js`, shared with `handlers-trip.js`). Hits are scored with V3's `_stopMatch`, as finalization does.
+- **Network graph:** the learned graph can't be rewound, so all three engines run without it. V3's numbers here can differ slightly from live.
+- Read-only on trips.
+
+Results:
+- Firestore `mlShadowGrades/{YYYY-MM-DD}__{userId}`: written every week, even when the retrain gate rejects.
+- A "Shadow grading" table in that week's `ml/MODEL_LOG.md` entry, when the retrain publishes.
+
+Each records per engine top-1 over all graded trips, coverage, top-1 when answered (what `predictionStats` measured), and top-1 on the paired slice where all three answered. Compare engines on the paired slice.
+
+**Switching back on:** if V4 or V5 pulls ahead of V3 on the paired slice for several weeks, set `ML_ENDSTOP_LIVE = true` and deploy functions. Trip starts then run and store them again, and finalization grades them as before. A one-off check: `TZ=UTC GOOGLE_APPLICATION_CREDENTIALS=<admin key> TRAIN_USER_IDS=<uid> node functions/scripts/weekly-shadow-grade.js --dry-run [--days 14]`.
 
 ## Shared Prediction Files
 

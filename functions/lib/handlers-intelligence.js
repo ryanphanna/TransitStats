@@ -14,9 +14,11 @@ const {
 } = require('./db');
 const { getConfiguredPrimaryAgency } = require('./primary-agency');
 const { NetworkEngine } = require('./network.js');
-const { PredictionEngineV4 } = require('./predict_v4.js');
-const { PredictionEngineV5 } = require('./predict_v5.js');
-const ModelStore = require('./model-store');
+const { ML_ENDSTOP_LIVE } = require('./constants');
+// V4/V5 only load when they run live (ML_ENDSTOP_LIVE, constants.js).
+const { PredictionEngineV4 } = ML_ENDSTOP_LIVE ? require('./predict_v4.js') : {};
+const { PredictionEngineV5 } = ML_ENDSTOP_LIVE ? require('./predict_v5.js') : {};
+const ModelStore = ML_ENDSTOP_LIVE ? require('./model-store') : null;
 const {
   parseStopSignImage,
 } = require('./gemini');
@@ -26,10 +28,13 @@ const { isModelReady } = require('./intelligence-eligibility');
 
 /**
  * Run V4/V5 end-stop predictions for a trip that was created during stop disambiguation
- * (predictions are null at create time because the stop wasn't known yet).
+ * (predictions are null at create time because the stop wasn't known yet). Only while
+ * ML_ENDSTOP_LIVE is on.
  * Fire-and-forget — errors are logged but never surface to the user.
  */
 async function fillPredictions(user, tripId, stopName, route, direction, agency, traceId = null) {
+  // V4/V5 are graded weekly instead of live while ML_ENDSTOP_LIVE is off: nothing to fill.
+  if (!ML_ENDSTOP_LIVE) return;
   try {
     const profile = await getUserProfile(user.userId);
     if (!(await isExperimentalIntelligenceEnabled(user.email))) return;

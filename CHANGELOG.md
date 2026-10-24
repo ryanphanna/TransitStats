@@ -28,6 +28,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **End-stop guesses are right on 46% of trips, up from 28%.** New trips fall back to the same route or stop and look further back in your history, and the text only suggests a stop when fairly sure.
 - **Predictions keep each agency separate.** Same route numbers or stop names in different cities can no longer mix, and a one-off trip elsewhere no longer affects your habits or predictions.
 - **Stop suggestions are only shown when they're likely right.** The engine used to call itself certain on guesses that were right about 6 times in 10.
+- **Trip texts reply a little faster and use less memory.** The experimental ML models no longer run on every trip; they're tested weekly against the past week's real trips instead, and can be switched back on if they pull ahead.
 
 ### Map and dashboard
 

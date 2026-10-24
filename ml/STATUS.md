@@ -10,7 +10,7 @@ Current state of TransitStats prediction systems. Historical metrics and dated f
 
 ## Candidates
 
-- V4 and V5 run in shadow/candidate evaluation and are not promoted by holdout accuracy alone.
+- V4 and V5 are candidates, not run live: they're graded weekly against V3 on the past week's real trips (`docs/INTELLIGENCE.md`, Weekly shadow grading). They are not promoted by holdout accuracy alone.
 - V6 remains an R&D candidate. Promotion requires a fresh, scoped, no-leakage comparison against the live path.
 
 ## Before changing production behaviour
