@@ -268,7 +268,7 @@ async function maybeHandleStopDisambiguation({
       .join('\n');
     await sendSmsReply(
       phoneNumber,
-      `${routeDisplay} started from ${stopDisplay}, but I found multiple possible boarding stops:\n${candidateList}\n\nReply with a number to set the stop, SKIP to leave it unverified, or DISCARD to cancel the trip.`
+      `${routeDisplay} started from ${stopDisplay}, which matches more than one stop:\n${candidateList}\nReply with a number to set the stop, SKIP to leave it unverified, or DISCARD to cancel the trip.`
     );
     return true;
   }

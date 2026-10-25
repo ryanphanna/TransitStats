@@ -147,7 +147,7 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
   }
   const parsedStop = parseStopInput(stopInput);
   if (!parsedStop.stopCode && !parsedStop.stopName) {
-    await sendSmsReply(phoneNumber, 'I could not identify the boarding stop. Send the route and stop again.');
+    await sendSmsReply(phoneNumber, 'Could not identify the boarding stop. Send the route and stop again.');
     return;
   }
   const stopDisplay = getStopDisplay(parsedStop.stopCode, parsedStop.stopName);
@@ -165,7 +165,7 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
   );
   if (handled) return;
   if (!resolvedAgency) {
-    await sendSmsReply(phoneNumber, 'I could not identify the transit agency. Include it on a new line, such as TTC or GO Transit.');
+    await sendSmsReply(phoneNumber, 'Could not identify the transit agency. Include it on a new line, such as TTC or GO Transit.');
     return;
   }
 
