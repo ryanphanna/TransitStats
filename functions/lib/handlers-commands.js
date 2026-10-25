@@ -28,7 +28,8 @@ const {
   hasPremiumAccess,
 } = require('./utils');
 const { getConfiguredPrimaryAgency } = require('./primary-agency');
-const { isPhoneConfirmed, EMAIL_NOT_FOUND_TEXT, UNLOCKED_TEXT, LINKED_NEUTRAL_TEXT } = require('./phone-confirmation');
+const { isPhoneConfirmed } = require('./phone-confirmation');
+const text = require('./sms-text');
 const { KNOWN_AGENCIES } = require('./constants');
 const {
   lookupAgencyTimezone,
@@ -42,36 +43,10 @@ async function handleHelp(phoneNumber, traceId = null) {
   const profile = user ? await getUserProfile(user.userId) : null;
   const isAdmin = user ? await isEmailAdmin(user.email) : false;
 
-  const commands = [
-    'STATUS - view active trip',
-    'STATS - your last 30 days',
-    'FORGOT - forgot to end a trip',
-    'DISCARD - didn\'t board, delete the trip',
-    'UNLINK - separate a linked journey',
-    'SETTINGS - view/change settings',
-  ];
-  if (hasPremiumAccess(profile, isAdmin)) commands.push('ASK [question] - AI stats');
+  const commands = [...text.HELP_COMMANDS];
+  if (hasPremiumAccess(profile, isAdmin)) commands.push(text.HELP_ASK_COMMAND);
 
-  await sendSmsReply(phoneNumber,
-    `TransitStats
-
-To start a trip, send:
-
-ROUTE STOP DIRECTION
-or on separate lines:
-ROUTE
-STOP NAME
-DIRECTION (optional)
-AGENCY (optional)
-
-To end a trip, send:
-END
-WHERE YOU GOT OFF
-NOTES (optional)
-
-Commands:
-${commands.join('\n')}`,
-  );
+  await sendSmsReply(phoneNumber, text.helpText(commands));
 }
 
 /**
@@ -81,7 +56,7 @@ async function handleStatus(phoneNumber, user, traceId = null) {
   const activeTrip = await getActiveTrip(user.userId);
 
   if (!activeTrip) {
-    await sendSmsReply(phoneNumber, 'No active trip.');
+    await sendSmsReply(phoneNumber, text.NO_ACTIVE_TRIP);
     return;
   }
 
@@ -105,11 +80,7 @@ async function handleStatus(phoneNumber, user, traceId = null) {
 
   const routeDisplay = getRouteDisplay(activeTrip.route, activeTrip.direction);
 
-  const message = `Active trip:
-${routeDisplay} from ${startStopDisplay}
-Started ${timeStr} (${elapsedMin} min ago)
-
-END [stop] to finish. FORGOT if you forgot to end. INFO for help.`;
+  const message = text.activeTripStatus(routeDisplay, startStopDisplay, timeStr, elapsedMin);
 
   await sendSmsReply(phoneNumber, message);
 }
@@ -121,7 +92,7 @@ async function handleDiscard(phoneNumber, user, traceId = null) {
   const activeTrip = await getActiveTrip(user.userId);
 
   if (!activeTrip) {
-    await sendSmsReply(phoneNumber, 'No active trip.');
+    await sendSmsReply(phoneNumber, text.NO_ACTIVE_TRIP);
     return;
   }
 
@@ -146,19 +117,19 @@ async function handleDiscard(phoneNumber, user, traceId = null) {
   }
   await clearPendingState(phoneNumber);
 
-  await sendSmsReply(phoneNumber, `Deleted ${routeDisplay}.`);
+  await sendSmsReply(phoneNumber, text.tripDeleted(routeDisplay));
 }
 
 async function handleAddNotes(phoneNumber, user, notes, traceId = null) {
   const cleanNotes = notes?.trim();
   if (!cleanNotes) {
-    await sendSmsReply(phoneNumber, 'Send NOTES followed by your note text.');
+    await sendSmsReply(phoneNumber, text.NOTES_USAGE);
     return;
   }
 
   const [latestTrip] = await getRecentCompletedTrips(user.userId, 1);
   if (!latestTrip) {
-    await sendSmsReply(phoneNumber, 'No recent completed trip to attach notes to.');
+    await sendSmsReply(phoneNumber, text.NO_TRIP_FOR_NOTES);
     return;
   }
 
@@ -167,7 +138,7 @@ async function handleAddNotes(phoneNumber, user, notes, traceId = null) {
   });
 
   const routeDisplay = getRouteDisplay(latestTrip.route, latestTrip.direction);
-  await sendSmsReply(phoneNumber, `Added notes to ${routeDisplay}.`);
+  await sendSmsReply(phoneNumber, text.notesAdded(routeDisplay));
 }
 
 /**
@@ -184,7 +155,7 @@ async function handleUnlink(phoneNumber, user, traceId = null) {
 
   const linked = snap.docs.find(d => d.data().journeyId);
   if (!linked) {
-    await sendSmsReply(phoneNumber, 'No linked trip to unlink.');
+    await sendSmsReply(phoneNumber, text.NO_LINKED_TRIP);
     return;
   }
 
@@ -204,7 +175,7 @@ async function handleUnlink(phoneNumber, user, traceId = null) {
   });
   await batch.commit();
 
-  await sendSmsReply(phoneNumber, `Unlinked ${routeDisplay} journey.`);
+  await sendSmsReply(phoneNumber, text.journeyUnlinked(routeDisplay));
 }
 
 /**
@@ -214,7 +185,7 @@ async function handleIncomplete(phoneNumber, user, traceId = null) {
   const activeTrip = await getActiveTrip(user.userId);
 
   if (!activeTrip) {
-    await sendSmsReply(phoneNumber, 'No active trip.');
+    await sendSmsReply(phoneNumber, text.NO_ACTIVE_TRIP);
     return;
   }
 
@@ -227,7 +198,7 @@ async function handleIncomplete(phoneNumber, user, traceId = null) {
     duration: null,
   });
 
-  await sendSmsReply(phoneNumber, `${routeDisplay} saved as incomplete.`);
+  await sendSmsReply(phoneNumber, text.tripSavedIncomplete(routeDisplay));
 }
 
 /**
@@ -244,14 +215,14 @@ async function handleRegister(phoneNumber, email, traceId = null) {
     if (embedded) candidate = embedded[0];
   }
   if (!emailRegex.test(candidate)) {
-    await sendSmsReply(phoneNumber, 'Invalid email format. Text REGISTER [email].');
+    await sendSmsReply(phoneNumber, text.INVALID_EMAIL_FORMAT);
     return;
   }
   email = candidate;
 
   const allowed = await isEmailAllowed(email);
   if (!allowed) {
-    await sendSmsReply(phoneNumber, EMAIL_NOT_FOUND_TEXT);
+    await sendSmsReply(phoneNumber, text.EMAIL_NOT_FOUND_TEXT);
     return;
   }
 
@@ -260,7 +231,7 @@ async function handleRegister(phoneNumber, email, traceId = null) {
     // Only a confirmed number may see which account it belongs to.
     await sendSmsReply(
       phoneNumber,
-      isPhoneConfirmed(existingUser) ? `Phone already linked to ${existingUser.email}.` : LINKED_NEUTRAL_TEXT
+      isPhoneConfirmed(existingUser) ? text.phoneAlreadyLinked(existingUser.email) : text.LINKED_NEUTRAL_TEXT
     );
     return;
   }
@@ -269,14 +240,14 @@ async function handleRegister(phoneNumber, email, traceId = null) {
   const existingVerification = await getVerificationData(phoneNumber);
   if (existingVerification?.lockedUntil && existingVerification.lockedUntil.toDate() > new Date()) {
     const minutesLeft = Math.ceil((existingVerification.lockedUntil.toDate() - new Date()) / 60000);
-    await sendSmsReply(phoneNumber, `Too many failed attempts. Try again in ${minutesLeft} minute${minutesLeft === 1 ? '' : 's'}.`);
+    await sendSmsReply(phoneNumber, text.tooManyAttemptsTryIn(minutesLeft));
     return;
   }
 
   // Resolve the account through Firebase Auth. The profile `email` field is not
   // trustworthy (clients could write it), so it must never pick the account.
   if (!(await getAuthUidByEmail(email))) {
-    await sendSmsReply(phoneNumber, EMAIL_NOT_FOUND_TEXT);
+    await sendSmsReply(phoneNumber, text.EMAIL_NOT_FOUND_TEXT);
     return;
   }
 
@@ -286,17 +257,13 @@ async function handleRegister(phoneNumber, email, traceId = null) {
   try {
     await db.collection('mail').add({
       to: email.toLowerCase(),
-      message: {
-        subject: 'TransitStats SMS Verification Code',
-        text: `Your code is: ${code}\n\nReply to SMS with this code.`,
-        html: `<p>Your code is: <strong>${code}</strong></p>`,
-      },
+      message: text.registerCodeEmail(code),
     });
   } catch (error) {
     console.error('Error queuing verification email:', error);
   }
 
-  await sendSmsReply(phoneNumber, `Code sent to ${email}. Reply with the 6-digit code within 20 minutes.`);
+  await sendSmsReply(phoneNumber, text.registerCodeSent(email));
 
   await setPendingState(phoneNumber, {
     type: 'awaiting_verification',
@@ -338,18 +305,18 @@ async function handleVerificationCode(phoneNumber, code, traceId = null) {
   });
 
   if (result.status === 'missing') {
-    await sendSmsReply(phoneNumber, 'No pending registration.');
+    await sendSmsReply(phoneNumber, text.NO_PENDING_REGISTRATION);
     return;
   }
 
   if (result.status === 'locked') {
     await clearPendingState(phoneNumber);
-    await sendSmsReply(phoneNumber, 'Too many failed attempts. Try again in 10 minutes.');
+    await sendSmsReply(phoneNumber, text.TOO_MANY_ATTEMPTS);
     return;
   }
 
   if (result.status === 'invalid') {
-    await sendSmsReply(phoneNumber, 'Invalid code.');
+    await sendSmsReply(phoneNumber, text.INVALID_CODE);
     return;
   }
 
@@ -362,19 +329,19 @@ async function handleVerificationCode(phoneNumber, code, traceId = null) {
   const existingLink = await getUserByPhone(phoneNumber);
   if (existingLink) {
     if (String(existingLink.email || '').toLowerCase() !== String(verificationData.email || '').toLowerCase()) {
-      await sendSmsReply(phoneNumber, 'Invalid code.');
+      await sendSmsReply(phoneNumber, text.INVALID_CODE);
       return;
     }
     await db.collection('phoneNumbers').doc(phoneNumber).update({ loginConfirmed: true });
     await clearPendingState(phoneNumber);
-    await sendSmsReply(phoneNumber, UNLOCKED_TEXT);
+    await sendSmsReply(phoneNumber, text.UNLOCKED_TEXT);
     return;
   }
 
   const userId = await getAuthUidByEmail(verificationData.email);
 
   if (!userId) {
-    await sendSmsReply(phoneNumber, 'Account not found.');
+    await sendSmsReply(phoneNumber, text.ACCOUNT_NOT_FOUND);
     return;
   }
 
@@ -388,7 +355,7 @@ async function handleVerificationCode(phoneNumber, code, traceId = null) {
 
   await clearPendingState(phoneNumber);
 
-  await sendSmsReply(phoneNumber, `Phone linked! Text "[route] [stop]" to log trips.`);
+  await sendSmsReply(phoneNumber, text.PHONE_LINKED);
 }
 
 /**
@@ -404,9 +371,7 @@ async function handleSettings(phoneNumber, user, rawArgs, traceId = null) {
     : (getConfiguredPrimaryAgency(profile) || 'Automatic');
 
   if (!rawArgs) {
-    await sendSmsReply(phoneNumber,
-      `Settings:\nPrimary agency: ${currentAgency}\n\nTo change: SETTINGS AGENCY [name]\nUse SETTINGS AGENCY AUTO to detect it automatically.\nExample: SETTINGS AGENCY GO Transit`
-    );
+    await sendSmsReply(phoneNumber, text.settingsSummary(currentAgency));
     return;
   }
 
@@ -418,26 +383,24 @@ async function handleSettings(phoneNumber, user, rawArgs, traceId = null) {
         defaultAgencyMode: 'automatic',
         primaryAgency: null,
       });
-      await sendSmsReply(phoneNumber, 'Primary agency set to automatic detection.');
+      await sendSmsReply(phoneNumber, text.AGENCY_SET_AUTOMATIC);
       return;
     }
     const normalized = normalizeAgency(agencyMatch[1].trim());
     const isKnown = KNOWN_AGENCIES.includes(normalized);
     if (!isKnown) {
-      await sendSmsReply(phoneNumber,
-        `Unknown agency "${agencyMatch[1].trim()}". Try: TTC, GO Transit, MiWay, YRT, OC Transpo, etc.`
-      );
+      await sendSmsReply(phoneNumber, text.unknownAgency(agencyMatch[1].trim()));
       return;
     }
     await db.collection('profiles').doc(user.userId).update({
       defaultAgency: normalized,
       defaultAgencyMode: 'manual',
     });
-    await sendSmsReply(phoneNumber, `Primary agency set to ${normalized}.`);
+    await sendSmsReply(phoneNumber, text.agencySet(normalized));
     return;
   }
 
-  await sendSmsReply(phoneNumber, 'Usage: SETTINGS AGENCY [name|AUTO]\nExample: SETTINGS AGENCY GO Transit');
+  await sendSmsReply(phoneNumber, text.SETTINGS_USAGE);
 }
 
 module.exports = {

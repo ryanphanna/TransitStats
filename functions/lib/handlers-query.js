@@ -21,6 +21,7 @@ const {
   getRouteDisplay,
   hasPremiumAccess,
 } = require('./utils');
+const text = require('./sms-text');
 const {
   aggregateTripStats,
   answerQueryWithGemini,
@@ -34,15 +35,12 @@ async function handleQuery(phoneNumber, user, question, traceId = null) {
   const profile = await getUserProfile(user.userId);
   const isAdmin = await isEmailAdmin(user.email);
   if (!hasPremiumAccess(profile, isAdmin)) {
-    await sendSmsReply(phoneNumber,
-      'AI Stats is a premium feature. Text STATS for your 30-day summary.',
-    );
+    await sendSmsReply(phoneNumber, text.ASK_PREMIUM_ONLY);
     return;
   }
 
   if (!question) {
-    await sendSmsReply(phoneNumber, 'Ask me anything about your trips, ' +
-      'e.g. "ASK how many trips have I taken on Fridays?"');
+    await sendSmsReply(phoneNumber, text.ASK_HELP);
     return;
   }
 
@@ -58,7 +56,7 @@ async function handleQuery(phoneNumber, user, question, traceId = null) {
   const trips = snapshot.docs.map((d) => d.data());
 
   if (trips.length === 0) {
-    await sendSmsReply(phoneNumber, 'You don\'t have any completed trips yet!');
+    await sendSmsReply(phoneNumber, text.NO_COMPLETED_TRIPS);
     return;
   }
 
@@ -66,7 +64,7 @@ async function handleQuery(phoneNumber, user, question, traceId = null) {
   const timezone = await lookupAgencyTimezone(recentAgency, traceId);
   const stats = aggregateTripStats(trips, timezone);
   if (await isGeminiRateLimited(phoneNumber, !!profile?.isPremium, isAdmin)) {
-    await sendSmsReply(phoneNumber, 'AI limit reached. Try again later.');
+    await sendSmsReply(phoneNumber, text.AI_LIMIT_REACHED);
     return;
   }
   const answer = await answerQueryWithGemini(
@@ -126,7 +124,7 @@ async function handleStatsCommand(phoneNumber, user, traceId = null) {
   });
 
   if (allTrips.length === 0) {
-    await sendSmsReply(phoneNumber, 'No trips logged in the last 60 days.');
+    await sendSmsReply(phoneNumber, text.NO_RECENT_TRIPS);
     return;
   }
 
@@ -134,11 +132,10 @@ async function handleStatsCommand(phoneNumber, user, traceId = null) {
   const isAdmin = await isEmailAdmin(user.email);
   const canSeeTrends = hasPremiumAccess(profile, isAdmin);
 
-  const getTrend = (current, previous, label) => {
-    if (!canSeeTrends || previous === 0) return '';
-    const pct = Math.round(((current - previous) / previous) * 100);
-    const arrow = pct >= 0 ? '↑' : '↓';
-    return ` (${arrow}${Math.abs(pct)}% vs ${label})`;
+  // Percent change, or null when the trend is not shown.
+  const getTrendPct = (current, previous) => {
+    if (!canSeeTrends || previous === 0) return null;
+    return Math.round(((current - previous) / previous) * 100);
   };
 
   const totalMin30 = last30.reduce((sum, t) => sum + (t.duration || 0), 0);
@@ -151,16 +148,15 @@ async function handleStatsCommand(phoneNumber, user, traceId = null) {
   }
   const topRoute = Object.entries(routeCounts30).sort((a, b) => b[1] - a[1])[0];
 
-  const totalHours = totalMin30 / 60;
-  const timeStr = totalHours >= 1 ? `${totalHours.toFixed(1)}h` : `${Math.round(totalMin30)}min`;
-
-  const weekLine = `Past 7 days: ${thisWeek.length} trip${thisWeek.length !== 1 ? 's' : ''}${getTrend(thisWeek.length, lastWeek.length, 'prior week')}`;
-  const topLine = topRoute ? `Top route: ${topRoute[0]} (${topRoute[1]}×)` : '';
-  const thirtyLine = `Last 30 days: ${last30.length} trips across ${uniqueRoutes30} route${uniqueRoutes30 !== 1 ? 's' : ''}, ${timeStr} riding${getTrend(last30.length, prev30.length, 'prior 30')}`;
-
-  const parts = [weekLine, thirtyLine];
-  if (topLine) parts.push(topLine);
-  await sendSmsReply(phoneNumber, parts.join('\n\n'));
+  await sendSmsReply(phoneNumber, text.statsSummary({
+    weekCount: thisWeek.length,
+    weekTrendPct: getTrendPct(thisWeek.length, lastWeek.length),
+    monthCount: last30.length,
+    monthTrendPct: getTrendPct(last30.length, prev30.length),
+    routeCount: uniqueRoutes30,
+    totalMinutes: totalMin30,
+    topRoute,
+  }));
 }
 
 /**
@@ -190,7 +186,7 @@ async function handleJourneyLink(phoneNumber, user) {
     earlierTrip = history[1]; // older (lower endTime)
     laterTrip = history[0];   // newer
   } else {
-    await sendSmsReply(phoneNumber, 'Not enough trips to link. Complete at least one trip first.');
+    await sendSmsReply(phoneNumber, text.NOT_ENOUGH_TRIPS_TO_LINK);
     return;
   }
 
@@ -202,14 +198,11 @@ async function handleJourneyLink(phoneNumber, user) {
   const gapMinutes = (laterStart - earlierEnd) / 60000;
 
   if (gapMinutes < 0) {
-    await sendSmsReply(phoneNumber, 'Trips overlap in time — cannot link.');
+    await sendSmsReply(phoneNumber, text.TRIPS_OVERLAP);
     return;
   }
   if (gapMinutes > 60) {
-    await sendSmsReply(
-      phoneNumber,
-      `Gap between trips is ${Math.round(gapMinutes)} min. Only trips within 60 min can be linked as a journey.`,
-    );
+    await sendSmsReply(phoneNumber, text.journeyGapTooLong(gapMinutes));
     return;
   }
 
@@ -218,7 +211,7 @@ async function handleJourneyLink(phoneNumber, user) {
 
   // Guard: already linked together
   if (earlierTrip.journeyId && laterTrip.journeyId && earlierTrip.journeyId === laterTrip.journeyId) {
-    await sendSmsReply(phoneNumber, 'These trips are already linked as a journey.');
+    await sendSmsReply(phoneNumber, text.ALREADY_LINKED);
     return;
   }
 
@@ -227,11 +220,9 @@ async function handleJourneyLink(phoneNumber, user) {
   batch.update(db.collection('trips').doc(laterTrip.id), { journeyId });
   await batch.commit();
 
-  const gapStr = gapMinutes < 1 ? '<1' : Math.round(gapMinutes);
   await sendSmsReply(
     phoneNumber,
-    `${getRouteDisplay(earlierTrip.route)} → ${getRouteDisplay(laterTrip.route)} ` +
-    `linked as a journey (${gapStr} min transfer).`,
+    text.journeyLinked(getRouteDisplay(earlierTrip.route), getRouteDisplay(laterTrip.route), gapMinutes),
   );
 }
 

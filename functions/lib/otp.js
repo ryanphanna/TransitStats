@@ -1,7 +1,8 @@
 const { createHash, randomInt } = require('crypto');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
-const { OTP_UNCONFIRMED_TEXT: PHONE_LOGIN_UNCONFIRMED, isPhoneConfirmed } = require('./phone-confirmation');
+const { isPhoneConfirmed } = require('./phone-confirmation');
+const { OTP_UNCONFIRMED_TEXT: PHONE_LOGIN_UNCONFIRMED, otpLoginCode } = require('./sms-text');
 // Roughly the latency of one Twilio send.
 const DECOY_DELAY_MIN_MS = 300;
 const DECOY_DELAY_SPREAD_MS = 500;
@@ -224,8 +225,7 @@ function createOtpHandlers({ db, adminAuth, sendSmsReply, verifyTurnstile, getTu
         return;
       }
 
-      const message = `Your TransitStats login verification code is: ${code}.\n\nThis code expires in 10 minutes.\n\n@transitstats.fyi #${code}`;
-      const smsSent = await sendSmsReply(phoneNumber, message);
+      const smsSent = await sendSmsReply(phoneNumber, otpLoginCode(code));
       if (!smsSent) {
         const globalField = usedReserve ? 'reserveCount' : 'count';
         await globalRef.update({ [globalField]: FieldValue.increment(-1) }).catch(() => {});

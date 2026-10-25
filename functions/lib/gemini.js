@@ -5,6 +5,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { defineSecret } = require('firebase-functions/params');
 const { VALID_INTENTS, VALID_SENTIMENTS } = require('./constants');
 const logger = require('./logger');
+const { ASK_FAILED } = require('./sms-text');
 
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const GEMINI_MODEL = 'gemini-2.5-flash';
@@ -817,7 +818,7 @@ Question: "${question}"`;
     return response.text().trim();
   }, 3, 1000, traceId).catch((err) => {
     logger.error('Gemini Tooling Error', { error: err.message, stack: err.stack }, traceId);
-    return 'Sorry, I had trouble searching your data. Try again?';
+    return ASK_FAILED;
   });
 }
 

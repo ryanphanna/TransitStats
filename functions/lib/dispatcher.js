@@ -38,7 +38,8 @@ const { getConfiguredPrimaryAgency } = require('./primary-agency');
 const handlers = require('./handlers');
 const { createInviteHandlers } = require('./sms-invite');
 const { getAuth } = require('firebase-admin/auth');
-const { UNLOCK_PROMPT_TEXT, UNLOCK_UNAVAILABLE_TEXT, isPhoneConfirmed } = require('./phone-confirmation');
+const { isPhoneConfirmed } = require('./phone-confirmation');
+const text = require('./sms-text');
 
 let inviteHandlers = null;
 function getInviteHandlers() {
@@ -92,11 +93,11 @@ async function promptUnlock(phoneNumber, link) {
   // Everything below is limited to one reply per number per window.
   if (!(await shouldRespondToUnknown(phoneNumber))) return;
   if (!link.email) {
-    await sendSmsReply(phoneNumber, UNLOCK_UNAVAILABLE_TEXT);
+    await sendSmsReply(phoneNumber, text.UNLOCK_UNAVAILABLE_TEXT);
     return;
   }
   await getInviteHandlers().startPhoneConfirmation(phoneNumber, link.email);
-  await sendSmsReply(phoneNumber, UNLOCK_PROMPT_TEXT);
+  await sendSmsReply(phoneNumber, text.UNLOCK_PROMPT_TEXT);
 }
 
 /** Commands that are allowed to fall through pending-state handlers to normal dispatch. */
@@ -214,7 +215,7 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
   }
 
   if (apiOwner && /^REGISTER\b/.test(upperBody)) {
-    await sendSmsReply(phoneNumber, 'To link a phone, text REGISTER from that phone.');
+    await sendSmsReply(phoneNumber, text.REGISTER_FROM_PHONE);
     return '';
   }
 
@@ -280,7 +281,7 @@ async function handleConfirmAgencyState(phoneNumber, body, upperBody, state, tra
 
   if (upperBody === 'DISCARD') {
     await clearPendingState(phoneNumber);
-    await sendSmsReply(phoneNumber, 'Trip cancelled.');
+    await sendSmsReply(phoneNumber, text.TRIP_CANCELLED);
     return true;
   }
 
@@ -299,7 +300,7 @@ async function handleConfirmAgencyState(phoneNumber, body, upperBody, state, tra
 
   if (PENDING_PASSTHROUGH.has(upperBody) || upperBody.startsWith('ASK ')) return false;
 
-  await sendSmsReply(phoneNumber, 'Reply 1 or 2 to select an agency, SKIP for default, or DISCARD to cancel.');
+  await sendSmsReply(phoneNumber, text.AGENCY_CHOICE_REMINDER);
   return true;
 }
 
@@ -324,10 +325,7 @@ async function handleConfirmStopState(phoneNumber, body, upperBody, state, trace
             user, state.tripId, chosen.stopName, state.route, state.direction, state.agency, trace
           ).catch(() => {});
         }
-        await sendSmsReply(
-          phoneNumber,
-          `Stop set to ${chosen.stopName}.\n\nEND [stop] to finish. FORGOT if you forgot to end.`
-        );
+        await sendSmsReply(phoneNumber, text.stopSet(chosen.stopName));
       } else {
         // No trip started yet (active-trip conflict path) — pass stop code so lookupStop resolves unambiguously
         await handlers.handleTripLog(
@@ -344,7 +342,7 @@ async function handleConfirmStopState(phoneNumber, body, upperBody, state, trace
     if (state.tripId) {
       await db.collection('trips').doc(state.tripId).delete();
     }
-    await sendSmsReply(phoneNumber, 'Trip cancelled.');
+    await sendSmsReply(phoneNumber, text.TRIP_CANCELLED);
     return true;
   }
 
@@ -354,7 +352,7 @@ async function handleConfirmStopState(phoneNumber, body, upperBody, state, trace
   if (upperBody === 'SKIP') {
     await clearPendingState(phoneNumber);
     if (state.tripId) {
-      await sendSmsReply(phoneNumber, 'No problem — trip continues.\n\nEND [stop] to finish.');
+      await sendSmsReply(phoneNumber, text.STOP_SKIPPED);
     } else {
       if (user) {
         await handlers.handleTripLog(
@@ -389,7 +387,7 @@ async function handleMmsStopNeededState(phoneNumber, body, upperBody, state, tra
   const trace = traceId || generateTraceIdLocal();
   if (upperBody === 'DISCARD') {
     await clearPendingState(phoneNumber);
-    await sendSmsReply(phoneNumber, 'Trip cancelled.');
+    await sendSmsReply(phoneNumber, text.TRIP_CANCELLED);
     return true;
   }
   if (user && body.trim()) {
@@ -407,7 +405,6 @@ async function handleMmsStopNeededState(phoneNumber, body, upperBody, state, tra
         phoneNumber, user, stopReply, chosen.route, null, chosen.agency, mmsOptions, trace
       );
     } else {
-      const list = state.routeCandidates.map((r, i) => `${i + 1}. Route ${r.route}`).join('\n');
       await setPendingState(phoneNumber, {
         type: 'confirm_mms_route',
         routeCandidates: state.routeCandidates,
@@ -415,7 +412,7 @@ async function handleMmsStopNeededState(phoneNumber, body, upperBody, state, tra
         defaultAgency: state.defaultAgency,
         receivedAt: state.receivedAt,
       });
-      await sendSmsReply(phoneNumber, `Which route?\n${list}\nor DISCARD to cancel`);
+      await sendSmsReply(phoneNumber, text.mmsWhichRoute(state.routeCandidates.map(r => r.route)));
     }
   }
   return true;
@@ -445,14 +442,14 @@ async function handleConfirmMmsRouteState(phoneNumber, body, upperBody, state, t
 
   if (upperBody === 'DISCARD') {
     await clearPendingState(phoneNumber);
-    await sendSmsReply(phoneNumber, 'Trip cancelled.');
+    await sendSmsReply(phoneNumber, text.TRIP_CANCELLED);
     return true;
   }
 
   if (PENDING_PASSTHROUGH.has(upperBody) || upperBody === 'NOTES' || upperBody.startsWith('NOTES ') || upperBody.startsWith('ASK ')) return false;
 
   const count = (state.routeCandidates || []).length;
-  await sendSmsReply(phoneNumber, `Reply with a number (1–${count}) to select a route, or DISCARD to cancel.`);
+  await sendSmsReply(phoneNumber, text.mmsRouteReminder(count));
   return true;
 }
 
@@ -470,11 +467,7 @@ async function handleConfirmStartState(phoneNumber, upperBody, state, traceId = 
       state.activeTrip.startStopCode, state.activeTrip.startStopName, state.activeTrip.startStop
     );
     await clearPendingState(phoneNumber);
-    await sendSmsReply(
-      phoneNumber,
-      `New trip cancelled. ${activeRouteDisplay} from ${activeStopDisplay} still active.\n\n` +
-      'END [stop] to finish. FORGOT if you forgot to end.'
-    );
+    await sendSmsReply(phoneNumber, text.newTripCancelled(activeRouteDisplay, activeStopDisplay));
     return true;
   }
 
@@ -491,10 +484,7 @@ async function handleConfirmStartState(phoneNumber, upperBody, state, traceId = 
       state.activeTrip.startStopCode, state.activeTrip.startStopName, state.activeTrip.startStop
     );
     await clearPendingState(phoneNumber);
-    await sendSmsReply(
-      phoneNumber,
-      `${activeRouteDisplay} from ${activeStopDisplay} saved as incomplete. New trip cancelled.`
-    );
+    await sendSmsReply(phoneNumber, text.activeSavedNewCancelled(activeRouteDisplay, activeStopDisplay));
     return true;
   }
 
@@ -504,10 +494,7 @@ async function handleConfirmStartState(phoneNumber, upperBody, state, traceId = 
   // Anything else (e.g. "1", another trip attempt) gets a reminder instead of
   // falling through to "Could not understand."
   const newTripDisplay = getRouteDisplay(state.newTrip?.route, state.newTrip?.direction);
-  await sendSmsReply(
-    phoneNumber,
-    `Reply START to begin ${newTripDisplay}, DISCARD to cancel, or FORGOT to save existing trip as incomplete.`
-  );
+  await sendSmsReply(phoneNumber, text.confirmStartReminder(newTripDisplay));
   return true;
 }
 
@@ -631,7 +618,7 @@ async function handleTripFlow(phoneNumber, user, body, receivedAt = Date.now(), 
       await handlers.handleEndTrip(phoneNumber, user, stopInput, endTripData?.route, endTripData?.notes, trace);
     } catch (err) {
       logger.error('handleEndTrip failed', { error: err.message, stack: err.stack, traceId: trace }, trace);
-      await sendSmsReply(phoneNumber, 'Could not end your trip. Please try again.');
+      await sendSmsReply(phoneNumber, text.END_TRIP_FAILED);
     }
     return true;
   }
@@ -739,10 +726,7 @@ async function handleFallback(phoneNumber, user, body) {
   // prompt whose pending state expired. Explain instead of "Could not
   // understand", and don't log a junk needs_review trip for it.
   if (/^\d{1,2}$/.test(body.trim())) {
-    await sendSmsReply(
-      phoneNumber,
-      'That choice expired, so there is nothing to select. Text STATUS to check your trip.'
-    );
+    await sendSmsReply(phoneNumber, text.CHOICE_EXPIRED);
     return;
   }
 
@@ -754,7 +738,7 @@ async function handleFallback(phoneNumber, user, body) {
     source: 'sms_fallback',
   });
 
-  await sendSmsReply(phoneNumber, `Could not understand. Try:\n[Route]\n[Stop]`);
+  await sendSmsReply(phoneNumber, text.NOT_UNDERSTOOD);
 }
 
 /**

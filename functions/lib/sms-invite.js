@@ -15,19 +15,15 @@
  *  - Nothing here tells the user they were "invited" in user-facing text.
  */
 const { normalizePhoneNumber } = require('./otp');
-
-const WELCOME_TEXT = [
-  'Next stop: TransitStats. You\'re in! Two ways to add trips:',
-  '1. Text them here as you ride, like \'504 King to Spadina\'',
-  '2. Import your PRESTO history at transitstats.fyi/import',
-  'Reply STOP to opt out.',
-].join('\n');
-
-const SETUP_TEXT = 'You\'re all set! Text your trips here as you ride, like \'504 King to Spadina\'. '
-  + 'We also emailed you a link to sign in on the website.';
-const CONFIRM_TEXT = 'Almost there! We emailed a 6-digit code to the address on your account. Reply with it to finish setting up.';
-const SETUP_PROBLEM_TEXT = 'We couldn\'t finish setting up this number. Please contact us for help.';
-const NOT_INVITED_TEXT = 'This number isn\'t linked to a TransitStats account yet. Text REGISTER and your account email to link it.';
+const {
+  WELCOME_TEXT,
+  SETUP_TEXT,
+  CONFIRM_TEXT,
+  SETUP_PROBLEM_TEXT,
+  NOT_INVITED_TEXT,
+  signInEmail,
+  phoneCodeEmail,
+} = require('./sms-text');
 const SIGN_IN_URL = 'https://transitstats.fyi/import';
 const PROVISIONED_CLAIM = 'smsInviteProvisioned';
 
@@ -98,11 +94,7 @@ function createInviteHandlers({
     const link = await adminAuth.generateSignInWithEmailLink(email, { url: SIGN_IN_URL, handleCodeInApp: true });
     await db.collection('mail').add({
       to: email,
-      message: {
-        subject: 'Your TransitStats sign-in link',
-        text: `Your TransitStats account is ready. Open this link to sign in on the website:\n\n${link}\n\nYou can also just text your trips to our number.`,
-        html: `<p>Your TransitStats account is ready. <a href="${link}">Sign in on the website</a>.</p><p>You can also just text your trips to our number.</p>`,
-      },
+      message: signInEmail(link),
     });
   }
 
@@ -114,11 +106,7 @@ function createInviteHandlers({
     await storeVerificationCode(phoneNumber, email, code, 20 * 60 * 1000);
     await db.collection('mail').add({
       to: email,
-      message: {
-        subject: 'Your TransitStats text code',
-        text: `Your code is: ${code}\n\nReply to the text message with this code to finish connecting your phone. If this wasn't you, ignore this email.`,
-        html: `<p>Your code is: <strong>${code}</strong></p><p>Reply to the text message with this code to finish connecting your phone. If this wasn't you, ignore this email.</p>`,
-      },
+      message: phoneCodeEmail(code),
     });
     await setPendingState(phoneNumber, { type: 'awaiting_verification', email }, 20 * 60 * 1000);
   }

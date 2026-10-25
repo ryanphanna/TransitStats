@@ -36,7 +36,8 @@ function requestEngine(stopsLibrary, networkGraph) {
 const { TransferEngine } = require('./transfer.js');
 const { NetworkEngine } = require('./network.js');
 const { HabitEngine } = require('./habit');
-const { isPhoneConfirmed, phoneTag, tripStartedByPhone, LOCKED_TRIP_TEXT } = require('./phone-confirmation');
+const { isPhoneConfirmed, phoneTag, tripStartedByPhone } = require('./phone-confirmation');
+const text = require('./sms-text');
 const logger = require('./logger');
 const finalization = require('./finalization');
 const { checkMlTasks } = require('./ml-tasks');
@@ -142,12 +143,12 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
   if (unconfirmed) options = { ...options, unconfirmed: true };
   const activeTrip = await getActiveTrip(user.userId);
   if (unconfirmed && activeTrip) {
-    await sendSmsReply(phoneNumber, LOCKED_TRIP_TEXT);
+    await sendSmsReply(phoneNumber, text.LOCKED_TRIP_TEXT);
     return;
   }
   const parsedStop = parseStopInput(stopInput);
   if (!parsedStop.stopCode && !parsedStop.stopName) {
-    await sendSmsReply(phoneNumber, 'Could not identify the boarding stop. Send the route and stop again.');
+    await sendSmsReply(phoneNumber, text.BOARDING_STOP_UNKNOWN);
     return;
   }
   const stopDisplay = getStopDisplay(parsedStop.stopCode, parsedStop.stopName);
@@ -165,7 +166,7 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
   );
   if (handled) return;
   if (!resolvedAgency) {
-    await sendSmsReply(phoneNumber, 'Could not identify the transit agency. Include it on a new line, such as TTC or GO Transit.');
+    await sendSmsReply(phoneNumber, text.AGENCY_UNKNOWN);
     return;
   }
 
@@ -228,16 +229,9 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
     });
 
     const activeTripStopDisplay = getStopDisplay(activeTrip.startStopCode, activeTrip.startStopName, activeTrip.startStop);
-    const timePhrase = `${elapsedMin} min ago`;
-    const promptPrefix = stale
-      ? `${activeTripRouteDisplay} from ${activeTripStopDisplay} looks like it ended (started ${timePhrase}).`
-      : `${activeTripRouteDisplay} from ${activeTripStopDisplay} was not ended (started ${timePhrase}).`;
-
-    const message = `${promptPrefix}
-
-START to begin ${newTripRouteDisplay} from ${stopDisplay}, and save ${activeTripRouteDisplay} from ${activeTripStopDisplay} as incomplete.
-
-FORGOT to save as incomplete. DISCARD to cancel new trip.`;
+    const message = text.activeTripConflict(
+      stale, activeTripRouteDisplay, activeTripStopDisplay, elapsedMin, newTripRouteDisplay, stopDisplay
+    );
 
     await sendSmsReply(phoneNumber, message);
     return;
@@ -389,7 +383,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
     });
   } catch (err) {
     console.error('createTrip failed', err.message, err.stack);
-    await sendSmsReply(phoneNumber, 'Could not start your trip. Please try again.');
+    await sendSmsReply(phoneNumber, text.TRIP_START_FAILED);
     return;
   }
 
@@ -402,7 +396,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
   // Warm agency timezone cache in background — never blocks trip confirmation
   if (resolvedAgency) lookupAgencyTimezone(resolvedAgency, traceId).catch(() => {});
 
-  let replyBody = `Started ${routeDisplay} from ${finalStopDisplay}${agencySuffix(resolvedAgency, defaultAgency)}.`;
+  let replyBody = text.tripStarted(routeDisplay, finalStopDisplay, agencySuffix(resolvedAgency, defaultAgency));
   // End-stop suggestions are admin-only; non-admins always get the plain END/FORGOT prompt.
   // On a habit trip the usual end stop leads the list; END n in handleEndTrip uses the same list.
   // The same list sets the RCS END n buttons (switched off unless config/rcsButtons enables it).
@@ -426,7 +420,7 @@ FORGOT to save as incomplete. DISCARD to cancel new trip.`;
 async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
   // Starting over would mark the owner's active trip incomplete.
   if (!isPhoneConfirmed(user)) {
-    await sendSmsReply(phoneNumber, LOCKED_TRIP_TEXT);
+    await sendSmsReply(phoneNumber, text.LOCKED_TRIP_TEXT);
     return;
   }
   const activeTrip = state.activeTrip;
@@ -553,7 +547,9 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
   const newStopDisplay = getStopDisplay(newTrip.stopCode, newTrip.stopName);
   const newRouteDisplay = getRouteDisplay(newTrip.route, normalizeDirection(newTrip.direction));
 
-  let confirmReplyBody = `${oldTripRouteDisplay} marked as incomplete.\n\nStarted ${newRouteDisplay} from ${newStopDisplay}${agencySuffix(newTrip.agency, confirmDefaultAgency)}.`;
+  let confirmReplyBody = text.startedAfterIncomplete(
+    oldTripRouteDisplay, newRouteDisplay, newStopDisplay, agencySuffix(newTrip.agency, confirmDefaultAgency)
+  );
   const confirmShown = confirmIsAdmin ? getShownEndStopPredictions(confirmEndStopPredictions) : [];
   confirmReplyBody += formatPredictionPrompt(confirmShown);
 
@@ -575,12 +571,12 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
   // An unconfirmed number can only end a trip it started itself; anything else
   // gets the same neutral reply, so it can't tell whether a trip exists.
   if (unconfirmed && (!activeTrip || !tripStartedByPhone(activeTrip, phoneNumber))) {
-    await sendSmsReply(phoneNumber, LOCKED_TRIP_TEXT);
+    await sendSmsReply(phoneNumber, text.LOCKED_TRIP_TEXT);
     return;
   }
 
   if (!activeTrip) {
-    await sendSmsReply(phoneNumber, 'No active trip to end.');
+    await sendSmsReply(phoneNumber, text.NO_ACTIVE_TRIP_TO_END);
     return;
   }
 
@@ -590,8 +586,7 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
     if (activeRoute !== verifyRoute) {
       await sendSmsReply(
         phoneNumber,
-        `Route mismatch. Active trip is ${getRouteDisplay(activeTrip.route, activeTrip.direction)}, ` +
-        `not Route ${routeVerification}.`,
+        text.routeMismatch(getRouteDisplay(activeTrip.route, activeTrip.direction), routeVerification),
       );
       return;
     }
@@ -671,7 +666,7 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
     // suggestion notes (they draw on the owner's history), no profile updates.
     await sendSmsReply(
       phoneNumber,
-      `Ended ${getRouteDisplay(activeTrip.route, activeTrip.direction)} at ${endStopDisplay} (${duration} min trip).`
+      text.tripEndedBasic(getRouteDisplay(activeTrip.route, activeTrip.direction), endStopDisplay, duration)
     );
     return;
   }
@@ -700,8 +695,10 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
 
   await sendSmsReply(
     phoneNumber,
-    `Ended ${routeDisplay} at ${endStopDisplay}${agencySuffix(agency, endDefaultAgency)} (${duration} min trip)` +
-    `${journeyNote}${anomalyNote}${nextLegNote}\n\nReply NOTES (your note) to add a note.`
+    text.tripEnded(
+      routeDisplay, endStopDisplay, agencySuffix(agency, endDefaultAgency), duration,
+      `${journeyNote}${anomalyNote}${nextLegNote}`
+    )
   );
 
   // Recompute the user's primary agency from recent trips (makes defaultAgency dynamic)
