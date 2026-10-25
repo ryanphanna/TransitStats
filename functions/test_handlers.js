@@ -343,7 +343,7 @@ test('handleTripLog: ambiguous stop starts and offers the existing stop choice f
     { stopCode: '2070', stopName: 'Grove / Juniper' },
   ]);
   const msg = calls.sendSmsReply[0]?.message || '';
-  assert.match(msg, /multiple possible boarding stops/i);
+  assert.match(msg, /matches more than one stop/i);
   assert.match(msg, /Reply with a number/);
 });
 
@@ -396,7 +396,7 @@ test('handleTripLog: 506 College with no direction leaves the stop unverified', 
   assert.equal(calls.createTrip.length, 1);
   assert.equal(calls.setPendingState.length, 1);
   const msg = calls.sendSmsReply[0]?.message || '';
-  assert.match(msg, /multiple possible boarding stops/i);
+  assert.match(msg, /matches more than one stop/i);
 });
 
 test('handleTripLog: identical names with no direction data offer the stop choice flow', async () => {
@@ -421,7 +421,7 @@ test('handleTripLog: identical names with no direction data offer the stop choic
   assert.equal(calls.createTrip.length, 1, 'trip should still start');
   assert.equal(calls.createTrip[0].startStopName, 'Aspen/Rowan');
   const msg = calls.sendSmsReply[0]?.message || '';
-  assert.match(msg, /multiple possible boarding stops/i);
+  assert.match(msg, /matches more than one stop/i);
 });
 
 test('handleTripLog: 506 Grove / Hazel Eastbound uses stopRoutes before prompting', async () => {
