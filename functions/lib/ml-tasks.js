@@ -19,6 +19,7 @@ const { db } = require('./db');
 const { sendSmsReply } = require('./twilio');
 const logger = require('./logger');
 const { isPhoneConfirmed } = require('./phone-confirmation');
+const { mlCheckIn } = require('./sms-text');
 
 async function getPhoneForUser(userId) {
   // Only a confirmed number gets texts about the account's activity.
@@ -74,13 +75,13 @@ async function evaluateTask(taskDoc, userId, phoneNumber) {
   if (count < task.tripTarget) return;
 
   // Threshold crossed — fire SMS and mark triggered
-  const lines = [
-    `ML Check-in: ${task.description}`,
-    `(${count} ${task.agency || 'total'} trips since ${task.tripsSince || 'start'})`,
-  ];
-  if (task.linearUrl) lines.push(task.linearUrl);
-
-  await sendSmsReply(phoneNumber, lines.join('\n'));
+  await sendSmsReply(phoneNumber, mlCheckIn({
+    description: task.description,
+    count,
+    agency: task.agency,
+    tripsSince: task.tripsSince,
+    linearUrl: task.linearUrl,
+  }));
   await taskDoc.ref.update({ triggered: true, triggeredAt: new Date().toISOString() });
 
   logger.info('mlTask triggered', { taskId: taskDoc.id, userId, count });

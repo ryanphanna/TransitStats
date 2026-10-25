@@ -23,6 +23,7 @@ const {
   parseStopSignImage,
 } = require('./gemini');
 const logger = require('./logger');
+const text = require('./sms-text');
 const { handleTripLog } = require('./handlers-trip');
 const { isModelReady } = require('./intelligence-eligibility');
 
@@ -104,7 +105,7 @@ async function handleMmsTrip(phoneNumber, user, mediaUrl, receivedAt, traceId = 
 
     if (parsedUrl.protocol !== 'https:' || !isTwilioHost) {
       console.warn(`Rejected untrusted MMS media URL: ${parsedUrl.hostname}`);
-      await sendSmsReply(phoneNumber, 'Could not load your photo. Try again or log by text:\n[Route]\n[Stop]');
+      await sendSmsReply(phoneNumber, text.PHOTO_LOAD_FAILED);
       return;
     }
 
@@ -123,7 +124,7 @@ async function handleMmsTrip(phoneNumber, user, mediaUrl, receivedAt, traceId = 
     imageBase64 = Buffer.from(buffer).toString('base64');
   } catch (err) {
     console.error('MMS image fetch failed', err.message);
-    await sendSmsReply(phoneNumber, 'Could not load your photo. Try again or log by text:\n[Route]\n[Stop]');
+    await sendSmsReply(phoneNumber, text.PHOTO_LOAD_FAILED);
     return;
   }
 
@@ -133,12 +134,12 @@ async function handleMmsTrip(phoneNumber, user, mediaUrl, receivedAt, traceId = 
     parsed = await parseStopSignImage(imageBase64, mimeType, traceId);
   } catch (err) {
     console.error('MMS vision parsing failed', err.message);
-    await sendSmsReply(phoneNumber, 'Could not read the stop sign. Try a clearer shot or log by text.');
+    await sendSmsReply(phoneNumber, text.STOP_SIGN_UNREADABLE);
     return;
   }
 
   if (!parsed || !parsed.routes || parsed.routes.length === 0) {
-    await sendSmsReply(phoneNumber, 'No transit stop found in that photo. Try a closer shot of the sign.');
+    await sendSmsReply(phoneNumber, text.NO_STOP_IN_PHOTO);
     return;
   }
 
@@ -153,14 +154,13 @@ async function handleMmsTrip(phoneNumber, user, mediaUrl, receivedAt, traceId = 
       route: r.route,
       agency: r.agency ? normalizeAg(r.agency) : defaultAgency2,
     }));
-    const routeList = candidates.map(r => r.route).join(' and ');
     await setPendingState(phoneNumber, {
       type: 'mms_stop_needed',
       routeCandidates: candidates,
       defaultAgency: defaultAgency2,
       receivedAt,
     });
-    await sendSmsReply(phoneNumber, `Got ${routeList} — what stop are you at? (or DISCARD to cancel)`);
+    await sendSmsReply(phoneNumber, text.mmsStopNeeded(candidates.map(r => r.route)));
     return;
   }
 
@@ -188,7 +188,6 @@ async function handleMmsTrip(phoneNumber, user, mediaUrl, receivedAt, traceId = 
     route: r.route,
     agency: r.agency ? normalizeAgency(r.agency) : defaultAgency,
   }));
-  const list = candidates.map((r, i) => `${i + 1}. Route ${r.route}`).join('\n');
   const stopLabel = parsed.stopName || stopInput;
 
   await setPendingState(phoneNumber, {
@@ -198,7 +197,7 @@ async function handleMmsTrip(phoneNumber, user, mediaUrl, receivedAt, traceId = 
     defaultAgency,
     receivedAt,
   });
-  await sendSmsReply(phoneNumber, `Multiple routes at ${stopLabel}:\n${list}\n\nWhich route? Reply with a number, or DISCARD to cancel.`);
+  await sendSmsReply(phoneNumber, text.mmsMultipleRoutes(stopLabel, candidates.map(r => r.route)));
 }
 
 module.exports = {

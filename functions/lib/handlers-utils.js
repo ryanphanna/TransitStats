@@ -25,6 +25,7 @@ const {
 } = require('./utils');
 const { AGENCY_CITY } = require('./constants');
 const { phoneTag } = require('./phone-confirmation');
+const text = require('./sms-text');
 const { normalizeStopLabel } = require('./topology-constraints');
 
 /**
@@ -35,7 +36,7 @@ const { normalizeStopLabel } = require('./topology-constraints');
  */
 function agencySuffix(tripAgency, defaultAgency) {
   if (!tripAgency || !defaultAgency || tripAgency === defaultAgency) return '';
-  return ` via ${tripAgency}`;
+  return text.viaAgency(tripAgency);
 }
 
 // Returns the city label for an agency to use in disambiguation prompts.
@@ -58,14 +59,7 @@ async function promptAgencyChoice(
     options,
     agencyOptions: [lastAgency, defaultAgency],
   });
-  await sendSmsReply(
-    phoneNumber,
-    `Which ${stopDisplay}?
-1. ${lastAgency}
-2. ${defaultAgency}
-
-Reply 1, 2, or SKIP to use default.`
-  );
+  await sendSmsReply(phoneNumber, text.agencyChoicePrompt(stopDisplay, lastAgency, defaultAgency));
 }
 
 async function resolveTripAgency(
@@ -248,7 +242,7 @@ async function maybeHandleStopDisambiguation({
       });
     } catch (err) {
       console.error('createTrip failed during stop disambiguation', err.message);
-      await sendSmsReply(phoneNumber, 'Could not start your trip. Please try again.');
+      await sendSmsReply(phoneNumber, text.TRIP_START_FAILED);
       return true;
     }
     await setPendingState(phoneNumber, {
@@ -263,13 +257,11 @@ async function maybeHandleStopDisambiguation({
       agency: resolvedAgency,
     });
     const routeDisplay = getRouteDisplay(route, direction);
-    const candidateList = candidates
-      .map((candidate, index) => `${index + 1}. ${candidate.stopName || candidate.name}${candidate.stopCode ? ` (${candidate.stopCode})` : ''}`)
-      .join('\n');
-    await sendSmsReply(
-      phoneNumber,
-      `${routeDisplay} started from ${stopDisplay}, which matches more than one stop:\n${candidateList}\nReply with a number to set the stop, SKIP to leave it unverified, or DISCARD to cancel the trip.`
-    );
+    const listed = candidates.map(candidate => ({
+      name: candidate.stopName || candidate.name,
+      code: candidate.stopCode,
+    }));
+    await sendSmsReply(phoneNumber, text.stopMatchesMultiple(routeDisplay, stopDisplay, listed));
     return true;
   }
 
@@ -317,25 +309,7 @@ function getPredictionPrompt(rawPredictions) {
 
 /** Prompt text for an already-filtered list of shown stops (see getShownEndStopChoices). */
 function formatPredictionPrompt(predictions) {
-  predictions = predictions || [];
-  if (predictions.length === 0) {
-    return '\n\nEND [stop] to finish. FORGOT if forgot to end.';
-  }
-
-  const shortcutNums = predictions.map((_, i) => i + 1).join('/');
-
-  if (predictions.length === 1) {
-    const p = predictions[0];
-    return `\n\nHeading to ${p.stop}? END 1 to end.\n\nEND [stop] to finish. FORGOT if forgot to end.`;
-  }
-
-  const predLines = predictions.map((p, i) => `${i + 1}. ${p.stop}`).join('\n');
-  const shortcuts = predictions.map((_, i) => `END ${i + 1}`).join(', ');
-  const lastComma = shortcuts.lastIndexOf(', ');
-  const shortcutStr = lastComma >= 0
-    ? shortcuts.slice(0, lastComma) + ', or ' + shortcuts.slice(lastComma + 2)
-    : shortcuts;
-  return `\n\nWhere to?\n${predLines}\n\n${shortcutStr} to end.\n\nEND [stop] to finish. FORGOT if forgot to end.`;
+  return text.endStopPrompt((predictions || []).map(p => p.stop));
 }
 
 /**
@@ -346,17 +320,7 @@ function formatPredictionPrompt(predictions) {
 async function getAchievementNote(userId) {
   try {
     const count = await getTripCount(userId);
-    const milestones = {
-      1: '🎉 Your 1st trip! Welcome to the network.',
-      10: '🔟 Your 10th trip! Frequent Rider status.',
-      25: '🏅 Your 25th trip! System Regular status.',
-      50: '🥈 Your 50th trip! Commuter Pro status.',
-      100: '🥇 Your 100th trip! Network Veteran status.',
-      250: '👑 Your 250th trip! Elite Commuter status.',
-      500: '🏟️ Your 500th trip! System Analyst status.',
-      1000: '🌌 Your 1,000th trip! Transit Authority status.',
-    };
-    return milestones[count] ? `\n\n${milestones[count]}` : '';
+    return text.achievementNote(count);
   } catch (err) {
     console.error('getAchievementNote failed', err);
     return '';

@@ -22,6 +22,7 @@ const {
   getRouteDisplay,
 } = require('./utils');
 const logger = require('./logger');
+const text = require('./sms-text');
 
 async function gradeAllPredictions(activeTrip, user, endStopData, duration) {
   const actualEndStop = endStopData ? endStopData.stopName : (activeTrip.endStopName || '');
@@ -66,8 +67,7 @@ async function computeJourneyLink(activeTrip, prevTrip, startTime) {
 
     const prevEnd = prevTrip.endTime.toDate ? prevTrip.endTime.toDate() : new Date(prevTrip.endTime);
     const gapStr = Math.round((startTime - prevEnd) / 60000);
-    journeyNote = `\n\nLinked to your ${getRouteDisplay(prevTrip.route)} trip ` +
-      `(${gapStr < 1 ? '<1' : gapStr} min transfer). UNLINK to separate.`;
+    journeyNote = text.journeyLinkedNote(getRouteDisplay(prevTrip.route), gapStr);
   }
 
   return { journeyNote, journeyId };
@@ -144,7 +144,7 @@ async function detectAnomaly(activeTrip, endStopNameFinal, duration, agency) {
     const typicalMinutes = NetworkEngine.getEdgeMedianDuration(graph, activeTrip.startStopName, endStopNameFinal, startHour);
 
     if (typicalMinutes && typicalMinutes >= 5 && duration >= typicalMinutes * 2) {
-      return `\n\nThis trip took longer than usual (${duration} min vs. typical ${typicalMinutes} min).`;
+      return text.slowTripNote(duration, typicalMinutes);
     }
   } catch (err) {
     logger.error('detectAnomaly failed', { error: err.message });
@@ -174,7 +174,7 @@ async function getNextLegSuggestion(activeTrip, endStopNameFinal, agency, journe
     }
     if (bestConnKey && bestCount >= 2) {
       const toLabel = connLabels[bestConnKey] || bestConnKey.slice(prefix.length);
-      return `\n\nUsually take the ${toLabel} from here.`;
+      return text.nextLegNote(toLabel);
     }
   } catch (err) {
     logger.error('getNextLegSuggestion failed', { error: err.message });
