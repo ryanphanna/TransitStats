@@ -12,43 +12,10 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { db, getUserProfile, getStopsLibrary } = require('./db');
 const logger = require('./logger');
 const { getMapStopMode } = require('./profile-fields');
-const { resolveAtlasAgency } = require('../atlas-agency');
-const { buildHeatmapBands } = require('./public-profile-heatmap');
 const { unmatchedImportedRides } = require('./ride-merge');
 const { buildPrestoTrips } = require('./presto-trips');
 
 const ACTIVE_TRIP_WINDOW_MS = 6 * 60 * 60 * 1000;
-const ATLAS_R2_BASE = process.env.ATLAS_R2_BASE || 'https://data.transitatlas.fyi';
-const atlasRouteCache = new Map();
-const ATLAS_ROUTE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-
-async function getAtlasRoutes(agency) {
-  const cached = atlasRouteCache.get(agency);
-  if (cached && Date.now() - cached.fetchedAt < ATLAS_ROUTE_CACHE_TTL_MS) return cached.data;
-  const slug = await resolveAtlasAgency(agency);
-  if (!slug) return [];
-  const response = await fetch(`${ATLAS_R2_BASE}/atlas/${slug}.json`, {
-    signal: AbortSignal.timeout(30000),
-  });
-  if (!response.ok) throw new Error(`Atlas route data unavailable for ${agency}`);
-  const data = await response.json();
-  const features = (data.features || []).map(feature => ({ ...feature, __agency: agency }));
-  atlasRouteCache.set(agency, { fetchedAt: Date.now(), data: features });
-  return features;
-}
-
-async function buildPublicHeatmap(trips) {
-  const agencies = [...new Set(trips.map(trip => trip.agency || 'TTC'))];
-  const routeFeatures = [];
-  for (const agency of agencies) {
-    try {
-      routeFeatures.push(...await getAtlasRoutes(agency));
-    } catch (error) {
-      logger.warn('Public profile heatmap route lookup failed', { agency, error: error.message });
-    }
-  }
-  return buildHeatmapBands(trips, routeFeatures);
-}
 
 function isDashboardHistoryTrip(trip, now = Date.now()) {
   if (trip.endTime || trip.discarded) return true;
@@ -170,7 +137,6 @@ async function handlePublicProfile(req, res) {
   }
 
   const requestedUsername = String(req.query.user || '').trim().toLowerCase();
-  const includeHeatmap = String(req.query.includeHeatmap || '') === '1';
   const includePoints = String(req.query.includePoints || '1') !== '0';
   const resolveStops = String(req.query.resolveStops || '1') !== '0';
   if (!requestedUsername) {
@@ -312,8 +278,6 @@ async function handlePublicProfile(req, res) {
       }
     }
 
-    const heatmapBands = includeHeatmap ? await buildPublicHeatmap(historyTrips) : undefined;
-
     // Rides the user also logged as trips are already counted above.
     const prestoTrips = unmatchedImportedRides(historyTrips, buildPrestoTrips(prestoRecords));
 
@@ -366,7 +330,6 @@ async function handlePublicProfile(req, res) {
       routes: routes.size,
       countries: countries.size,
       points: includePoints ? [...pointsByStop.values()] : [],
-      ...(includeHeatmap ? { heatmapBands } : {}),
     });
   } catch (err) {
     logger.error('Public profile lookup failed', { error: err.message, username: requestedUsername });
@@ -375,7 +338,6 @@ async function handlePublicProfile(req, res) {
 }
 
 async function getPublicProfilePayload(username, {
-  includeHeatmap = false,
   includePoints = true,
   resolveStops = true,
 } = {}) {
@@ -399,7 +361,6 @@ async function getPublicProfilePayload(username, {
     method: 'GET',
     query: {
       user: username,
-      ...(includeHeatmap ? { includeHeatmap: '1' } : {}),
       ...(includePoints ? {} : { includePoints: '0' }),
       ...(resolveStops ? {} : { resolveStops: '0' }),
     },

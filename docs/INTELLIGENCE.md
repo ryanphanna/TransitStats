@@ -155,9 +155,9 @@ Each records per engine top-1 over all graded trips, coverage, top-1 when answer
 |---|---|---|
 | `functions/lib/predict_v3.js` | CommonJS | Live V3 implementation for Cloud Functions |
 | `functions/lib/predict.js` | CommonJS | Compatibility wrapper exporting V3 as `PredictionEngine` |
-| `js/predict.js` | ESM | Browser helper mirroring the V3 topology constraint surface |
+| `js/predict.js` | ESM | Browser stops library and stop-name canonicalizer for the map (no predictions run client-side) |
 
-The CJS V3 implementation is the reference. Browser changes should be mirrored only for the subset exposed client-side; shared legality logic belongs in `functions/lib/topology-constraints.js`.
+The CJS V3 implementation is the reference. Shared legality logic belongs in `functions/lib/topology-constraints.js`.
 
 ---
 

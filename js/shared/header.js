@@ -6,11 +6,11 @@ import { refreshIcons } from './icons.js';
  * Shared Header Component
  * Injects navigation into the page.
  */
-export function initHeader({ isAdmin = false, currentPage = '', profileHref = '', shareAction = false, showRecap = false } = {}) {
-    _render(isAdmin, currentPage, profileHref, shareAction, showRecap);
+export function initHeader({ currentPage = '', profileHref = '', shareAction = false, showRecap = false } = {}) {
+    _render(currentPage, profileHref, shareAction, showRecap);
 }
 
-function _render(isAdmin, currentPage, profileHref, shareAction, showRecap) {
+function _render(currentPage, profileHref, shareAction, showRecap) {
     const root = document.getElementById('app-root');
     if (!root) return;
 

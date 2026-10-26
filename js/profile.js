@@ -193,7 +193,6 @@ export const Profile = {
 
         const emailEl = document.getElementById('settings-email');
         const phoneEl = document.getElementById('settings-phone');
-        const betaEl = document.getElementById('settings-beta-predictions');
         const publicProfileEl = document.getElementById('settings-public-profile');
         const publicLinkEl = document.getElementById('settings-public-link');
         const mapStopModeEl = document.getElementById('settings-map-stop-mode');
@@ -214,10 +213,6 @@ export const Profile = {
         }
 
         this.syncAgencyOptions();
-
-        if (betaEl && this.data?.betaFeatures) {
-            betaEl.checked = !!this.data.betaFeatures.predictions;
-        }
 
         if (publicProfileEl) {
             publicProfileEl.checked = !!this.data?.isPublic;

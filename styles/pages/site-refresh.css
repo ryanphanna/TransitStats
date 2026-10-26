@@ -3,7 +3,7 @@
   --content-width: 1240px;
 }
 
-.view:not(.map-view):not(.beta-map-view):not(.beta-heatmap-view):not(.public-view) {
+.view:not(.map-view):not(.public-view) {
   padding-top: 96px;
 }
 
@@ -132,7 +132,7 @@
 }
 
 @media (max-width: 640px) {
-  .view:not(.map-view):not(.beta-map-view):not(.beta-heatmap-view):not(.public-view) {
+  .view:not(.map-view):not(.public-view) {
     padding-top: 84px;
   }
 }

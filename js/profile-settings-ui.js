@@ -14,7 +14,6 @@ export function setupProfileListeners(profile) {
     const changeCustomUsernameButton = document.getElementById('btn-change-custom-username');
     const saveCustomUsernameButton = document.getElementById('btn-save-custom-username');
     const customUsernameEditor = document.getElementById('settings-custom-username-editor');
-    const betaPredictions = document.getElementById('settings-beta-predictions');
     const publicProfile = document.getElementById('settings-public-profile');
     const mapStopModeSelect = document.getElementById('settings-map-stop-mode');
 
@@ -56,13 +55,6 @@ export function setupProfileListeners(profile) {
 
     saveCustomUsernameButton?.addEventListener('click', async () => {
         await reserveCustomUsername(profile, customUsernameInput?.value || '');
-    });
-
-    betaPredictions?.addEventListener('change', event => {
-        profile.updateSetting('betaFeatures', {
-            ...profile.data?.betaFeatures,
-            predictions: event.target.checked,
-        });
     });
 
     const nameInput = document.getElementById('settings-name');

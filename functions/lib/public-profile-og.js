@@ -152,21 +152,6 @@ async function buildBasemapImage(projection, fetchTile) {
   return faded.toString('base64');
 }
 
-function projectBands(bands, project) {
-  const coords = bands.flatMap(band => band.line || []);
-  const maxCount = Math.max(...bands.map(band => Number(band.count) || 0), 1);
-  const paths = bands.map(band => {
-    const pointsString = (band.line || []).map(([lat, lng]) => {
-      const { x, y } = project(Number(lng), Number(lat));
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(' L ');
-    const intensity = Math.max(0, Math.min(1, Number(band.count) / maxCount));
-    const lightness = Math.round(78 - intensity * 48);
-    return `<path d="M ${pointsString}" fill="none" stroke="hsl(252 75% ${lightness}%)" stroke-width="${(2 + intensity * 7).toFixed(1)}" stroke-linecap="round" stroke-linejoin="round" opacity="${(0.35 + intensity * 0.6).toFixed(2)}"/>`;
-  });
-  return { paths, coords };
-}
-
 function isValidLatLng(lat, lng) {
   return Number.isFinite(lat) && Number.isFinite(lng)
     && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
@@ -189,24 +174,16 @@ const FALLBACK_BACKDROP = `
     <path d="M 80 0 C 190 130 170 270 280 360 S 390 520 430 630" fill="none" stroke="#d5e4df" stroke-width="3"/>`;
 
 async function buildSvg(data, { fetchTile = defaultFetchTile } = {}) {
-  const bandCoords = boundsFromCoords((data.heatmapBands || []).flatMap(band => band.line || []));
-  const hasBandLines = (data.heatmapBands || []).some(band => (band.line || []).length > 0);
-  const pointCoords = boundsFromCoords((data.points || [])
+  const bounds = boundsFromCoords((data.points || [])
     .filter(point => isValidLatLng(Number(point.lat), Number(point.lng)))
     .map(point => [Number(point.lat), Number(point.lng)]));
-
-  const bounds = hasBandLines ? bandCoords : pointCoords;
   const projection = bounds ? buildProjection(bounds) : null;
   const project = projection ? projection.project : () => ({ x: 0, y: 0 });
 
-  const { paths } = projectBands(data.heatmapBands || [], project);
   const { svg: pointDots } = projectPoints(data.points || [], project);
-  const hasPaths = hasBandLines && paths.length > 0;
-  const mapContent = hasPaths
-    ? paths.join('')
-    : pointDots.length
-      ? pointDots.join('')
-      : '<text x="455" y="310" text-anchor="middle" fill="#aaa6c4" font-family="Arial, sans-serif" font-size="20">No matched route segments yet</text>';
+  const mapContent = pointDots.length
+    ? pointDots.join('')
+    : '<text x="455" y="310" text-anchor="middle" fill="#aaa6c4" font-family="Arial, sans-serif" font-size="20">No matched route segments yet</text>';
 
   const basemap = projection ? await buildBasemapImage(projection, fetchTile) : null;
   const backdrop = basemap
@@ -229,7 +206,6 @@ async function handlePublicProfileOg(req, res) {
   // Match the interactive profile's coordinate resolution so the share image
   // contains all known stops, while caching the rendered PNG for crawlers.
   const result = await getPublicProfilePayload(username, {
-    includeHeatmap: false,
     includePoints: true,
     resolveStops: true,
   });
