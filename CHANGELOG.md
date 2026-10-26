@@ -71,7 +71,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Closed privacy leaks.** Public profiles no longer expose private fields like admin or premium status, other people's Rocket GPS trails are no longer readable, and the unused Rocket page is gone.
 - **Prediction models are no longer public.** They contained real stop and route names, so they now live in private storage and are trained only on approved users.
 - **Server logs mask phone numbers and email addresses** and no longer record message contents.
-- **Updated web and Functions dependencies to patched releases**, clearing open security alerts, including two denial-of-service issues in text-message handling.
+- **Updated web and Functions dependencies to patched releases**, clearing open security alerts, including a denial-of-service issue in text-message handling.
 
 ### Platform and other
 
