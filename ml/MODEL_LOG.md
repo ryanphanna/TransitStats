@@ -5,6 +5,25 @@ One entry per trained version. See `docs/INTELLIGENCE.md` for full engineering n
 
 ---
 
+## Auto-retrain — 2026-10-26
+
+### End-Stop Models
+
+| Model | Top-1 | Top-3 | Classes | Trips |
+|---|---|---|---|---|
+| V5 XGBoost | 57.9% | 72.2% | 29 | 633 |
+| V4 LogReg  | 54.0% | 72.2% | 29 | 633 |
+
+### Shadow grading: past 7 days (models 20261019T093750Z, 16 trips)
+
+| Model | Top-1 | Answered | Right when answered | Paired top-1 (n=16) |
+|---|---|---|---|---|
+| V3 (live) | 56.2% | 100.0% | 56.2% | 56.2% |
+| V4 | 50.0% | 100.0% | 50.0% | 50.0% |
+| V5 | 43.8% | 100.0% | 43.8% | 43.8% |
+
+---
+
 ## Auto-retrain — 2026-10-19
 
 ### End-Stop Models
