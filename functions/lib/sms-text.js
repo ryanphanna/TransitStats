@@ -95,13 +95,13 @@ function registerCodeSent(email) {
 }
 
 // Replies an unconfirmed number (see phone-confirmation.js) can get.
-const UNLOCK_PROMPT_TEXT = 'We emailed you a code. Reply with it to unlock that.';
+const UNLOCK_PROMPT_TEXT = 'A code was emailed to you. Reply with it to unlock that.';
 const UNLOCK_UNAVAILABLE_TEXT = 'That isn\'t available on this number yet.';
 const UNLOCKED_TEXT = 'Unlocked. You can use every command from this number now.';
-const EMAIL_NOT_FOUND_TEXT = 'We couldn\'t find an account for that email. Try the one you signed in with, or visit transitstats.fyi.';
+const EMAIL_NOT_FOUND_TEXT = 'No account found for that email. Try the one you signed in with, or visit transitstats.fyi.';
 const LINKED_NEUTRAL_TEXT = 'This number is already linked to an account.';
 // Shown on the website's phone sign-in (an HTTP error), not sent as a text.
-const OTP_UNCONFIRMED_TEXT = 'This number isn\'t unlocked yet. Text us, then reply with the code we email you.';
+const OTP_UNCONFIRMED_TEXT = 'This number isn\'t unlocked yet. Text TransitStats, then reply with the emailed code.';
 // Neutral on purpose: it must not reveal whether the owner has a trip running.
 const LOCKED_TRIP_TEXT = 'Couldn\'t do that from this number right now.';
 
@@ -115,9 +115,9 @@ const WELCOME_TEXT = [
 ].join('\n');
 
 const SETUP_TEXT = 'You\'re all set! Text your trips here as you ride, like \'504 King to Spadina\'. '
-  + 'We also emailed you a link to sign in on the website.';
-const CONFIRM_TEXT = 'Almost there! We emailed a 6-digit code to the address on your account. Reply with it to finish setting up.';
-const SETUP_PROBLEM_TEXT = 'We couldn\'t finish setting up this number. Please contact us for help.';
+  + 'A sign-in link for the website was also emailed to you.';
+const CONFIRM_TEXT = 'Almost there! A 6-digit code was emailed to the address on your account. Reply with it to finish setting up.';
+const SETUP_PROBLEM_TEXT = 'Could not finish setting up this number. Please get in touch for help.';
 const NOT_INVITED_TEXT = 'This number isn\'t linked to a TransitStats account yet. Text REGISTER and your account email to link it.';
 
 // --- Phone sign-in code (otp.js) ---
@@ -139,8 +139,8 @@ function registerCodeEmail(code) {
 function signInEmail(link) {
   return {
     subject: 'Your TransitStats sign-in link',
-    text: `Your TransitStats account is ready. Open this link to sign in on the website:\n\n${link}\n\nYou can also just text your trips to our number.`,
-    html: `<p>Your TransitStats account is ready. <a href="${link}">Sign in on the website</a>.</p><p>You can also just text your trips to our number.</p>`,
+    text: `Your TransitStats account is ready. Open this link to sign in on the website:\n\n${link}\n\nYou can also just text your trips to the TransitStats number.`,
+    html: `<p>Your TransitStats account is ready. <a href="${link}">Sign in on the website</a>.</p><p>You can also just text your trips to the TransitStats number.</p>`,
   };
 }
 
@@ -346,12 +346,12 @@ function nextLegNote(toLabel) {
 
 const ASK_PREMIUM_ONLY = 'AI Stats is a premium feature. Text STATS for your 30-day summary.';
 // The quoted ASK question is example rider input, so its "I" stays.
-const ASK_HELP = 'Ask me anything about your trips, ' +
+const ASK_HELP = 'Ask anything about your trips, ' +
   'e.g. "ASK how many trips have I taken on Fridays?"';
 const NO_COMPLETED_TRIPS = 'You don\'t have any completed trips yet!';
 const AI_LIMIT_REACHED = 'AI limit reached. Try again later.';
 // Sent when the AI answer fails (gemini.js).
-const ASK_FAILED = 'Sorry, I had trouble searching your data. Try again?';
+const ASK_FAILED = 'Could not search your trips. Try again.';
 const NO_RECENT_TRIPS = 'No trips logged in the last 60 days.';
 
 /**

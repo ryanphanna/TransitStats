@@ -649,7 +649,7 @@ test('dispatcher: an unconfirmed number is refused every command that reads or c
     assert.equal(calls.handleStatus + calls.handleDiscard + calls.handleQuery + calls.handleAddNotes.length, 0, text);
     assert.equal(calls.handleTripLog, 0, text);
     assert.deepEqual(calls.confirmations, [['+14165551234', 'owner@example.com']], text);
-    assert.deepEqual(calls.sendSmsReply.map(r => r.message), ['We emailed you a code. Reply with it to unlock that.'], text);
+    assert.deepEqual(calls.sendSmsReply.map(r => r.message), ['A code was emailed to you. Reply with it to unlock that.'], text);
   }
 });
 

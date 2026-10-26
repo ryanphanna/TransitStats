@@ -98,7 +98,7 @@ test('REGISTER finds the account via Firebase Auth, not a profiles query', async
 test('REGISTER refuses when no verified Firebase Auth account has that email', async () => {
   const { mod, calls } = load({ authUid: null });
   await mod.handleRegister('+15195550143', 'rider@example.com');
-  assert.equal(calls.sms.at(-1), 'We couldn\'t find an account for that email. Try the one you signed in with, or visit transitstats.fyi.');
+  assert.equal(calls.sms.at(-1), 'No account found for that email. Try the one you signed in with, or visit transitstats.fyi.');
   assert.doesNotMatch(calls.sms.at(-1), /@|sign up/i);
 });
 
@@ -191,6 +191,6 @@ test('REGISTER from an unconfirmed number does not reveal the owner\'s email', a
 test('REGISTER with an email we can\'t match gets the approved wording, with no invite language', async () => {
   const { mod, calls } = load({ allowed: false });
   await mod.handleRegister('+15195550143', 'nobody@example.com');
-  assert.equal(calls.sms.at(-1), 'We couldn\'t find an account for that email. Try the one you signed in with, or visit transitstats.fyi.');
+  assert.equal(calls.sms.at(-1), 'No account found for that email. Try the one you signed in with, or visit transitstats.fyi.');
   assert.doesNotMatch(calls.sms.at(-1), /invite/i);
 });

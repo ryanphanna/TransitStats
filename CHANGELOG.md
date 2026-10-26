@@ -20,7 +20,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Texting YES or START after STOP turns texts back on everywhere**, so invite texts are no longer skipped afterward.
 - **Stop matching finds the right stop more often.** Stations typed as a platform or with different punctuation match, stops entered by code are found in Atlas, Pittsburgh trips use Pittsburgh Regional Transit, routes with backwards directions (such as Bathurst, Keele and King) are corrected, and corrected trips are re-checked. Different stops are never merged.
 - **Texted trips no longer get a made-up agency.** Words like "Downtown" or typos are read as the direction, and known agencies and nicknames (such as GO or NFTA) are recognized however they're typed.
-- **Texts no longer speak as "I".** "But I found multiple possible boarding stops" now reads "which matches more than one stop", with no blank line before the reply instructions.
+- **Texts and emails no longer speak as "I" or "we".** For example, "but I found multiple possible boarding stops" now reads "which matches more than one stop", with no blank line before the reply instructions, and "We emailed you a code" now reads "A code was emailed to you". Answers to ASK questions follow the same rule.
 - **"Up" and "Down" stay as typed** instead of becoming "Up Valley" or "Down Mountain".
 
 ### Predictions
