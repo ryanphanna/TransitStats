@@ -20,7 +20,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Texting YES or START after STOP turns texts back on everywhere**, so invite texts are no longer skipped afterward.
 - **Stop matching finds the right stop more often.** Stations typed as a platform or with different punctuation match, stops entered by code are found in Atlas, Pittsburgh trips use Pittsburgh Regional Transit, routes with backwards directions (such as Bathurst, Keele and King) are corrected, and corrected trips are re-checked. Different stops are never merged.
 - **Texted trips no longer get a made-up agency.** Words like "Downtown" or typos are read as the direction, and known agencies and nicknames (such as GO or NFTA) are recognized however they're typed.
-- **Texts and emails no longer speak as "I" or "we".** For example, "but I found multiple possible boarding stops" now reads "which matches more than one stop", with no blank line before the reply instructions, and "We emailed you a code" now reads "A code was emailed to you". Answers to ASK questions follow the same rule.
+- **Texts and emails no longer speak as "I" or "we".**
 - **"Up" and "Down" stay as typed** instead of becoming "Up Valley" or "Down Mountain".
 
 ### Predictions
@@ -40,14 +40,14 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Removed the Routes page, the Trip Paths beta, the live-trip indicator and the browser admin area**, keeping the personal map as the main view.
 - **The dashboard no longer hangs** if loading your trips fails.
 - **Settings no longer crashes for a new account** with no agency chosen.
-- **Maps load reliably.** Map tiles no longer need a key, dragging stops where you leave it, and public profile pages load their styling.
+- **Maps load reliably.** Map tiles no longer need a key, the map stays where you drag it, and public profile pages load their styling.
 
 ### Recap and PRESTO import
 
-- **Monthly Recap.** A shareable transfer-ticket card for last month's rides (day grid, trips, hours, top routes, favourite stop, busiest day), linked from the top menu and sized to fit a laptop window. Imported PRESTO rides count too, and a ride both logged and imported counts once.
+- **Monthly Recap.** A shareable transfer-ticket card for last month's rides (day grid, trips, hours, top routes, favourite stop, busiest day), linked from the top menu and sized to fit a laptop window. Imported PRESTO rides count too.
 - **PRESTO import for everyone.** Any signed-in user can import their PRESTO history from the import page or Settings, with step-by-step instructions for getting the file and a preview that lists what it skips and separates fares from card top-ups. New accounts with no rides see an import prompt.
 - **PRESTO imports are accurate.** Rides land on the right day, GO tap-ins and tap-outs pair into one trip even after a missed tap-off, refunded fares are left out, rides both logged and imported count once, and imported rides show on the dashboard as well as the public profile.
-- **PRESTO imports fail less.** One bad row no longer blocks a file, CSVs with hidden characters import, a PDF upload explains what file to use instead, errors are plain and safe to retry, and opening the import page without access no longer signs you out.
+- **PRESTO imports fail less.** One bad row no longer blocks a file, and a PDF upload explains what file to use instead.
 
 ### Sign-in, accounts and sharing
 
@@ -59,13 +59,12 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **The login map shows the real TTC network** (Lines 1, 2, 4, 5) for visitors in Toronto.
 - **Social preview cards show the full ride map** over real street tiles, with totals in the post text, and render as large cards on LinkedIn.
 - **Idle tabs stay signed in**, and a dashboard refresh shows a loading state instead of a blank or fake empty page while your session restores.
-- **Saving a public identity works again**, and picking one that's taken says so.
+- **Saving your public identity in Settings works again**, and picking one that's taken says so.
 - **The "Allow others to view your shared stats page" switch no longer shows "Failed to sync trips".**
 - **Social preview images load for large ride histories** and skip bad coordinates instead of breaking.
 
 ### Security and privacy
 
-- **Website visits are counted with Google Analytics**, without any trip or location data. The owner's own visits are skipped.
 - **Phone sign-in is protected against abuse.** Code requests go through an invisible bot check that blocks when its setting is missing, each source can request 10 codes an hour, and a daily cap keeps a reserve for recent users so one person can't lock everyone out. None of these responses reveal whether a number is registered or opted out.
 - **A number added by invite must be confirmed before it can see or change your data.** It can log trips right away; anything else asks for a code sent to the account's email.
 - **Closed privacy leaks.** Public profiles no longer expose private fields like admin or premium status, other people's Rocket GPS trails are no longer readable, and the unused Rocket page is gone.
@@ -75,7 +74,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ### Platform and other
 
-- **Terms of Service and Privacy Policy pages**, linked from the login screen.
+- **Website visits are counted with Google Analytics**, without any trip or location data. The owner's own visits are skipped.
 - **A lightning-bolt browser tab icon** on every page.
 - **Pages load faster.** Saved map dots show before the full history loads, the dashboard no longer reads your trip history twice, signed-in pages don't wait on session sync, and icons ship with the app instead of loading from another site.
 - **No more all-caps labels.**
