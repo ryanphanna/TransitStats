@@ -1,6 +1,7 @@
 
 import { defineConfig, loadEnv } from 'vite';
 import fs from 'node:fs';
+import { syncPublicProfileTemplate } from './scripts/sync-public-profile-template.mjs';
 
 const themeBootstrap = fs.readFileSync(new URL('./js/theme.js', import.meta.url), 'utf8');
 const requiredFirebaseEnv = [
@@ -60,6 +61,16 @@ export default defineConfig(({ mode, command }) => {
             open: false,
         },
         plugins: [
+            {
+                // /user/** is served by the publicProfilePage function from a copy of the built
+                // public page; keep that copy identical to dist/public.html after every build.
+                name: 'public-profile-template',
+                apply: 'build',
+                closeBundle() {
+                    const problem = syncPublicProfileTemplate();
+                    if (problem) throw new Error(problem);
+                },
+            },
             {
                 name: 'html-ext-fallback',
                 configureServer(server) {

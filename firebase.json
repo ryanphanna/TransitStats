@@ -11,7 +11,7 @@
         "*.local",
         "lib/model_v*"
       ],
-      "predeploy": []
+      "predeploy": ["node \"$PROJECT_DIR/scripts/sync-public-profile-template.mjs\" --check"]
     }
   ],
   "firestore": {

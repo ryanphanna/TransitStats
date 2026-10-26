@@ -3,7 +3,7 @@
  */
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { defineSecret } = require('firebase-functions/params');
-const { VALID_INTENTS, VALID_SENTIMENTS } = require('./constants');
+const { VALID_INTENTS, VALID_SENTIMENTS, timezoneForAgency } = require('./constants');
 const logger = require('./logger');
 const { ASK_FAILED } = require('./sms-text');
 
@@ -937,41 +937,9 @@ async function parseWithGemini(text, traceId = null) {
 // Ambiguous agency names that should never be cached — Gemini looks them up fresh each time
 const AMBIGUOUS_AGENCIES = new Set(['MTA', 'Metro', 'Transit']);
 
-// Known agency → IANA timezone mappings (checked before Firestore/Gemini)
-// Canonical agency names only — aliases are handled by normalizeAgency() before lookup
-const KNOWN_AGENCY_TIMEZONES = {
-  // Ontario
-  'TTC': 'America/Toronto',
-  'MiWay': 'America/Toronto',
-  'GO Transit': 'America/Toronto',
-  'YRT': 'America/Toronto',
-  'Brampton Transit': 'America/Toronto',
-  'Durham Transit': 'America/Toronto',
-  'HSR': 'America/Toronto',
-  'GRT': 'America/Toronto',
-  'OC Transpo': 'America/Toronto',
-  // Quebec
-  'STM': 'America/Toronto',
-  // BC
-  'TransLink': 'America/Vancouver',
-  // NYC
-  'NYC MTA': 'America/New_York',
-  // LA
-  'LA Metro': 'America/Los_Angeles',
-  'LADOT': 'America/Los_Angeles',
-  'Big Blue Bus': 'America/Los_Angeles',
-  // SF Bay Area
-  'BART': 'America/Los_Angeles',
-  'Muni': 'America/Los_Angeles',
-  'Caltrain': 'America/Los_Angeles',
-  'VTA': 'America/Los_Angeles',
-  'AC Transit': 'America/Los_Angeles',
-  'SamTrans': 'America/Los_Angeles',
-};
-
 /**
  * Look up the IANA timezone for a transit agency.
- * Checks hardcoded map first, then Firestore cache, then asks Gemini.
+ * Checks the shared agency table (constants.js) first, then Firestore cache, then asks Gemini.
  * Caches Gemini results to Firestore so each agency is only looked up once.
  * @param {string} agency
  * @returns {Promise<string>} IANA timezone string (e.g. 'America/Los_Angeles')
@@ -983,8 +951,9 @@ async function lookupAgencyTimezone(agency, traceId = null) {
   const { normalizeAgency } = require('./utils');
   const canonical = normalizeAgency(agency);
 
-  // 1. Hardcoded map
-  if (KNOWN_AGENCY_TIMEZONES[canonical]) return KNOWN_AGENCY_TIMEZONES[canonical];
+  // 1. Shared agency table (constants.js AGENCY_TIMEZONE)
+  const known = timezoneForAgency(canonical);
+  if (known) return known;
 
   // 2. Firestore cache (skip for ambiguous names — they can't be cached safely)
   const { getFirestore, FieldValue } = require('firebase-admin/firestore');

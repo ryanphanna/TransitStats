@@ -87,7 +87,13 @@ exports.onTripFinalized = onDocumentWritten('trips/{tripId}', async (event) => {
   const tripId = event.params.tripId;
   const justEnded = before.endTime == null && after.endTime != null;
 
+  // An agency change (a correction, or any later edit) moves the trip to the new agency's
+  // timezone, for active and ended trips alike. The follow-up write leaves the agency unchanged,
+  // so this trigger does not loop.
+  const timezoneUpdate = finalization.timezoneUpdateAfterAgencyChange(before, after);
+
   if (justEnded) {
+    if (timezoneUpdate) await applyTripUpdate(event, tripId, timezoneUpdate);
     console.log(`[Background] Running finalization for trip ${tripId} (reason: ended)`);
 
     try {
@@ -103,18 +109,29 @@ exports.onTripFinalized = onDocumentWritten('trips/{tripId}', async (event) => {
 
   // A correction to the start/end stop or agency of an ended trip: re-check the stop match
   // so a corrected trip is not left permanently unmatched (or matched on stale data).
+  const update = { ...timezoneUpdate };
   if (after.endTime != null) {
     try {
       const result = await finalization.refreshStopMatchAfterCorrection(before, after);
       if (result.changed) {
-        await event.data.after.ref.update({ stop_matched: result.matched });
+        update.stop_matched = result.matched;
         console.log(`[Background] stop_matched for trip ${tripId} is now ${result.matched} (after a correction)`);
       }
     } catch (err) {
       console.error(`[Background] Stop match refresh failed for ${tripId}`, err);
     }
   }
+  if (Object.keys(update).length > 0) await applyTripUpdate(event, tripId, update);
 });
+
+async function applyTripUpdate(event, tripId, update) {
+  try {
+    await event.data.after.ref.update(update);
+  } catch (err) {
+    console.error(`[Background] Trip update after a correction failed for ${tripId}`, err);
+  }
+}
+
 // Tue  5 May 2026 10:55:13 EDT
 // Tue  5 May 2026 11:08:01 EDT
 // Tue  5 May 2026 11:19:21 EDT

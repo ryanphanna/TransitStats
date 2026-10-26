@@ -3,7 +3,7 @@
  */
 const { db, FieldValue, Timestamp } = require('./core');
 const { getUserProfile } = require('./users');
-const { AGENCY_TIMEZONE } = require('../constants');
+const { timezoneForAgency } = require('../constants');
 
 const HIGH_IMPACT_CORRECTION_FIELDS = new Set([
   'route',
@@ -54,6 +54,8 @@ async function createTrip(tripData) {
     ? Timestamp.fromDate(new Date(startTimeOverride))
     : FieldValue.serverTimestamp();
 
+  // Unknown agencies get no timezone (not 'UTC'), so readers fall back to their own default.
+  const timezone = timezoneForAgency(tripData.agency);
   const docRef = await db.collection('trips').add({
     ...restTripData,
     startTime,
@@ -64,7 +66,7 @@ async function createTrip(tripData) {
     endStopName: null,
     exitLocation: null,
     isPublic: profile?.isPublic || false,
-    timezone: AGENCY_TIMEZONE[tripData.agency] || 'UTC',
+    ...(timezone ? { timezone } : {}),
   });
   return docRef.id;
 }

@@ -54,6 +54,7 @@ function loadFinalization(overrides = {}) {
     FieldValue: {
       increment: (v) => ({ _op: 'increment', v }),
       serverTimestamp: () => new Date('2026-07-19T00:00:00Z'),
+      delete: () => ({ _op: 'delete' }),
     },
     ...overrides.dbModule,
   };
@@ -365,4 +366,50 @@ test('writing stop_matched itself does not count as a stop input change', () => 
   const trip = endedTrip();
   assert.equal(finalization.stopMatchInputsChanged(trip, { ...trip, stop_matched: true }), false);
   assert.equal(finalization.stopMatchInputsChanged(trip, { ...trip, endStopName: 'Other' }), true);
+});
+
+// --- timezoneUpdateAfterAgencyChange ---
+
+test('correcting the agency moves the trip to the new agency\'s timezone', () => {
+  const { finalization } = loadFinalization();
+  const before = endedTrip({ agency: 'TTC', timezone: 'America/Toronto' });
+  assert.deepEqual(
+    finalization.timezoneUpdateAfterAgencyChange(before, { ...before, agency: 'Caltrain' }),
+    { timezone: 'America/Los_Angeles' },
+  );
+  // A trip stored with 'UTC' before #375 gets the right zone once its agency is corrected.
+  const utc = endedTrip({ agency: 'Mystery Transit', timezone: 'UTC' });
+  assert.deepEqual(
+    finalization.timezoneUpdateAfterAgencyChange(utc, { ...utc, agency: 'translink' }),
+    { timezone: 'America/Vancouver' },
+  );
+  // Active trips are covered too.
+  const active = endedTrip({ endTime: null, agency: 'TTC', timezone: 'America/Toronto' });
+  assert.deepEqual(
+    finalization.timezoneUpdateAfterAgencyChange(active, { ...active, agency: 'NYC MTA' }),
+    { timezone: 'America/New_York' },
+  );
+});
+
+test('correcting to an unknown agency removes the old agency\'s timezone', () => {
+  const { finalization } = loadFinalization();
+  const before = endedTrip({ agency: 'TTC', timezone: 'America/Toronto' });
+  assert.deepEqual(
+    finalization.timezoneUpdateAfterAgencyChange(before, { ...before, agency: 'Mystery Transit' }),
+    { timezone: { _op: 'delete' } },
+  );
+  const noZone = endedTrip({ agency: 'Other Transit' });
+  assert.equal(finalization.timezoneUpdateAfterAgencyChange(noZone, { ...noZone, agency: 'Mystery Transit' }), null);
+});
+
+test('no timezone write when the agency is unchanged or the zone is already right', () => {
+  const { finalization } = loadFinalization();
+  const trip = endedTrip({ agency: 'GO Transit', timezone: 'America/Toronto' });
+  assert.equal(finalization.timezoneUpdateAfterAgencyChange(trip, { ...trip, route: 'LW' }), null);
+  assert.equal(finalization.timezoneUpdateAfterAgencyChange(trip, { ...trip, agency: 'TTC' }), null);
+  // The trigger's own follow-up write (timezone only) does not loop.
+  const corrected = { ...trip, agency: 'Muni' };
+  const followUp = { ...corrected, timezone: 'America/Los_Angeles' };
+  assert.equal(finalization.timezoneUpdateAfterAgencyChange(corrected, followUp), null);
+  assert.equal(finalization.timezoneUpdateAfterAgencyChange(null, trip), null);
 });

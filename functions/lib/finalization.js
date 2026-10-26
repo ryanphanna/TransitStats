@@ -21,6 +21,7 @@ const { TransferEngine } = require('./transfer.js');
 const {
   getRouteDisplay,
 } = require('./utils');
+const { timezoneForAgency } = require('./constants');
 const logger = require('./logger');
 const text = require('./sms-text');
 
@@ -276,6 +277,20 @@ async function refreshStopMatchAfterCorrection(before, after, check = lookupStop
   return { changed: matched !== (after.stop_matched === true), matched };
 }
 
+/**
+ * The timezone a trip should carry after its agency changed (a correction or any later edit):
+ * the new agency's zone from constants.js AGENCY_TIMEZONE, or no timezone when the new agency
+ * isn't in the table, so readers fall back to their own default instead of the old agency's zone.
+ * @returns {object|null} the update to write ({ timezone }), or null when nothing needs to change
+ */
+function timezoneUpdateAfterAgencyChange(before, after) {
+  if (!before || !after) return null;
+  if ((before.agency ?? null) === (after.agency ?? null)) return null;
+  const timezone = timezoneForAgency(after.agency);
+  if (timezone) return after.timezone === timezone ? null : { timezone };
+  return after.timezone == null ? null : { timezone: FieldValue.delete() };
+}
+
 async function runPostEndFinalization(tripData, options = {}) {
   const { force = false } = options;
   const tripId = tripData.id;
@@ -412,4 +427,5 @@ module.exports = {
   triggerManualFinalization,
   refreshStopMatchAfterCorrection,
   stopMatchInputsChanged,
+  timezoneUpdateAfterAgencyChange,
 };

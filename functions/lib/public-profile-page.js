@@ -3,7 +3,15 @@ const path = require('node:path');
 const { onRequest } = require('firebase-functions/v2/https');
 const { getPublicProfilePayload } = require('./public-profile');
 
-const TEMPLATE = fs.readFileSync(path.join(__dirname, '..', 'public-profile-template.html'), 'utf8');
+// Copied from the built dist/public.html by every root build (scripts/sync-public-profile-template.mjs)
+// and checked before each functions deploy. Read on first use, so a checkout that was never built
+// (tests, the emulator) still loads every other function.
+const TEMPLATE_PATH = path.join(__dirname, '..', 'public-profile-template.html');
+let template = null;
+function getTemplate() {
+  if (template === null) template = fs.readFileSync(TEMPLATE_PATH, 'utf8');
+  return template;
+}
 const PUBLIC_ORIGIN = 'https://transitstats.fyi';
 
 function escapeHtml(value) {
@@ -31,7 +39,7 @@ async function handlePublicProfilePage(req, res) {
     // receiving a preview for a profile that is not public.
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.set('Cache-Control', 'no-store');
-    res.status(200).send(TEMPLATE);
+    res.status(200).send(getTemplate());
     return;
   }
 
@@ -64,7 +72,7 @@ async function handlePublicProfilePage(req, res) {
 
   res.set('Content-Type', 'text/html; charset=utf-8');
   res.set('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=300');
-  res.status(200).send(TEMPLATE.replace('</head>', `${metadata}\n</head>`));
+  res.status(200).send(getTemplate().replace('</head>', `${metadata}\n</head>`));
 }
 
 exports.publicProfilePage = onRequest({ concurrency: 40, maxInstances: 4 }, handlePublicProfilePage);

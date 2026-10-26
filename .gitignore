@@ -41,6 +41,8 @@ npm-debug.log*
 # Build output
 dist/
 build/
+# Copied from dist/public.html by every build (scripts/sync-public-profile-template.mjs)
+functions/public-profile-template.html
 
 # Test coverage
 coverage/
