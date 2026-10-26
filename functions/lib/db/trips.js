@@ -4,6 +4,7 @@
 const { db, FieldValue, Timestamp } = require('./core');
 const { getUserProfile } = require('./users');
 const { timezoneForAgency } = require('../constants');
+const { ACTIVE_TRIP_WINDOW_MS } = require('../trip-stats');
 
 const HIGH_IMPACT_CORRECTION_FIELDS = new Set([
   'route',
@@ -26,7 +27,8 @@ function hasBlockingCorrection(trip) {
 
 async function getActiveTrip(userId) {
   const now = new Date();
-  const sixHoursAgo = Timestamp.fromDate(new Date(now.getTime() - 6 * 60 * 60 * 1000));
+  // Same 6-hour window the dashboard and public profile use (js/shared/trip-stats.js).
+  const sixHoursAgo = Timestamp.fromDate(new Date(now.getTime() - ACTIVE_TRIP_WINDOW_MS));
 
   const snapshot = await db.collection('trips')
     .where('userId', '==', userId)

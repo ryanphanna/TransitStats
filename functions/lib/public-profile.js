@@ -12,16 +12,9 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { db, getUserProfile, getStopsLibrary } = require('./db');
 const logger = require('./logger');
 const { getMapStopMode } = require('./profile-fields');
-const { unmatchedImportedRides } = require('./ride-merge');
+const { unmatchedImportedRides, projectPrestoTripsForStats } = require('./ride-merge');
 const { buildPrestoTrips } = require('./presto-trips');
-
-const ACTIVE_TRIP_WINDOW_MS = 6 * 60 * 60 * 1000;
-
-function isDashboardHistoryTrip(trip, now = Date.now()) {
-  if (trip.endTime || trip.discarded) return true;
-  const startTime = trip.startTime?.toDate ? trip.startTime.toDate() : new Date(trip.startTime);
-  return Number.isFinite(startTime.getTime()) && now - startTime.getTime() >= ACTIVE_TRIP_WINDOW_MS;
-}
+const { isHistoryTrip, computeSummaryStats, storedTripTimeZone } = require('./trip-stats');
 
 function normalizeStopLabel(value) {
   return String(value || '')
@@ -77,13 +70,6 @@ function uniquePrestoStopCandidates(record, stops) {
 
   return [...candidates.values()];
 }
-
-const AGENCY_COUNTRIES = new Map([
-  ...['TTC', 'GO', 'GO Transit', 'MiWay', 'YRT', 'Brampton Transit', 'Durham Transit', 'HSR', 'GRT', 'Grand River Transit', 'OC Transpo', 'STM', 'TransLink', 'Oakville Transit', 'GTAA Terminal Link', 'Flagship Cruises & Events', 'Exo', 'CDPQ Infra', 'Niagara Region Transit'].map(agency => [agency.toLowerCase(), 'Canada']),
-  ...['NYC MTA', 'New York City Transit', 'LA Metro', 'LADOT', 'Los Angeles Department of Transportation', 'Big Blue Bus', 'BART', 'Muni', 'Caltrain', 'VTA', 'AC Transit', 'SamTrans', 'MTS', 'Amtrak', 'Golden Gate Transit', 'SMART', 'Santa Rosa CityBus', 'CDTA', 'NFTA Metro', 'TriMet', 'C-Tran', 'Sound Transit', 'King County Metro', 'Utah Transit Authority', 'Sacramento Regional Transit', 'GCRTA'].map(agency => [agency.toLowerCase(), 'United States']),
-  ...['RATP', 'SNCF Transilien'].map(agency => [agency.toLowerCase(), 'France']),
-  ...['TMB'].map(agency => [agency.toLowerCase(), 'Spain']),
-]);
 
 function buildStopLocationIndex(stops = []) {
   const index = new Map();
@@ -184,20 +170,13 @@ async function handlePublicProfile(req, res) {
     const nowMs = Date.now();
     tripsSnap.forEach((doc) => {
       const trip = doc.data();
-      if (isDashboardHistoryTrip(trip, nowMs)) historyTrips.push(trip);
+      if (isHistoryTrip(trip, nowMs)) historyTrips.push(trip);
     });
     const prestoRecords = prestoSnap.docs
       .map(doc => doc.data())
       .filter(record => record.type === 'fare_payment');
     const stops = stopsSnap.docs.map(doc => doc.data());
 
-    let totalMinutes = 0;
-    let last30Days = 0;
-    let last7Days = 0;
-    const riddenDays = new Set();
-    const agencies = new Set();
-    const routes = new Set();
-    const countries = new Set();
     const pointsByStop = new Map();
     let stopIndex = null;
     let stopIndexPromise = null;
@@ -209,11 +188,6 @@ async function handlePublicProfile(req, res) {
       stopIndex = await stopIndexPromise;
       return stopIndex;
     };
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const sevenDaysAgo = new Date(now);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const addPoint = (location, type, name) => {
       if (location?.lat == null || location?.lng == null) return;
       const lat = Number(location.lat);
@@ -235,21 +209,6 @@ async function handlePublicProfile(req, res) {
       });
     };
     for (const trip of historyTrips) {
-      totalMinutes += trip.duration || 0;
-      const tripDate = trip.startTime?.toDate ? trip.startTime.toDate() : new Date(trip.startTime);
-      if (!Number.isNaN(tripDate.getTime())) {
-        riddenDays.add(`${tripDate.getFullYear()}-${tripDate.getMonth()}-${tripDate.getDate()}`);
-        if (tripDate >= thirtyDaysAgo) last30Days += 1;
-        if (tripDate >= sevenDaysAgo) last7Days += 1;
-      }
-      const agency = String(trip.agency || '').trim();
-      const route = String(trip.route || '').trim();
-      if (route) routes.add(route.toLowerCase());
-      if (agency) {
-        agencies.add(agency.toLowerCase());
-        const country = AGENCY_COUNTRIES.get(agency.toLowerCase());
-        if (country) countries.add(country);
-      }
       if (includePoints) {
         const boardingLocation = resolveTripLocation(
           trip.boardingLocation || trip.boardLocation,
@@ -278,26 +237,17 @@ async function handlePublicProfile(req, res) {
       }
     }
 
-    // Rides the user also logged as trips are already counted above.
+    // Rides the user also logged as trips are already counted and mapped.
     const prestoTrips = unmatchedImportedRides(historyTrips, buildPrestoTrips(prestoRecords));
+    // Same totals as the dashboard (summaryTrips in ride-merge), with days
+    // counted in each trip's stored timezone (Toronto when it has none),
+    // never the server clock.
+    const stats = computeSummaryStats([...historyTrips, ...projectPrestoTripsForStats(prestoTrips)], {
+      timeZoneFor: storedTripTimeZone,
+    });
 
     prestoTrips.forEach((trip) => {
       const { startRecord, endRecord } = trip;
-      const tripDate = Number.isFinite(Number(startRecord.occurredAtSortKey))
-        ? new Date(Number(startRecord.occurredAtSortKey))
-        : new Date(startRecord.occurredAtLocal);
-      if (!Number.isNaN(tripDate.getTime())) {
-        riddenDays.add(`${tripDate.getFullYear()}-${tripDate.getMonth()}-${tripDate.getDate()}`);
-        if (tripDate >= thirtyDaysAgo) last30Days += 1;
-        if (tripDate >= sevenDaysAgo) last7Days += 1;
-      }
-
-      const agency = String(trip.agency || '').trim();
-      if (agency) {
-        agencies.add(agency.toLowerCase());
-        const country = AGENCY_COUNTRIES.get(agency.toLowerCase());
-        if (country) countries.add(country);
-      }
 
       // Only uniquely resolved PRESTO locations are exposed. Ambiguous
       // directional candidates remain stored but do not get guessed publicly.
@@ -320,15 +270,15 @@ async function handlePublicProfile(req, res) {
       emoji: profile.emoji || null,
       defaultAgency: profile.defaultAgency || null,
       mapStopMode: getMapStopMode(profile),
-      totalTrips: historyTrips.length + prestoTrips.length,
-      totalHours: Math.round((totalMinutes / 60) * 10) / 10,
+      totalTrips: stats.totalTrips,
+      totalHours: stats.totalHours,
       // Keep the existing response keys for clients that have not refreshed yet.
-      thisMonth: last30Days,
-      thisWeek: last7Days,
-      daysRidden: riddenDays.size,
-      agencies: agencies.size,
-      routes: routes.size,
-      countries: countries.size,
+      thisMonth: stats.thisMonth,
+      thisWeek: stats.thisWeek,
+      daysRidden: stats.daysRidden,
+      agencies: stats.agencies,
+      routes: stats.routes,
+      countries: stats.countries,
       points: includePoints ? [...pointsByStop.values()] : [],
     });
   } catch (err) {

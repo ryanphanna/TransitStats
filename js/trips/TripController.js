@@ -1,4 +1,5 @@
 import { db } from '../firebase.js';
+import { isActiveTrip, isHistoryTrip } from '../shared/trip-stats.js';
 
 /**
  * TripController - Manages the trip data stream.
@@ -12,8 +13,6 @@ export const TripController = {
         if (!userId) return;
         if (this.unsubscribe) this.unsubscribe();
 
-        const sixHoursMs = 6 * 60 * 60 * 1000;
-
         this.unsubscribe = db.collection('trips')
             .where('userId', '==', userId)
             .orderBy('startTime', 'desc')
@@ -21,19 +20,10 @@ export const TripController = {
                 const now = Date.now();
                 const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-                // Filter Active vs Completed (Active is < 6h old and has no end time)
-                this.activeTrip = docs.find(t => {
-                    if (t.endTime || t.discarded) return false;
-                    const startTime = t.startTime?.toDate ? t.startTime.toDate().getTime() : new Date(t.startTime).getTime();
-                    return (now - startTime) < sixHoursMs;
-                });
-
-                // Completed trips or those that timed out
-                this.allTrips = docs.filter(t => 
-                    t.endTime || 
-                    t.discarded || 
-                    (now - (t.startTime?.toDate ? t.startTime.toDate().getTime() : new Date(t.startTime).getTime())) >= sixHoursMs
-                );
+                // Active is < 6h old and has no end time; history is finished,
+                // discarded, or timed out. Same rule as the public profile.
+                this.activeTrip = docs.find(t => isActiveTrip(t, now));
+                this.allTrips = docs.filter(t => isHistoryTrip(t, now));
 
                 if (onUpdate) onUpdate(this.allTrips, this.activeTrip);
             }, err => {

@@ -1,5 +1,5 @@
 import { normalizeStopLibraryLabel, stopBelongsToAgency } from './stop-library-match.js';
-import { importedRideTime } from './shared/ride-merge.js';
+import { projectPrestoTripsForStats } from './shared/ride-merge.js';
 import { buildPrestoTrips } from './shared/presto-trips.js';
 
 function validLocation(stop) {
@@ -120,22 +120,6 @@ export function preparePrestoStops({ atlasStops = [], firestoreStops = [] } = {}
     ];
 }
 
-export { buildPrestoTrips };
-
-/**
- * A lightweight `{ agency, startTime }` projection of PRESTO trips, shaped to
- * match what Stats.computeTripPeriodCounts/getCountriesRidden already expect
- * from logged trips. This only covers the summary counts (trip counts,
- * agencies, days ridden, countries) that don't depend on duration, route, or
- * stop names — PRESTO trips have none of those, so they stay out of the
- * richer metrics (top routes/stops, peak times, streaks, highlights).
- */
-export function projectPrestoTripsForStats(prestoTrips = []) {
-    return prestoTrips
-        .map(trip => ({ trip, time: importedRideTime(trip) }))
-        .filter(({ time }) => Number.isFinite(time))
-        .map(({ trip, time }) => ({
-            agency: trip.agency,
-            startTime: new Date(time),
-        }));
-}
+// The projection lives in js/shared/ride-merge.js so the public profile
+// function uses the same one.
+export { buildPrestoTrips, projectPrestoTripsForStats };

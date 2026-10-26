@@ -113,4 +113,34 @@ function mergeImportedRides(loggedTrips, importedRides, windowMs = RIDE_MATCH_WI
     return [...(loggedTrips || []), ...unmatchedImportedRides(loggedTrips, importedRides, windowMs)];
 }
 
-module.exports = { normalizeRideAgency, prestoWallClockToInstant, importedRideTime, matchImportedRides, unmatchedImportedRides, mergeImportedRides };
+/**
+ * A lightweight `{ agency, startTime }` projection of PRESTO trips, shaped to
+ * match what the summary stats (js/shared/trip-stats.js) expect from logged
+ * trips. This only covers the summary counts (trip counts, agencies, days
+ * ridden, countries) that don't depend on duration, route, or stop names —
+ * PRESTO trips have none of those, so they stay out of the richer metrics
+ * (top routes/stops, peak times, streaks, highlights).
+ */
+function projectPrestoTripsForStats(prestoTrips = []) {
+    return prestoTrips
+        .map(trip => ({ trip, time: importedRideTime(trip) }))
+        .filter(({ time }) => Number.isFinite(time))
+        .map(({ trip, time }) => ({
+            agency: trip.agency,
+            startTime: new Date(time),
+        }));
+}
+
+/**
+ * The trips behind the summary tiles: logged history trips plus the imported
+ * PRESTO rides that weren't also logged. The dashboard and the public profile
+ * both use this, so they count the same rides.
+ */
+function summaryTrips(loggedTrips, prestoTrips) {
+    return [
+        ...(loggedTrips || []),
+        ...projectPrestoTripsForStats(unmatchedImportedRides(loggedTrips, prestoTrips)),
+    ];
+}
+
+module.exports = { normalizeRideAgency, prestoWallClockToInstant, importedRideTime, matchImportedRides, unmatchedImportedRides, mergeImportedRides, projectPrestoTripsForStats, summaryTrips };

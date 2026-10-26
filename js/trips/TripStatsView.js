@@ -1,7 +1,6 @@
-import { Stats } from '../stats.js';
 import { formatAtlasNumber } from '../shared/atlas-card.js';
-import { projectPrestoTripsForStats } from '../presto-stop-matcher.js';
-import { unmatchedImportedRides } from '../shared/ride-merge.js';
+import { summaryTrips } from '../shared/ride-merge.js';
+import { computeSummaryStats } from '../shared/trip-stats.js';
 
 /**
  * TripStatsView - Manages the visualization of transit metrics and analytics.
@@ -10,16 +9,14 @@ export const TripStatsView = {
     render(trips, prestoTrips = []) {
         // Trip counts, agencies, days ridden, and countries also count
         // imported PRESTO activity, except rides already logged as trips.
-        const summaryTrips = [...trips, ...projectPrestoTripsForStats(unmatchedImportedRides(trips, prestoTrips))];
-        const periodCounts = Stats.computeTripPeriodCounts(summaryTrips);
-        this._updateBox('stat-trips-lifetime', periodCounts.lifetime);
-        this._updateBox('stat-trips-month', periodCounts.thisMonth);
-        this._updateBox('stat-trips-week', periodCounts.thisWeek);
-        this._updateBox('stat-days-ridden', periodCounts.daysRidden);
-        this._updateBox('stat-agencies-ridden', new Set(
-            summaryTrips.map(trip => String(trip.agency || '').trim()).filter(Boolean)
-        ).size);
-        this._updateBox('stat-countries-ridden', Stats.getCountriesRidden(summaryTrips));
+        // Same calculation as the public profile; days use the viewer's local time.
+        const stats = computeSummaryStats(summaryTrips(trips, prestoTrips));
+        this._updateBox('stat-trips-lifetime', stats.totalTrips);
+        this._updateBox('stat-trips-month', stats.thisMonth);
+        this._updateBox('stat-trips-week', stats.thisWeek);
+        this._updateBox('stat-days-ridden', stats.daysRidden);
+        this._updateBox('stat-agencies-ridden', stats.agencies);
+        this._updateBox('stat-countries-ridden', stats.countries);
     },
 
     _updateBox(id, val) {

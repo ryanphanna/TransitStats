@@ -313,3 +313,26 @@ test('publicProfile ignores a claimed username that is not registered', async ()
   await handler({ method: 'GET', query: { user: 'mine' } }, res);
   assert.equal(res.body.canonicalUsername, 'mine');
 });
+
+test('publicProfile counts days in the trip timezone and agencies/routes like the dashboard', async () => {
+  // 9:00 PM Toronto on Oct 20 is 1:00 AM UTC on Oct 21; the 8:00 AM ride is Oct 21.
+  const tripDocs = [
+    { agency: 'TTC', route: '501', duration: 30, startTime: new Date('2026-10-21T01:00:00Z'), endTime: new Date('2026-10-21T01:30:00Z'), timezone: 'America/Toronto' },
+    { agency: 'ttc', route: '501', duration: 30, startTime: new Date('2026-10-21T12:00:00Z'), endTime: new Date('2026-10-21T12:30:00Z') },
+    { agency: 'TTC', route: '504a', duration: 30, startTime: new Date('2026-10-21T13:00:00Z'), endTime: new Date('2026-10-21T13:30:00Z'), timezone: 'America/Toronto' },
+  ].map(trip => ({ data: () => trip }));
+  const handler = loadPublicProfile({
+    docs: { usernames: { r: { exists: true, data: () => ({ uid: 'u1' }) } } },
+    profile: { isPublic: true, username: 'r' },
+    tripsSnap: { size: tripDocs.length, forEach: (fn) => tripDocs.forEach(fn) },
+  });
+  const res = mockRes();
+  await handler({ method: 'GET', query: { user: 'r', includePoints: '0' } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.totalTrips, 3);
+  assert.equal(res.body.daysRidden, 2);
+  assert.equal(res.body.agencies, 2);
+  assert.equal(res.body.routes, 2);
+  assert.equal(res.body.countries, 1);
+  assert.equal(res.body.totalHours, 1.5);
+});
