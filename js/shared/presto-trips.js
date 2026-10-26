@@ -7,7 +7,7 @@ export const GO_MAX_TRIP_GAP_MS = 4 * 60 * 60 * 1000;
 
 function isGoTransitRecord(record) {
     const agency = String(record?.agency || record?.agencySource || '').trim().toLowerCase();
-    return agency === 'go' || agency === 'go transit';
+    return agency === 'go transit';
 }
 
 // GO taps on (a charge, negative) and off (an adjustment, zero or positive).

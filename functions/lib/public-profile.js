@@ -30,9 +30,7 @@ function stopBelongsToAgency(stop, agency) {
     .map(value => String(value).trim().toLowerCase());
   const target = String(agency || '').trim().toLowerCase();
   if (!target || candidates.length === 0) return true;
-  return candidates.some(candidate => candidate === target
-    || (candidate === 'go' && target === 'go transit')
-    || (candidate === 'go transit' && target === 'go'));
+  return candidates.includes(target);
 }
 
 function validStopLocation(stop) {

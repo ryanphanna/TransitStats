@@ -2,7 +2,6 @@ import { Identity } from './identity.js';
 
 const AGENCY_DISPLAY_NAMES = {
     TTC: 'Toronto Transit Commission',
-    GO: 'GO Transit',
     'NFTA Metro': 'Niagara Frontier Transportation Authority',
     'GO Transit': 'GO Transit',
     MiWay: 'Mississauga Transit',

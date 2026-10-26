@@ -4,7 +4,6 @@ import { buildStopIndex, resolveStopLocation } from './atlas-stop-resolver.js';
 
 const AGENCY_ALIASES = new Map([
     ['Toronto Transit Commission', 'TTC'],
-    ['GO Transit', 'GO'],
     ['Mississauga Transit', 'MiWay'],
     ['Hamilton Street Railway', 'HSR'],
     ['York Region Transit', 'YRT'],

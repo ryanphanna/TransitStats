@@ -19,7 +19,7 @@ describe('PRESTO stop matcher', () => {
             ...baseRecord,
             location: 'Toronto- New USBT',
             locationLabel: 'Union Station Bus Terminal',
-            agency: 'GO',
+            agency: 'GO Transit',
         }, [{
             id: 'bus-terminal',
             agency: 'GO Transit',
@@ -51,7 +51,7 @@ describe('PRESTO stop matcher', () => {
     });
 
     it('does not match a label from another agency', () => {
-        const result = matchPrestoRecord({ ...baseRecord, agency: 'GO' }, [{
+        const result = matchPrestoRecord({ ...baseRecord, agency: 'GO Transit' }, [{
             agency: 'TTC',
             name: baseRecord.location,
             lat: 43.67,
@@ -74,8 +74,8 @@ describe('PRESTO stop matcher', () => {
 
 describe('buildPrestoTrips', () => {
     it('pairs consecutive GO fare payments into one trip, boarding then exit', () => {
-        const boarding = { type: 'fare_payment', agency: 'GO', occurredAtSortKey: 100, location: 'Union Station Rail' };
-        const exit = { type: 'fare_payment', agency: 'GO', occurredAtSortKey: 200, location: 'Oakville GO Station Rail' };
+        const boarding = { type: 'fare_payment', agency: 'GO Transit', occurredAtSortKey: 100, location: 'Union Station Rail' };
+        const exit = { type: 'fare_payment', agency: 'GO Transit', occurredAtSortKey: 200, location: 'Oakville GO Station Rail' };
         const trips = buildPrestoTrips([exit, boarding]);
 
         expect(trips).toHaveLength(1);
@@ -84,9 +84,9 @@ describe('buildPrestoTrips', () => {
     });
 
     it('keeps a trailing unpaired GO tap as a boarding-only trip', () => {
-        const first = { type: 'fare_payment', agency: 'GO', occurredAtSortKey: 100 };
-        const second = { type: 'fare_payment', agency: 'GO', occurredAtSortKey: 200 };
-        const missedTapOut = { type: 'fare_payment', agency: 'GO', occurredAtSortKey: 300 };
+        const first = { type: 'fare_payment', agency: 'GO Transit', occurredAtSortKey: 100 };
+        const second = { type: 'fare_payment', agency: 'GO Transit', occurredAtSortKey: 200 };
+        const missedTapOut = { type: 'fare_payment', agency: 'GO Transit', occurredAtSortKey: 300 };
         const trips = buildPrestoTrips([first, second, missedTapOut]);
 
         expect(trips).toHaveLength(2);
@@ -107,7 +107,7 @@ describe('buildPrestoTrips', () => {
     it('excludes card loads from trips entirely', () => {
         const trips = buildPrestoTrips([
             { type: 'period_pass_load', agency: 'TTC', occurredAtSortKey: 100 },
-            { type: 'epurse_load', agency: 'GO', occurredAtSortKey: 200 },
+            { type: 'epurse_load', agency: 'GO Transit', occurredAtSortKey: 200 },
         ]);
 
         expect(trips).toHaveLength(0);

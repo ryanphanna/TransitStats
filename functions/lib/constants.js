@@ -85,6 +85,7 @@ exports.AGENCY_TIMEZONE = {
   'OC Transpo': 'America/Toronto',
   'Oakville Transit': 'America/Toronto',
   'GTAA Terminal Link': 'America/Toronto',
+  'Niagara Region Transit': 'America/Toronto',
   // Quebec
   'STM': 'America/Toronto',
   // BC
