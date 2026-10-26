@@ -6,6 +6,12 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 **See also:** [Intelligence notes](docs/INTELLIGENCE.md) · [Transfer Engine notes](docs/TRANSFER_ENGINE.md) · [Network Engine notes](docs/NETWORK_ENGINE.md)
 
+## [Unreleased]
+
+### Fixes
+
+- **GO Transit shows up once** in the agency list, and imported PRESTO rides use the same name as texted trips.
+
 ## [1.50.0] — 2026-10-25
 
 ### Texting

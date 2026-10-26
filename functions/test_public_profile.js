@@ -178,7 +178,7 @@ test('publicProfile includes uniquely matched PRESTO activity for beta pilots', 
       size: 1,
       docs: [{ data: () => ({
         type: 'fare_payment',
-        agency: 'GO',
+        agency: 'GO Transit',
         locationLabel: 'Union Station Bus Terminal',
         occurredAtSortKey: Date.UTC(2026, 0, 2),
       }) }],
@@ -218,13 +218,13 @@ test('publicProfile pairs GO tap-in/tap-out rows into one trip with boarding and
       docs: [
         { data: () => ({
           type: 'fare_payment',
-          agency: 'GO',
+          agency: 'GO Transit',
           locationLabel: 'Union Station Bus Terminal',
           occurredAtSortKey: Date.now() - 7 * 60 * 60 * 1000,
         }) },
         { data: () => ({
           type: 'fare_payment',
-          agency: 'GO',
+          agency: 'GO Transit',
           locationLabel: 'Oakville GO Station Rail',
           occurredAtSortKey: Date.now() - 6 * 60 * 60 * 1000,
         }) },

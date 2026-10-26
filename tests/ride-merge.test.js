@@ -61,14 +61,14 @@ describe('mergeImportedRides', () => {
     });
 
     it('does not match across different agencies', () => {
-        const merged = mergeImportedRides([logged(0, 'TTC')], [presto(1, 'GO')]);
+        const merged = mergeImportedRides([logged(0, 'TTC')], [presto(1, 'GO Transit')]);
         expect(merged.map(ride => ride.tag)).toEqual(['l0', 'p1']);
     });
 
     it('matches when an agency is missing or spelled out in full', () => {
         expect(mergeImportedRides([logged(0, '')], [presto(1, 'TTC')]).map(r => r.tag)).toEqual(['l0']);
         expect(mergeImportedRides([logged(0, 'TTC')], [presto(1, 'Toronto Transit Commission')]).map(r => r.tag)).toEqual(['l0']);
-        expect(normalizeRideAgency('GO Transit')).toBe('go');
+        expect(normalizeRideAgency(' GO Transit ')).toBe('go transit');
     });
 
     it('ignores logged trips and imported rides with no usable time', () => {

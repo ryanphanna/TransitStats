@@ -30,8 +30,8 @@ function matches(option, query) {
 /**
  * Agency combobox used by settings and the edit-trip modal. Settings can
  * disable free-form values so profile preferences stay tied to real agencies.
- * The selected raw value is kept in input.dataset.agencyValue so display names
- * such as "GO Transit" can still match trip data stored as "GO".
+ * The selected raw value is kept in input.dataset.agencyValue so a display name
+ * such as "Toronto Transit Commission" still saves the stored name "TTC".
  */
 export function createAgencyAutocomplete({ input, options = [], onCommit, onInvalid, allowCustom = true } = {}) {
     if (!input) return null;

@@ -86,7 +86,7 @@ describe('toRecord', () => {
         }, 2, 'PRESTO 2026.csv');
 
         expect(record.source).toBe('presto');
-        expect(record.agency).toBe('GO');
+        expect(record.agency).toBe('GO Transit');
         expect(record.agencySource).toBe('GO Transit');
         expect(record.type).toBe('fare_payment');
         expect(record.amountCents).toBe(-264);

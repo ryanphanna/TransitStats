@@ -6,7 +6,7 @@ import { SHARED_MODULES, generated } from '../scripts/sync-shared.mjs';
 
 const H = 60 * 60 * 1000;
 const go = (hours, amountCents, label = 'x') => ({
-    type: 'fare_payment', agency: 'GO', occurredAtSortKey: hours * H, amountCents, location: label,
+    type: 'fare_payment', agency: 'GO Transit', occurredAtSortKey: hours * H, amountCents, location: label,
 });
 const tapOn = (hours, label) => go(hours, -552, label);
 const tapOff = (hours, label) => go(hours, 264, label);
@@ -52,7 +52,7 @@ describe('buildPrestoTrips GO pairing', () => {
     });
 
     it('pairs rows that have no amounts (older fixtures)', () => {
-        const noAmount = hours => ({ type: 'fare_payment', agency: 'GO', occurredAtSortKey: hours * H });
+        const noAmount = hours => ({ type: 'fare_payment', agency: 'GO Transit', occurredAtSortKey: hours * H });
         expect(buildPrestoTrips([noAmount(1), noAmount(2)])).toHaveLength(1);
     });
 
@@ -64,11 +64,11 @@ describe('buildPrestoTrips GO pairing', () => {
         ]);
         expect(trips).toHaveLength(2);
         expect(trips.find(t => t.agency === 'TTC').endRecord).toBeNull();
-        expect(trips.find(t => t.agency === 'GO').endRecord.location).toBe('B');
+        expect(trips.find(t => t.agency === 'GO Transit').endRecord.location).toBe('B');
     });
 
     it('ignores card loads and handles empty input', () => {
-        expect(buildPrestoTrips([{ type: 'epurse_load', agency: 'GO', occurredAtSortKey: 1 }])).toHaveLength(0);
+        expect(buildPrestoTrips([{ type: 'epurse_load', agency: 'GO Transit', occurredAtSortKey: 1 }])).toHaveLength(0);
         expect(buildPrestoTrips()).toEqual([]);
     });
 });

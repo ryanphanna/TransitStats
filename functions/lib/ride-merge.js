@@ -11,7 +11,6 @@ const PRESTO_TIME_ZONE = 'America/Toronto';
 
 const AGENCY_ALIASES = {
     'toronto transit commission': 'ttc',
-    'go transit': 'go',
     'mississauga transit': 'miway',
     'hamilton street railway': 'hsr',
     'york region transit': 'yrt',
