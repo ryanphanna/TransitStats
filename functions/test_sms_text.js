@@ -74,18 +74,8 @@ const SAMPLES = {
 // an entry stops breaking the rule or breaks it with different words, so the
 // list always matches the texts.
 const EXCEPTIONS = {
-  // "Ask me ..." The quoted "I" is an example question a rider would type, so
-  // it stays even after the rewording.
-  ASK_HELP: ['I', 'me'],
-  ASK_FAILED: ['I'],
-  UNLOCK_PROMPT_TEXT: ['We'],
-  EMAIL_NOT_FOUND_TEXT: ['We'],
-  OTP_UNCONFIRMED_TEXT: ['us', 'we'],
-  SETUP_TEXT: ['We'],
-  CONFIRM_TEXT: ['We'],
-  SETUP_PROBLEM_TEXT: ['We', 'us'],
-  // Email body: "text your trips to our number".
-  signInEmail: ['our'],
+  // The quoted "I" is an example question a rider would type.
+  ASK_HELP: ['I'],
 };
 
 const FIRST_PERSON = /\b(?:I'm|I've|I'll|I'd|I)\b|\b(?:me|my|we're|we've|we'll|we|us|our)\b/gi;
