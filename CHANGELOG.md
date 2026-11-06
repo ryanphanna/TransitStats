@@ -12,6 +12,10 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 - **GO Transit shows up once** in the agency list, and imported PRESTO rides use the same name as texted trips.
 
+### Security
+
+- **Patched a slow-pattern bug in the Firebase library** the website uses, where a crafted search pattern could tie up the page.
+
 ## [1.50.0] — 2026-10-25
 
 ### Texting
