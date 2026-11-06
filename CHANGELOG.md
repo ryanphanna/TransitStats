@@ -15,6 +15,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 ### Security
 
 - **Patched a slow-pattern bug in the Firebase library** the website uses, where a crafted search pattern could tie up the page.
+- **Patched the text-message server's web request library** so login details can't be passed along when a request is redirected to another site, and closed two lower-risk file-search issues.
 
 ## [1.50.0] — 2026-10-25
 
