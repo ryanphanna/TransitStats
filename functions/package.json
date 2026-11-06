@@ -30,7 +30,7 @@
     "twilio": "^6.2.0"
   },
   "overrides": {
-    "follow-redirects": "^1.16.1",
+    "follow-redirects": "^1.16.2",
     "axios": "^1.20.0",
     "@fastify/busboy": "^3.2.2",
     "@grpc/grpc-js": "^1.14.5",
@@ -41,7 +41,13 @@
     "@tootallnate/once": "^3.0.1",
     "fast-xml-parser": "^5.10.1",
     "uuid": "^11.1.1",
-    "adm-zip": "^0.6.1"
+    "adm-zip": "^0.6.1",
+    "rimraf": {
+      "glob": {
+        ".": "^14.0.2",
+        "minimatch": "^11.0.1"
+      }
+    }
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
