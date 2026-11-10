@@ -28,6 +28,9 @@ import { Stats } from '../js/stats.js';
 // ASK runs the generated CommonJS copies inside the Cloud Functions.
 const require = createRequire(import.meta.url);
 const claude = require('../functions/lib/claude.js');
+const publicProfile = require('../functions/lib/public-profile.js');
+const smsText = require('../functions/lib/sms-text.js');
+const Module = require('node:module');
 
 const originalTz = process.env.TZ;
 beforeAll(() => { process.env.TZ = 'America/Toronto'; });
@@ -209,38 +212,52 @@ describe('the website and ASK give the same totals from the same records', () =>
         presto('2026-09-16T08:00:00', 'TTC', 'user-2'),
     ];
     // Firestore stand-in: serves each collection's documents for the asked user only.
-    const db = {
+    const makeDb = (trips, prestoRows) => ({
         collection: name => {
             const filters = [];
             const chain = {
                 where: (field, op, value) => { filters.push([field, op, value]); return chain; },
                 select: () => chain,
+                orderBy: () => chain,
+                limit: () => chain,
+                add: async () => ({}),
                 get: async () => {
                     expect(filters).toEqual([['userId', '==', 'user-1']]);
-                    const docs = (name === 'trips' ? tripDocs : prestoDocs).filter(doc => doc.userId === 'user-1');
+                    const docs = (name === 'trips' ? trips : prestoRows).filter(doc => doc.userId === 'user-1');
                     return { docs: docs.map(data => ({ data: () => data })) };
                 },
             };
             return chain;
         },
-    };
+    });
+    const db = makeDb(tripDocs, prestoDocs);
     const sum = counts => Object.values(counts).reduce((a, b) => a + b, 0);
-    afterEach(() => { vi.useRealTimers(); });
+    afterEach(() => {
+        vi.useRealTimers();
+        process.env.TZ = 'America/Toronto';
+    });
 
-    it('agrees on every shared figure', async () => {
-        // ASK reads the clock itself to tell a trip in progress from a finished one.
+    /**
+     * Every shared figure, three ways: the dashboard (in the viewer's own time
+     * zone), the ASK tools (asked in that same zone) and the public profile.
+     */
+    async function compareEverything(timeZone, countUnreadableTexts) {
+        // The dashboard reads the browser's clock and zone; ASK reads the clock
+        // itself to tell a trip in progress from a finished one.
+        process.env.TZ = timeZone;
         vi.useFakeTimers({ toFake: ['Date'], now: NOW });
-        // Website: the dashboard keeps history trips, then counts them with imported rides.
         const mine = tripDocs.filter(doc => doc.userId === 'user-1');
+        const minePresto = prestoDocs.filter(doc => doc.userId === 'user-1');
+
+        // Website: the dashboard keeps history trips, then counts them with imported rides.
         const history = mine.filter(doc => isHistoryTrip(doc, NOW));
-        const prestoTrips = buildPrestoTrips(prestoDocs.filter(doc => doc.userId === 'user-1'));
-        const rides = countedRides(history, prestoTrips, { now: NOW });
+        const rides = countedRides(history, buildPrestoTrips(minePresto), { now: NOW, countUnreadableTexts });
         const tiles = computeSummaryStats(rides, { now: new Date(NOW) });
         const metrics = Stats.computeMetrics(rides);
         const streaks = Stats.calculateStreaks(rides);
 
         // ASK: the tools, reading the same records through their own loader.
-        const tools = claude.buildQueryToolExecutors(db, 'user-1', 'America/Toronto');
+        const tools = claude.buildQueryToolExecutors(db, 'user-1', timeZone, { countUnreadableTexts });
         const all = await tools.get_all_time_stats();
         const agencies = await tools.get_agency_stats({ start_date: null, end_date: null });
         const routes = await tools.get_all_time_route_stats();
@@ -249,18 +266,29 @@ describe('the website and ASK give the same totals from the same records', () =>
         const streak = await tools.get_riding_streak();
         const durations = await tools.get_average_trip_duration({ route: null });
 
-        expect(tiles.totalTrips).toBe(10);
+        // Public profile: the calculation behind the public page.
+        const profile = publicProfile.publicProfileRides(mine, minePresto, { now: NOW, countUnreadableTexts }).stats;
+
+        // The unreadable text is the one counted record with no date.
+        const undated = countUnreadableTexts ? 1 : 0;
+        expect(tiles.totalTrips).toBe(9 + undated);
         expect(all.totalTrips).toBe(tiles.totalTrips);
         expect(metrics.trips).toBe(tiles.totalTrips);
         expect(monthly.total_trips).toBe(tiles.totalTrips);
+        expect(profile.totalTrips).toBe(tiles.totalTrips);
 
         expect(tiles.agencies).toBe(4);
         expect(all.uniqueAgencies).toBe(tiles.agencies);
         expect(agencies.agency_count).toBe(tiles.agencies);
+        expect(profile.agencies).toBe(tiles.agencies);
+        expect(profile.countries).toBe(tiles.countries);
+        expect(agencies.total_trips).toBe(tiles.totalTrips);
         expect(agencies.trips_by_agency).toEqual(tripsByAgency(rides).counts);
         expect(agencies.trips_by_agency[0]).toEqual(['TTC', 4]);
+        expect(agencies.trips_without_agency).toBe(undated);
 
         expect(all.uniqueRoutes).toBe(tiles.routes);
+        expect(profile.routes).toBe(tiles.routes);
         expect(routes.route_count).toBe(metrics.routes);
         expect(routes.top_routes).toEqual(tripsByRoute(rides).counts);
         expect(routes.top_routes.slice(0, 5).map(([name, count]) => ({ name, count }))).toEqual(metrics.topRoutes);
@@ -270,11 +298,146 @@ describe('the website and ASK give the same totals from the same records', () =>
 
         expect(streak.days_ridden).toBe(tiles.daysRidden);
         expect(streak.longest_streak_days).toBe(streaks.best);
-        expect(sum(monthly.by_month)).toBe(tiles.totalTrips - 1);
+        expect(sum(monthly.by_month)).toBe(tiles.totalTrips - undated);
         expect(monthly.by_month).toEqual(tripsByDate(rides).byMonth);
         expect(monthly.by_month['2026-09']).toBe(Stats.filterByCalendarMonth(rides, 2026, 8).length);
+        // The public profile counts days in each trip's stored zone (Toronto
+        // here), whatever zone the viewer is in.
+        expect(profile.daysRidden).toBe(tripsByDate(rides, ZONE).daysRidden);
+        expect(profile.thisMonth).toBe(computeSummaryStats(rides, { now: new Date(NOW), timeZoneFor: () => 'America/Toronto' }).thisMonth);
+
+        // Date-range tools, against the dashboard's own month filter and the shared day rule.
+        const september = ['2026-09-01', '2026-09-30'];
+        const septemberRides = tripsBetweenDays(rides, ...september);
+        const period = { start_date: september[0], end_date: september[1] };
+        const range = await tools.get_trips_for_date_range(period);
+        expect(range.count).toBe(Stats.filterByCalendarMonth(rides, 2026, 8).length);
+        expect(range.count).toBe(septemberRides.length);
+        expect(await tools.get_route_stats_for_period(period)).toEqual(Object.fromEntries(tripsByRoute(septemberRides).counts));
+        const periodAgencies = await tools.get_agency_stats(period);
+        expect(periodAgencies.total_trips).toBe(range.count);
+        expect(periodAgencies.trips_by_agency).toEqual(tripsByAgency(septemberRides).counts);
+        const lastDay = await tools.get_trips_for_date({ date: '2026-09-30' });
+        expect(lastDay.count).toBe(tripsByDate(rides).byDay['2026-09-30']);
+        const details = await tools.get_trip_details_for_date({ date: '2026-09-30' });
+        expect(details.trips).toHaveLength(lastDay.count);
 
         expect(all.timedTrips).toBe(finishedTrips(rides).length);
         expect(durations.timed_trips * durations.average_minutes / 60).toBeCloseTo(tiles.totalHours, 1);
+        expect(profile.totalHours).toBe(tiles.totalHours);
+        return { tiles, profile, range, lastDay, monthly };
+    }
+
+    it('agrees on every shared figure', async () => {
+        const { tiles, profile, range, lastDay, monthly } = await compareEverything('America/Toronto', COUNT_UNREADABLE_TEXTS);
+        expect(tiles.totalTrips).toBe(10);
+        expect(profile.daysRidden).toBe(tiles.daysRidden);
+        expect(profile.thisMonth).toBe(tiles.thisMonth);
+        expect(profile.thisWeek).toBe(tiles.thisWeek);
+        expect(range.count).toBe(5);
+        expect(monthly.by_month['2026-11']).toBe(2);
+        expect(lastDay.count).toBe(2);
+    });
+
+    it('agrees on every shared figure for a rider in another time zone', async () => {
+        // The trip at 00:00:30 on 1 October in Toronto is still 30 September in Vancouver.
+        const { tiles, range, lastDay, monthly } = await compareEverything('America/Vancouver', COUNT_UNREADABLE_TEXTS);
+        expect(tiles.totalTrips).toBe(10);
+        expect(range.count).toBe(6);
+        expect(lastDay.count).toBe(3);
+        // And the one at 01:30 on 1 November is still 31 October there.
+        expect(monthly.by_month['2026-11']).toBe(1);
+    });
+
+    it('agrees on every shared figure with unreadable texts left out', async () => {
+        for (const timeZone of ['America/Toronto', 'America/Vancouver']) {
+            const { tiles, profile } = await compareEverything(timeZone, false);
+            expect(tiles.totalTrips).toBe(9);
+            expect(profile.totalTrips).toBe(9);
+        }
+        // And the switch is what makes the difference, in all three places.
+        const on = await compareEverything('America/Toronto', true);
+        expect(on.tiles.totalTrips).toBe(10);
+        expect(on.profile.totalTrips).toBe(10);
+    });
+
+    describe('a rider with imported rides and no logged trips', () => {
+        const importedOnly = [
+            presto('2026-09-14T08:00:00'),
+            presto('2026-09-14T17:30:00'),
+            presto('2026-11-08T08:00:00', 'Mississauga Transit'),
+            { ...presto('2026-09-15T08:00:00'), type: 'load' }, // not a ride
+        ];
+
+        /** The ASK handler with its outside services replaced. */
+        function loadHandler(handlerDb) {
+            const calls = { replies: [], asked: [] };
+            const path = require.resolve('../functions/lib/handlers-query.js');
+            delete require.cache[path];
+            const real = Module._load;
+            Module._load = function load(request, parent, isMain) {
+                if (parent?.id === path) {
+                    if (request === './twilio') return { sendSmsReply: async (_to, message) => { calls.replies.push(message); } };
+                    if (request === './db') {
+                        return {
+                            db: handlerDb,
+                            getUserProfile: async () => ({ isPremium: true }),
+                            isEmailAdmin: async () => false,
+                            isGeminiRateLimited: async () => false,
+                            getConversationHistory: async () => [],
+                            saveConversationTurn: async () => {},
+                            FieldValue: { serverTimestamp: () => null },
+                        };
+                    }
+                    if (request === './claude') {
+                        return {
+                            ...claude,
+                            answerQueryWithClaude: async (...args) => { calls.asked.push(args); return 'answer'; },
+                        };
+                    }
+                }
+                return real(request, parent, isMain);
+            };
+            try {
+                return { handleQuery: require(path).handleQuery, calls };
+            } finally {
+                Module._load = real;
+                delete require.cache[path];
+            }
+        }
+
+        it('has the question answered from the imported rides, not turned away', async () => {
+            vi.useFakeTimers({ toFake: ['Date'], now: NOW });
+            const riderDb = makeDb([], importedOnly);
+            const { handleQuery, calls } = loadHandler(riderDb);
+            await handleQuery('+15550000000', { userId: 'user-1', email: 'rider@example.com' }, 'How many trips have I taken?');
+
+            expect(calls.replies).toEqual(['answer']);
+            expect(calls.asked).toHaveLength(1);
+            const [userId, , trips, stats, , timezone] = calls.asked[0];
+            expect(userId).toBe('user-1');
+            expect(trips).toEqual([]);
+            expect(stats.total).toBe(0);
+            expect(timezone).toBe('America/Toronto');
+
+            // What the tools then tell ASK for this rider.
+            const tools = claude.buildQueryToolExecutors(riderDb, 'user-1', timezone);
+            const all = await tools.get_all_time_stats();
+            const rides = countedRides([], buildPrestoTrips(importedOnly), { now: NOW });
+            expect(all.totalTrips).toBe(3);
+            expect(all.totalTrips).toBe(computeSummaryStats(rides, { now: new Date(NOW) }).totalTrips);
+            expect(all.uniqueAgencies).toBe(2);
+            expect((await tools.get_trips_for_date({ date: '2026-09-14' })).count).toBe(2);
+            expect(publicProfile.publicProfileRides([], importedOnly, { now: NOW }).stats.totalTrips).toBe(3);
+        });
+
+        it('still tells a rider with nothing at all that there are no trips', async () => {
+            for (const rows of [[], [{ ...presto('2026-09-15T08:00:00'), type: 'load' }]]) {
+                const { handleQuery, calls } = loadHandler(makeDb([], rows));
+                await handleQuery('+15550000000', { userId: 'user-1', email: 'rider@example.com' }, 'How many trips?');
+                expect(calls.asked).toEqual([]);
+                expect(calls.replies).toEqual([smsText.NO_COMPLETED_TRIPS]);
+            }
+        });
     });
 });

@@ -407,6 +407,20 @@ test('answerQueryWithClaude returns a failing tool as an error result and carrie
   }
 });
 
+test('answerQueryWithClaude points a rider with no logged trips at the tools, which count imported rides', async () => {
+  const noLogged = { ...STATS, total: 0, windowStart: null, windowEnd: null, allStops: [] };
+  const { claude, requests, restore } = loadClaude({ replies: [textReply('3 trips.'), textReply('2 trips.')] });
+  try {
+    await claude.answerQueryWithClaude('user-1', 'How many trips?', [], noLogged, []);
+    await claude.answerQueryWithClaude('user-1', 'How many trips?', [], STATS, []);
+    const prompt = (request) => JSON.stringify(request.messages[request.messages.length - 1].content);
+    assert.match(prompt(requests[0]), /holds no logged trips, but the rider may have imported rides/);
+    assert.doesNotMatch(prompt(requests[1]), /imported rides/);
+  } finally {
+    restore();
+  }
+});
+
 test('answerQueryWithClaude answers without tools when the data is already in the prompt', async () => {
   const { claude, requests, queries, restore } = loadClaude({ replies: [textReply(' 12 trips on Fridays. ')] });
   try {
@@ -722,7 +736,7 @@ test('ASK tells the model that durations cover timed trips only', async () => {
   const { claude, requests, restore } = loadClaude({ replies: [textReply('ok')] });
   try {
     await claude.answerQueryWithClaude('user-1', 'q', [], STATS, []);
-    assert.match(requests[0].system, /Durations come only from trips with a recorded end time/);
+    assert.match(requests[0].system, /Durations come only from trips with a recorded duration/);
     const byName = Object.fromEntries(requests[0].tools.map((t) => [t.name, t]));
     assert.match(byName.get_average_trip_duration.description, /timed_trips/);
     assert.match(byName.get_stop_pair_stats.description, /timed_trips/);

@@ -101,3 +101,132 @@ describe('functions/lib/ride-merge.js', () => {
         expect(copy).toBe(generated('ride-merge'));
     });
 });
+
+// The matcher as it was before it was made fast: every logged trip against
+// every imported ride. Kept here only to prove the fast one matches the same rides.
+function matchImportedRidesAllPairs(loggedTrips, importedRides, windowMs = 30 * MIN) {
+    const loggedTime = (trip) => {
+        const value = trip?.startTime;
+        if (value === null || value === undefined) return null;
+        const time = (value?.toDate ? value.toDate() : new Date(value)).getTime();
+        return Number.isFinite(time) ? time : null;
+    };
+    const agencyOf = ride => normalizeRideAgency(ride?.agency || ride?.startRecord?.agency || ride?.startRecord?.agencySource);
+    const pairs = [];
+    (loggedTrips || []).forEach((trip, loggedIndex) => {
+        const time = loggedTime(trip);
+        if (time === null) return;
+        const loggedAgency = agencyOf(trip);
+        (importedRides || []).forEach((ride, importedIndex) => {
+            const importedTime = importedRideTime(ride);
+            if (importedTime === null) return;
+            const importedAgency = agencyOf(ride);
+            if (loggedAgency && importedAgency && loggedAgency !== importedAgency) return;
+            const gap = Math.abs(importedTime - time);
+            if (gap <= windowMs) pairs.push({ gap, loggedIndex, importedIndex });
+        });
+    });
+    pairs.sort((a, b) => a.gap - b.gap || a.loggedIndex - b.loggedIndex || a.importedIndex - b.importedIndex);
+    const usedLogged = new Set();
+    const matchedImported = new Set();
+    pairs.forEach(({ loggedIndex, importedIndex }) => {
+        if (usedLogged.has(loggedIndex) || matchedImported.has(importedIndex)) return;
+        usedLogged.add(loggedIndex);
+        matchedImported.add(importedIndex);
+    });
+    return matchedImported;
+}
+
+// Small seeded generator, so a failure can be reproduced.
+function seededRandom(seed) {
+    let state = seed >>> 0;
+    return () => {
+        state = (state + 0x6D2B79F5) >>> 0;
+        let t = state;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+describe('matchImportedRides, fast version', () => {
+    const AGENCIES = ['TTC', 'ttc', 'Toronto Transit Commission', 'MiWay', 'Mississauga Transit', 'GO Transit', '', null, undefined];
+
+    function randomFixture(random, loggedCount, importedCount, spanMin) {
+        const pick = list => list[Math.floor(random() * list.length)];
+        // Whole minutes over a short span, so equal gaps and crowded windows are common.
+        const minute = () => Math.floor(random() * spanMin);
+        const loggedTrips = Array.from({ length: loggedCount }, () => {
+            const roll = random();
+            const time = base + minute() * MIN;
+            if (roll < 0.05) return { agency: pick(AGENCIES), startTime: null };
+            if (roll < 0.08) return { agency: pick(AGENCIES), startTime: 'not a date' };
+            if (roll < 0.2) return { agency: pick(AGENCIES), startTime: { toDate: () => new Date(time) } };
+            if (roll < 0.3) return { agency: pick(AGENCIES), startTime: time };
+            return { agency: pick(AGENCIES), startTime: new Date(time) };
+        });
+        const importedRides = Array.from({ length: importedCount }, () => {
+            const roll = random();
+            const agency = pick(AGENCIES);
+            const sortKey = Date.UTC(2026, 0, 2, 8, 0) + minute() * MIN;
+            if (roll < 0.05) return { agency, startRecord: { agency, occurredAtSortKey: 'nope' } };
+            if (roll < 0.15) return { agencySource: agency, occurredAtSortKey: sortKey };          // a bare record
+            if (roll < 0.25) return { agency, startTime: new Date(base + minute() * MIN) };         // no PRESTO record
+            if (roll < 0.35) return { startRecord: { agencySource: agency, occurredAtSortKey: sortKey } };
+            return { agency, startRecord: { agency, occurredAtSortKey: sortKey } };
+        });
+        return { loggedTrips, importedRides };
+    }
+
+    it('matches exactly the rides the all-pairs version matched, on random data', () => {
+        const random = seededRandom(20261109);
+        const windows = [30 * MIN, 30 * MIN, 30 * MIN, 0, MIN, 5 * MIN, 120 * MIN, Infinity, -1, NaN];
+        let matchedSomewhere = 0;
+        for (let round = 0; round < 400; round++) {
+            const { loggedTrips, importedRides } = randomFixture(
+                random,
+                Math.floor(random() * 60),
+                Math.floor(random() * 60),
+                [20, 90, 600, 5000][round % 4],
+            );
+            const windowMs = windows[round % windows.length];
+            const fast = [...matchImportedRides(loggedTrips, importedRides, windowMs)];
+            const slow = [...matchImportedRidesAllPairs(loggedTrips, importedRides, windowMs)];
+            // Same rides, picked in the same order.
+            expect(fast, `round ${round}`).toEqual(slow);
+            matchedSomewhere += fast.length;
+        }
+        expect(matchedSomewhere).toBeGreaterThan(1000);
+        expect([...matchImportedRides(null, null)]).toEqual([]);
+        expect([...matchImportedRides([logged(0)], undefined)]).toEqual([]);
+    });
+
+    it('agrees with the all-pairs version across a clock change', () => {
+        const random = seededRandom(7);
+        // 1 November 2026, when 01:00 to 02:00 happens twice in Toronto.
+        const fallBack = Date.UTC(2026, 10, 1, 4, 0);
+        const loggedTrips = Array.from({ length: 80 }, () => ({ agency: 'TTC', startTime: new Date(fallBack + Math.floor(random() * 300) * MIN) }));
+        const importedRides = Array.from({ length: 80 }, () => ({
+            agency: 'TTC', startRecord: { occurredAtSortKey: Date.UTC(2026, 10, 1, 0, 0) + Math.floor(random() * 300) * MIN },
+        }));
+        expect([...matchImportedRides(loggedTrips, importedRides)]).toEqual([...matchImportedRidesAllPairs(loggedTrips, importedRides)]);
+    });
+
+    it('merges 10,000 logged trips with 2,000 imported rides quickly', () => {
+        const random = seededRandom(42);
+        const threeYears = 3 * 365 * 24 * 60;
+        const loggedTrips = Array.from({ length: 10000 }, () => ({ agency: 'TTC', startTime: new Date(base + Math.floor(random() * threeYears) * MIN) }));
+        const importedRides = Array.from({ length: 2000 }, (_, index) => {
+            // Half sit a few minutes from a logged trip (in winter time; the
+            // summer ones land an hour off and stay unmatched); the rest fall anywhere.
+            const near = index % 2 === 0 ? loggedTrips[index].startTime.getTime() - base + 3 * MIN : Math.floor(random() * threeYears) * MIN;
+            return { agency: 'TTC', startRecord: { agency: 'TTC', occurredAtSortKey: Date.UTC(2026, 0, 2, 8, 0) + near } };
+        });
+        const started = performance.now();
+        const matched = matchImportedRides(loggedTrips, importedRides);
+        const elapsed = performance.now() - started;
+        expect(matched.size).toBeGreaterThan(500);
+        // Well under a second in practice; the limit is loose so a busy machine does not fail it.
+        expect(elapsed).toBeLessThan(2000);
+    });
+});

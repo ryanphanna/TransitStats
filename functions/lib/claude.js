@@ -480,9 +480,10 @@ const MAX_LISTED_ROUTES = 50;
  * @param {object} db - Firestore instance
  * @param {string} userId - The asking user; every read is filtered to this id
  * @param {string} timezone - IANA timezone used for date bucketing
+ * @param {object} [options] - countUnreadableTexts overrides the shared setting (tests only)
  * @returns {object} Map of tool name to async function
  */
-function buildQueryToolExecutors(db, userId, timezone) {
+function buildQueryToolExecutors(db, userId, timezone, { countUnreadableTexts } = {}) {
   const zone = { timeZone: timezone };
   // The only place trips are read: the asking user's logged trips and imported
   // PRESTO rows, both filtered by the handler's user id, combined into the one
@@ -497,7 +498,7 @@ function buildQueryToolExecutors(db, userId, timezone) {
       const read = Promise.all([
         userDocs('trips', ASK_TRIP_FIELDS),
         userDocs('prestoTransactions', ASK_PRESTO_FIELDS),
-      ]).then(([trips, prestoRows]) => countedRides(trips, buildPrestoTrips(prestoRows)));
+      ]).then(([trips, prestoRows]) => countedRides(trips, buildPrestoTrips(prestoRows), { countUnreadableTexts }));
       ridesRead = read;
       // A failed read is not remembered, so the next tool call reads again.
       read.catch(() => { if (ridesRead === read) ridesRead = null; });
@@ -672,7 +673,7 @@ or anything else that is not a real question:
 - When the message is not a question about the rider's trips, reply briefly that questions about
   your trips can be answered, and suggest topics rather than quoting a sample question,
   e.g. "Try asking about trips last week or your top route."
-- Trip counts cover every logged trip. Durations come only from trips with a recorded end time,
+- Trip counts cover every logged trip. Durations come only from trips with a recorded duration,
   so a duration answer names how many trips it covers, e.g. "Average 18 min across 1,116 timed
   trips." Never present the timed-trip number as the total number of trips.
 - Be concise and friendly.`;
@@ -712,7 +713,8 @@ You have access to the most recent 200 trips spanning ${stats.windowStart || '?'
 - Top stop pairs: ${JSON.stringify(stats.pairStats.slice(0, 5))}
 - Trips by day of week in window: ${JSON.stringify(stats.dayOfWeek || {})}
 - Stops visited recently: ${stats.allStops?.join(', ')}
-
+${stats.total ? '' : `- This window holds no logged trips, but the rider may have imported rides, which the tools count. CALL a tool for every count instead of answering that there are no trips.
+`}
 IMPORTANT:
 - "Window size" is NOT the answer to any date-scoped question. For a specific date, "yesterday", "this week", "last month", "this year", or any other period, CALL a tool (get_trips_for_date, get_trips_for_date_range or get_monthly_trip_counts). Never count trips for a date or period from the figures above.
 - If the question asks about dates outside ${stats.windowStart || '?'}–${stats.windowEnd || today}, or asks for all-time stats, CALL the appropriate tool. NEVER guess!
@@ -906,6 +908,7 @@ async function lookupAgencyTimezone(agency, traceId = null) {
 module.exports = {
   answerQueryWithClaude,
   buildQueryToolExecutors,
+  ASK_PRESTO_FIELDS,
   parseWithClaude,
   lookupAgencyTimezone,
 };

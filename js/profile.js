@@ -2,6 +2,7 @@ import { db, auth, serverTimestamp } from './firebase.js';
 import { UI } from './ui-utils.js';
 import { Identity } from './identity.js';
 import { tripAgency } from './shared/trip-stats.js';
+import { canonicalAgency } from './shared/agency-aliases.js';
 import { setupProfileListeners } from './profile-settings-ui.js';
 import { initializeIdentityPicker, updateUsernameDisplay } from './profile-identity.js';
 import {
@@ -137,8 +138,11 @@ export const Profile = {
         const options = [...optionsByValue.values()].sort((a, b) => a.label.localeCompare(b.label));
         const automatic = this.data?.defaultAgencyMode === 'automatic' || !defaultValue;
         const agencyDisplay = document.getElementById('settings-agency-display');
-        const selectedAgency = defaultValue
-            ? options.find(option => option.value.toLowerCase() === defaultValue.toLowerCase())
+        // The options hold canonical names; a default saved under another
+        // spelling of the same agency still selects its option.
+        const canonicalDefault = defaultValue ? canonicalAgency(defaultValue).toLowerCase() : null;
+        const selectedAgency = canonicalDefault
+            ? options.find(option => option.value.toLowerCase() === canonicalDefault)
             : null;
         const effectiveAutomatic = automatic || !selectedAgency;
 

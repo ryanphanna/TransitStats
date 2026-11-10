@@ -28,7 +28,9 @@ const {
 const {
   answerQueryWithClaude,
   lookupAgencyTimezone,
+  ASK_PRESTO_FIELDS,
 } = require('./claude');
+const { buildPrestoTrips } = require('./presto-trips');
 const { countedTrips } = require('./trip-stats');
 
 /**
@@ -58,9 +60,16 @@ async function handleQuery(phoneNumber, user, question, traceId = null) {
   // The same trips the ASK tools count: every logged trip except one in progress.
   const trips = countedTrips(snapshot.docs.map((d) => d.data()));
 
+  // A rider can have imported rides and no logged trips; the ASK tools count
+  // those, so only a rider with neither is told there is nothing to ask about.
   if (trips.length === 0) {
-    await sendSmsReply(phoneNumber, text.NO_COMPLETED_TRIPS);
-    return;
+    const imported = await db.collection('prestoTransactions')
+      .where('userId', '==', user.userId)
+      .select(...ASK_PRESTO_FIELDS).get();
+    if (buildPrestoTrips(imported.docs.map((d) => d.data())).length === 0) {
+      await sendSmsReply(phoneNumber, text.NO_COMPLETED_TRIPS);
+      return;
+    }
   }
 
   const recentAgency = trips[0]?.agency || null;
