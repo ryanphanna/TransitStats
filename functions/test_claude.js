@@ -152,6 +152,13 @@ const STATS = {
   allStops: ['Spadina'],
 };
 
+// A finished trip on 1 March 2026, Toronto time.
+const MARCH_1_TIMES = {
+  startTime: new Date('2026-03-01T15:00:00Z'),
+  endTime: new Date('2026-03-01T15:12:00Z'),
+  duration: 12,
+};
+
 const PARSED_TRIP = {
   intent: 'START_TRIP',
   route: '510',
@@ -356,7 +363,7 @@ test('answerQueryWithClaude does not start a request once the deadline has passe
 
 test('answerQueryWithClaude returns a failing tool as an error result and carries on', async () => {
   const { claude, requests, queries, logs, restore } = loadClaude({
-    tripDocs: [{ route: '510', startStopName: 'Spadina', endStopName: 'Union' }],
+    tripDocs: [{ route: '510', startStopName: 'Spadina', endStopName: 'Union', ...MARCH_1_TIMES }],
     replies: [
       toolReply(
         ['toolu_1', 'get_trips_for_date', { date: 'March 1' }],
@@ -383,7 +390,8 @@ test('answerQueryWithClaude returns a failing tool as an error result and carrie
     assert.ok(results[0].content.length < 120);
     // Internal error text is not passed to the model.
     assert.doesNotMatch(results[1].content, /toLowerCase|TypeError/);
-    assert.deepEqual(JSON.parse(results[2].content), [['510', 1]]);
+    assert.deepEqual(JSON.parse(results[2].content),
+      { total_trips: 1, route_count: 1, trips_without_route: 0, top_routes: [['510', 1]] });
     assert.equal(logs.error.filter((entry) => entry.message === 'Claude ASK tool failed').length, 2);
 
     // The corrected call on the next turn succeeds.
@@ -468,7 +476,7 @@ test('get_agency_stats counts trips per agency for the asking user only and repo
     tripDocs: [
       { agency: 'TTC' }, { agency: ' ttc ' }, { agency: 'GO Transit' },
       { agency: null }, { agency: '  ' }, { route: '510' }, { agency: 42 },
-    ],
+    ].map((trip) => ({ ...trip, ...MARCH_1_TIMES })),
     replies: [
       toolReply(
         ['toolu_1', 'get_agency_stats', { start_date: null, end_date: null }],
@@ -508,16 +516,179 @@ test('get_agency_stats counts trips per agency for the asking user only and repo
       ['TTC', 'TTC', 'GO Transit', null, null, null, null]);
 
     // Every query is on the trips collection, filtered first by the handler's user id.
-    assert.equal(queries.length, 4);
+    // Both all-time calls share one read; the period and the single day read once each.
+    assert.equal(queries.length, 3);
     for (const query of queries) {
       assert.equal(query.collection, 'trips');
       assert.deepEqual(query.wheres[0], ['userId', '==', 'user-1']);
       assert.equal(JSON.stringify(query.wheres).includes('user-2'), false);
     }
-    // All time counts finished trips, like get_all_time_stats; a period filters on start time.
-    assert.deepEqual(queries[0].wheres.slice(1), [['endTime', '!=', null]]);
+    // All time reads every trip, finished or not; a period filters on start time.
+    assert.deepEqual(queries[0].wheres.slice(1), []);
     assert.deepEqual(queries[1].wheres.slice(1).map(([field, op]) => [field, op]),
       [['startTime', '>='], ['startTime', '<=']]);
+  } finally {
+    restore();
+  }
+});
+
+// Firestore stand-in for the ASK tools: applies the user and start-time filters and records each query.
+function fakeTripsDb(docs) {
+  const queries = [];
+  const compare = { '==': (a, b) => a === b, '>=': (a, b) => a >= b, '<=': (a, b) => a <= b };
+  const db = {
+    collection: (collection) => {
+      const query = { collection, wheres: [], fields: null };
+      queries.push(query);
+      const chain = {
+        where: (field, op, value) => { query.wheres.push([field, op, value]); return chain; },
+        select: (...fields) => { query.fields = fields; return chain; },
+        get: async () => {
+          const matching = docs.filter((doc) => query.wheres.every(([field, op, value]) =>
+            doc[field] != null && compare[op](doc[field], value)));
+          return { size: matching.length, docs: matching.map((data) => ({ data: () => data })) };
+        },
+      };
+      return chain;
+    },
+  };
+  return { db, queries };
+}
+
+const toronto = (local) => new Date(`${local}-04:00`); // Toronto summer time
+const AGREEMENT_TRIPS = [
+  // Finished trips.
+  { userId: 'user-1', agency: 'TTC', route: '510', startStopName: 'Spadina', endStopName: 'Union',
+    startTime: toronto('2026-09-12T09:00:00'), endTime: toronto('2026-09-12T09:20:00'), duration: 20 },
+  { userId: 'user-1', agency: 'GO Transit', route: 'LW', startStopName: 'Union', endStopName: 'Exhibition',
+    startTime: toronto('2026-10-03T18:00:00'), endTime: toronto('2026-10-03T18:10:00'), duration: 10 },
+  // Starts in the last second of September and ends in October: a September trip.
+  { userId: 'user-1', agency: 'TTC', route: '506', startStopName: 'Main', endStopName: 'Coxwell',
+    startTime: toronto('2026-09-30T23:59:59.500'), endTime: toronto('2026-10-01T00:12:00'), duration: 12 },
+  // Never ended (FORGOT): counted, but has no duration.
+  { userId: 'user-1', agency: 'TTC', route: '506', startStopName: 'Spadina', incomplete: true,
+    startTime: toronto('2026-09-30T18:17:00'), endTime: null },
+  // First minute of October.
+  { userId: 'user-1', agency: 'ttc', route: '1', startStopName: 'Dundas', endTime: null,
+    startTime: toronto('2026-10-01T00:00:30') },
+  // Imported history: boarding only, no end time, no route.
+  { userId: 'user-1', agency: 'MiWay', startStopName: 'Sherbourne', source: 'legacy-notion',
+    startTime: toronto('2024-03-18T18:14:00'), endTime: null, duration: null },
+  // 00:30 on the day the clocks go back: before the hour that repeats, still summer time.
+  { userId: 'user-1', agency: 'TTC', route: '300', startStopName: 'Yonge',
+    startTime: toronto('2026-11-01T00:30:00'), endTime: null },
+  // Discarded record with no start time: the dashboard counts it, so ASK does too.
+  { userId: 'user-1', discarded: true, raw_text: 'hello' },
+  // Never counted: an unreadable text that was not discarded, and another rider's trip.
+  { userId: 'user-1', raw_text: 'what', needs_review: true },
+  { userId: 'user-2', agency: 'STM', route: '24', startStopName: 'Sherbrooke',
+    startTime: toronto('2026-09-15T08:00:00'), endTime: toronto('2026-09-15T08:30:00'), duration: 30 },
+];
+
+test('selectCountedTrips keeps every history trip and selectFinishedTrips only the timed ones', () => {
+  const { claude, restore } = loadClaude();
+  try {
+    const now = Date.parse('2026-11-09T17:00:00Z');
+    const inProgress = { route: '510', startTime: new Date(now - 60 * 60 * 1000), endTime: null };
+    const timedOut = { route: '510', startTime: new Date(now - 7 * 60 * 60 * 1000), endTime: null };
+    const mine = AGREEMENT_TRIPS.filter((trip) => trip.userId === 'user-1');
+    const counted = claude.selectCountedTrips([...mine, inProgress, timedOut], now);
+    // Everything except the unreadable text and the trip still in progress.
+    assert.equal(counted.length, 9);
+    assert.equal(counted.includes(inProgress), false);
+    assert.equal(counted.includes(timedOut), true);
+    assert.equal(counted.some((trip) => trip.needs_review), false);
+    // Only trips with an end time and a duration feed duration figures.
+    assert.deepEqual(claude.selectFinishedTrips(counted).map((trip) => trip.duration), [20, 10, 12]);
+    assert.deepEqual(claude.selectCountedTrips(null), []);
+  } finally {
+    restore();
+  }
+});
+
+test('every ASK tool counts the same trips for the same rider', async () => {
+  const { claude, restore } = loadClaude();
+  try {
+    const { db, queries } = fakeTripsDb(AGREEMENT_TRIPS);
+    const tools = claude.buildQueryToolExecutors(db, 'user-1', 'America/Toronto');
+    const all = await tools.get_all_time_stats();
+    const monthly = await tools.get_monthly_trip_counts();
+    const weekdays = await tools.get_day_of_week_stats();
+    const split = await tools.get_weekday_vs_weekend_stats();
+    const agencies = await tools.get_agency_stats({ start_date: null, end_date: null });
+    const routes = await tools.get_all_time_route_stats();
+    const durations = await tools.get_average_trip_duration({ route: null });
+    const pairs = await tools.get_stop_pair_stats({ start_stop: null, end_stop: null });
+    const streak = await tools.get_riding_streak();
+    const sum = (counts) => Object.values(counts).reduce((a, b) => a + b, 0);
+
+    // One total everywhere: 8 trips, 7 of them with a date.
+    assert.equal(all.totalTrips, 8);
+    for (const total of [monthly.total_trips, weekdays.total_trips, split.total_trips, agencies.total_trips,
+      routes.total_trips, durations.total_trips, pairs.total]) {
+      assert.equal(total, all.totalTrips);
+    }
+    assert.equal(monthly.trips_without_date, 1);
+    for (const dated of [sum(monthly.by_month), sum(monthly.by_year), sum(weekdays.by_day_of_week),
+      split.weekdays + split.weekends, sum(pairs.by_day_of_week)]) {
+      assert.equal(dated, all.totalTrips - monthly.trips_without_date);
+    }
+    assert.deepEqual(monthly.by_month, { '2024-03': 1, '2026-09': 3, '2026-10': 2, '2026-11': 1 });
+    assert.deepEqual(monthly.by_year, { 2024: 1, 2026: 6 });
+    assert.equal(sum((await tools.get_day_of_week_stats_for_year({ year: 2026 })).by_day_of_week), 6);
+    assert.equal(streak.days_ridden, 6);
+    assert.equal(streak.longest_streak_days, 2);
+
+    // Agencies and routes agree between the summary and the detailed tools.
+    assert.equal(all.uniqueAgencies, agencies.agency_count);
+    assert.deepEqual(agencies.trips_by_agency, [['TTC', 5], ['GO Transit', 1], ['MiWay', 1]]);
+    assert.equal(all.uniqueRoutes, routes.route_count);
+    assert.equal(routes.trips_without_route, 2);
+
+    // Durations cover the three finished trips only, and say so.
+    assert.equal(all.timedTrips, 3);
+    assert.deepEqual(durations, { average_minutes: 14, longest_minutes: 20, timed_trips: 3, total_trips: 8 });
+    assert.equal(pairs.timed_trips, 3);
+    assert.deepEqual(pairs.run_times_minutes, [20, 10, 12]);
+
+    // A month asked for as a date range matches the monthly count, for every month.
+    const lastDay = { '2024-03': 31, '2026-09': 30, '2026-10': 31, '2026-11': 30 };
+    for (const [month, count] of Object.entries(monthly.by_month)) {
+      const period = { start_date: `${month}-01`, end_date: `${month}-${lastDay[month]}` };
+      assert.equal((await tools.get_trips_for_date_range(period)).count, count, month);
+      assert.equal((await tools.get_agency_stats(period)).total_trips, count, month);
+      assert.equal(sum(await tools.get_route_stats_for_period(period)) +
+        (month === '2024-03' ? 1 : 0), count, month);
+    }
+
+    // Trips are assigned to a day by their start, in the rider's time zone.
+    assert.equal((await tools.get_trips_for_date({ date: '2026-09-30' })).count, 2);
+    assert.equal((await tools.get_trips_for_date({ date: '2026-10-01' })).count, 1);
+    assert.equal((await tools.get_trips_for_date({ date: '2026-10-31' })).count, 0);
+    assert.equal((await tools.get_trips_for_date({ date: '2026-11-01' })).count, 1);
+    assert.deepEqual((await tools.get_trip_details_for_date({ date: '2026-09-30' })).trips.map((t) => t.route),
+      ['506', '506']);
+
+    // All-time tools share one read; every query is the asking rider's trips with a field projection.
+    assert.equal(queries.filter((query) => query.wheres.length === 1).length, 1);
+    for (const query of queries) {
+      assert.equal(query.collection, 'trips');
+      assert.deepEqual(query.wheres[0], ['userId', '==', 'user-1']);
+      assert.ok(query.fields.length > 0 && !query.fields.includes('raw_text'));
+    }
+  } finally {
+    restore();
+  }
+});
+
+test('ASK tells the model that durations cover timed trips only', async () => {
+  const { claude, requests, restore } = loadClaude({ replies: [textReply('ok')] });
+  try {
+    await claude.answerQueryWithClaude('user-1', 'q', [], STATS, []);
+    assert.match(requests[0].system, /Durations come only from trips with a recorded end time/);
+    const byName = Object.fromEntries(requests[0].tools.map((t) => [t.name, t]));
+    assert.match(byName.get_average_trip_duration.description, /timed_trips/);
+    assert.match(byName.get_stop_pair_stats.description, /timed_trips/);
   } finally {
     restore();
   }
@@ -537,8 +708,10 @@ test('answerQueryWithClaude tells the model not to infer answers the data does n
 test('answerQueryWithClaude returns all tool results for a turn in one user message', async () => {
   const { claude, requests, queries, restore } = loadClaude({
     tripDocs: [
-      { route: '510', startStopName: 'Spadina', endStopName: 'Union' },
-      { route: '504', startStopName: 'King', endStopName: 'Spadina' },
+      { route: '510', startStopName: 'Spadina', endStopName: 'Union', ...MARCH_1_TIMES },
+      // No end time: still a trip, but not a timed one.
+      { route: '504', startStopName: 'King', endStopName: 'Spadina',
+        startTime: MARCH_1_TIMES.startTime, endTime: null },
     ],
     replies: [
       toolReply(['toolu_1', 'get_all_time_stats'], ['toolu_2', 'get_all_time_route_stats']),
@@ -559,8 +732,10 @@ test('answerQueryWithClaude returns all tool results for a turn in one user mess
       ['tool_result', 'toolu_1'],
       ['tool_result', 'toolu_2'],
     ]);
-    assert.deepEqual(JSON.parse(resultTurn.content[0].content), { totalTrips: 2, uniqueRoutes: 2, uniqueStops: 3 });
-    assert.deepEqual(JSON.parse(resultTurn.content[1].content), [['504', 1], ['510', 1]]);
+    assert.deepEqual(JSON.parse(resultTurn.content[0].content),
+      { totalTrips: 2, uniqueRoutes: 2, uniqueStops: 3, uniqueAgencies: 0, timedTrips: 1 });
+    assert.deepEqual(JSON.parse(resultTurn.content[1].content),
+      { total_trips: 2, route_count: 2, trips_without_route: 0, top_routes: [['504', 1], ['510', 1]] });
 
     // Account separation: every Firestore read is filtered to the asking user.
     assert.ok(queries.length > 0);

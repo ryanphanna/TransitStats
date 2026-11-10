@@ -14,6 +14,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **ASK replies stay plain text and never say "I"**, including when the message isn't really a question.
 - **ASK can answer questions about transit agencies**, such as how many you have ridden or which you ride most. It used to guess from stop names.
 - **ASK says when something isn't in your trip data** instead of estimating an answer from other details.
+- **ASK totals now count every trip and agree with each other.** Trips without an end time, such as imported history, used to be left out of all-time answers, so ASK could report 1,146 trips when the dashboard showed over 3,000, and a month could differ by one depending on how the question was worded. Counts now match the dashboard; trip lengths still use only trips with an end time, and the reply says how many.
 
 ### Fixes
 

@@ -28,6 +28,7 @@ const {
 const {
   answerQueryWithClaude,
   lookupAgencyTimezone,
+  selectCountedTrips,
 } = require('./claude');
 
 /**
@@ -49,13 +50,13 @@ async function handleQuery(phoneNumber, user, question, traceId = null) {
   const [snapshot, conversationHistory] = await Promise.all([
     db.collection('trips')
       .where('userId', '==', user.userId)
-      .where('endTime', '!=', null)
-      .orderBy('endTime', 'desc')
+      .orderBy('startTime', 'desc')
       .limit(200).get(),
     getConversationHistory(user.userId),
   ]);
 
-  const trips = snapshot.docs.map((d) => d.data());
+  // The same trips the ASK tools count: every logged trip except one in progress.
+  const trips = selectCountedTrips(snapshot.docs.map((d) => d.data()));
 
   if (trips.length === 0) {
     await sendSmsReply(phoneNumber, text.NO_COMPLETED_TRIPS);
