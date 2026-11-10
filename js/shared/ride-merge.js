@@ -2,22 +2,33 @@
 //
 // This file is the single source of truth. The Cloud Functions can't import
 // from js/, so functions/lib/ride-merge.js is generated from it by
-// `npm run sync:shared` (a test fails if the copy drifts). Keep this file
-// dependency-free, with plain `export function` declarations only.
+// `npm run sync:shared` (a test fails if the copy drifts). Keep it to plain
+// `export function` declarations, importing only from other shared modules.
+import { canonicalAgency } from './agency-aliases.js';
 
 const RIDE_MATCH_WINDOW_MS = 30 * 60 * 1000;
 const PRESTO_TIME_ZONE = 'America/Toronto';
 
-const AGENCY_ALIASES = {
-    'toronto transit commission': 'ttc',
-    'mississauga transit': 'miway',
-    'hamilton street railway': 'hsr',
-    'york region transit': 'yrt',
-};
-
+/** Agency key for matching rides: the canonical name, lowercased. */
 export function normalizeRideAgency(value) {
-    const key = String(value || '').trim().toLowerCase();
-    return AGENCY_ALIASES[key] || key;
+    return String(canonicalAgency(String(value || '')) || '').toLowerCase();
+}
+
+// Building a formatter is slow, so each time zone gets one, made on first use.
+const WALL_CLOCK_FORMATTERS = new Map();
+
+function wallClockFormatter(timeZone) {
+    let formatter = WALL_CLOCK_FORMATTERS.get(timeZone);
+    if (!formatter) {
+        formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone,
+            hourCycle: 'h23',
+            year: 'numeric', month: 'numeric', day: 'numeric',
+            hour: 'numeric', minute: 'numeric', second: 'numeric',
+        });
+        WALL_CLOCK_FORMATTERS.set(timeZone, formatter);
+    }
+    return formatter;
 }
 
 // PRESTO exports carry wall-clock times with no zone. occurredAtSortKey is that
@@ -28,12 +39,7 @@ export function prestoWallClockToInstant(sortKey, timeZone = PRESTO_TIME_ZONE) {
     if (sortKey === null || sortKey === undefined || sortKey === '') return null;
     const wall = Number(sortKey);
     if (!Number.isFinite(wall)) return null;
-    const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone,
-        hourCycle: 'h23',
-        year: 'numeric', month: 'numeric', day: 'numeric',
-        hour: 'numeric', minute: 'numeric', second: 'numeric',
-    });
+    const formatter = wallClockFormatter(timeZone);
     const offsetAt = (instant) => {
         const parts = {};
         formatter.formatToParts(new Date(instant)).forEach(part => { parts[part.type] = Number(part.value); });
@@ -60,10 +66,6 @@ export function importedRideTime(ride) {
     return loggedTripTime(ride);
 }
 
-function rideAgency(ride) {
-    return normalizeRideAgency(ride?.agency || ride?.startRecord?.agency || ride?.startRecord?.agencySource);
-}
-
 /**
  * One-to-one matching, closest first. Each logged trip cancels at most one
  * imported ride (the same ride recorded twice) within windowMs, and only when
@@ -73,20 +75,45 @@ function rideAgency(ride) {
 export function matchImportedRides(loggedTrips, importedRides, windowMs = RIDE_MATCH_WINDOW_MS) {
     const logged = loggedTrips || [];
     const imported = importedRides || [];
-    const pairs = [];
 
+    // Each ride's time and agency are worked out once, and the imported rides
+    // are put in time order, so a logged trip is compared only with the
+    // imported rides inside its window instead of with every one of them.
+    const agencyKeys = new Map();
+    const agencyOf = (ride) => {
+        const raw = ride?.agency || ride?.startRecord?.agency || ride?.startRecord?.agencySource;
+        if (!agencyKeys.has(raw)) agencyKeys.set(raw, normalizeRideAgency(raw));
+        return agencyKeys.get(raw);
+    };
+    const timed = [];
+    imported.forEach((ride, importedIndex) => {
+        const time = importedRideTime(ride);
+        if (time === null) return;
+        timed.push({ time, agency: agencyOf(ride), importedIndex });
+    });
+    timed.sort((a, b) => a.time - b.time || a.importedIndex - b.importedIndex);
+
+    const pairs = [];
     logged.forEach((trip, loggedIndex) => {
         const loggedTime = loggedTripTime(trip);
         if (loggedTime === null) return;
-        const loggedAgency = rideAgency(trip);
-        imported.forEach((ride, importedIndex) => {
-            const importedTime = importedRideTime(ride);
-            if (importedTime === null) return;
-            const importedAgency = rideAgency(ride);
-            if (loggedAgency && importedAgency && loggedAgency !== importedAgency) return;
-            const gap = Math.abs(importedTime - loggedTime);
-            if (gap <= windowMs) pairs.push({ gap, loggedIndex, importedIndex });
-        });
+        const loggedAgency = agencyOf(trip);
+        // First imported ride at or after the start of this trip's window.
+        const earliest = loggedTime - windowMs;
+        let low = 0;
+        let high = timed.length;
+        while (low < high) {
+            const middle = (low + high) >> 1;
+            if (timed[middle].time < earliest) low = middle + 1;
+            else high = middle;
+        }
+        for (let i = low; i < timed.length; i++) {
+            const { time, agency, importedIndex } = timed[i];
+            const gap = Math.abs(time - loggedTime);
+            if (!(gap <= windowMs)) break;
+            if (loggedAgency && agency && loggedAgency !== agency) continue;
+            pairs.push({ gap, loggedIndex, importedIndex });
+        }
     });
     pairs.sort((a, b) => a.gap - b.gap || a.loggedIndex - b.loggedIndex || a.importedIndex - b.importedIndex);
 
@@ -112,7 +139,7 @@ export function mergeImportedRides(loggedTrips, importedRides, windowMs = RIDE_M
 }
 
 /**
- * A lightweight `{ agency, startTime }` projection of PRESTO trips, shaped to
+ * A lightweight `{ agency, startTime, imported }` projection of PRESTO trips, shaped to
  * match what the summary stats (js/shared/trip-stats.js) expect from logged
  * trips. This only covers the summary counts (trip counts, agencies, days
  * ridden, countries) that don't depend on duration, route, or stop names —
@@ -126,13 +153,14 @@ export function projectPrestoTripsForStats(prestoTrips = []) {
         .map(({ trip, time }) => ({
             agency: trip.agency,
             startTime: new Date(time),
+            imported: true,
         }));
 }
 
 /**
- * The trips behind the summary tiles: logged history trips plus the imported
- * PRESTO rides that weren't also logged. The dashboard and the public profile
- * both use this, so they count the same rides.
+ * Logged trips plus the imported PRESTO rides that weren't also logged. Call
+ * it through countedRides (trip-stats.js), which first keeps only the logged
+ * trips that count.
  */
 export function summaryTrips(loggedTrips, prestoTrips) {
     return [

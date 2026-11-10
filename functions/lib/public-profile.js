@@ -14,7 +14,7 @@ const logger = require('./logger');
 const { getMapStopMode } = require('./profile-fields');
 const { unmatchedImportedRides, projectPrestoTripsForStats } = require('./ride-merge');
 const { buildPrestoTrips } = require('./presto-trips');
-const { isHistoryTrip, computeSummaryStats, storedTripTimeZone } = require('./trip-stats');
+const { countedTrips, computeSummaryStats, storedTripTimeZone } = require('./trip-stats');
 
 function normalizeStopLabel(value) {
   return String(value || '')
@@ -109,6 +109,24 @@ function resolveTripLocation(location, stopName, agency, stopIndex) {
     || null;
 }
 
+/**
+ * The rides a public profile counts and its totals. The same list as the
+ * dashboard and ASK (countedRides in trip-stats), with the merge run once:
+ * prestoTrips are the imported rides the rider did not also log.
+ */
+function publicProfileRides(tripDocs, prestoRecords, { now = Date.now(), countUnreadableTexts } = {}) {
+  const historyTrips = countedTrips(tripDocs, now, countUnreadableTexts);
+  // Rides the user also logged as trips are already counted and mapped.
+  const prestoTrips = unmatchedImportedRides(historyTrips, buildPrestoTrips(prestoRecords));
+  // Days are counted in each trip's stored timezone (Toronto when it has
+  // none), never the server clock.
+  const stats = computeSummaryStats([...historyTrips, ...projectPrestoTripsForStats(prestoTrips)], {
+    now: new Date(now),
+    timeZoneFor: storedTripTimeZone,
+  });
+  return { historyTrips, prestoTrips, stats };
+}
+
 async function handlePublicProfile(req, res) {
   res.set('Access-Control-Allow-Origin', '*');
   // Public profile data can be briefly stale; allowing intermediary caching
@@ -164,16 +182,13 @@ async function handlePublicProfile(req, res) {
       db.collection('prestoTransactions').where('userId', '==', userId).get(),
       db.collection('stops').get(),
     ]);
-    const historyTrips = [];
-    const nowMs = Date.now();
-    tripsSnap.forEach((doc) => {
-      const trip = doc.data();
-      if (isHistoryTrip(trip, nowMs)) historyTrips.push(trip);
-    });
+    const tripDocs = [];
+    tripsSnap.forEach((doc) => { tripDocs.push(doc.data()); });
     const prestoRecords = prestoSnap.docs
       .map(doc => doc.data())
       .filter(record => record.type === 'fare_payment');
     const stops = stopsSnap.docs.map(doc => doc.data());
+    const { historyTrips, prestoTrips, stats } = publicProfileRides(tripDocs, prestoRecords);
 
     const pointsByStop = new Map();
     let stopIndex = null;
@@ -234,15 +249,6 @@ async function handlePublicProfile(req, res) {
         addPoint(exitLocation, 'end');
       }
     }
-
-    // Rides the user also logged as trips are already counted and mapped.
-    const prestoTrips = unmatchedImportedRides(historyTrips, buildPrestoTrips(prestoRecords));
-    // Same totals as the dashboard (summaryTrips in ride-merge), with days
-    // counted in each trip's stored timezone (Toronto when it has none),
-    // never the server clock.
-    const stats = computeSummaryStats([...historyTrips, ...projectPrestoTripsForStats(prestoTrips)], {
-      timeZoneFor: storedTripTimeZone,
-    });
 
     prestoTrips.forEach((trip) => {
       const { startRecord, endRecord } = trip;
@@ -318,3 +324,4 @@ async function getPublicProfilePayload(username, {
 
 exports.publicProfile = onRequest({ concurrency: 80, maxInstances: 10 }, handlePublicProfile);
 exports.getPublicProfilePayload = getPublicProfilePayload;
+exports.publicProfileRides = publicProfileRides;

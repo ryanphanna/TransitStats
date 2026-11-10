@@ -7,12 +7,26 @@ const { defineSecret } = require('firebase-functions/params');
 const { VALID_INTENTS, VALID_SENTIMENTS, timezoneForAgency } = require('./constants');
 const logger = require('./logger');
 const { ASK_FAILED } = require('./sms-text');
+const { buildPrestoTrips } = require('./presto-trips');
 const {
-  DAY_NAMES,
-  getTimezoneDateParts,
-  getWeekStartDateKeyInTimezone,
-  dayBoundsInTimezone,
-} = require('./gemini');
+  boardingStop,
+  countAgencies,
+  countRoutes,
+  countedRides,
+  durationSummary,
+  exitStop,
+  finishedTrips,
+  ridingStreaks,
+  sortedCounts,
+  tripAgency,
+  tripLocalDay,
+  tripStartDate,
+  tripsBetweenDays,
+  tripsByAgency,
+  tripsByDate,
+  tripsByRoute,
+  tripsByStop,
+} = require('./trip-stats');
 
 const anthropicApiKey = defineSecret('ANTHROPIC_API_KEY');
 const CLAUDE_MODEL = 'claude-haiku-5-5';
@@ -276,6 +290,9 @@ async function parseWithClaude(text, traceId = null) {
 }
 
 // Tools the ASK feature can call. Every one reads only the asking user's own trips.
+// Counts cover every counted ride (countedRides in trip-stats, the same list the
+// dashboard counts); durations cover finished trips only (finishedTrips), and
+// each duration result says how many.
 // Strict mode: the API only produces inputs that match these schemas. Every
 // property is required; optional filters are sent as null.
 const toolInput = (properties = {}) => ({
@@ -287,6 +304,8 @@ const toolInput = (properties = {}) => ({
 const DATE_ERROR = 'Dates must be in YYYY-MM-DD format.';
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const dateInput = (description) => ({ type: 'string', format: 'date', description });
+// No "format" here: with strict tools a date format on a nullable field stops the model sending null.
+const optionalDateInput = (description) => ({ type: ['string', 'null'], description });
 
 /**
  * Reject a date the tools cannot use, so the model is told and can correct it.
@@ -303,7 +322,8 @@ function requireDate(value) {
 const QUERY_TOOLS = [
   {
     name: 'get_all_time_stats',
-    description: 'Get total trip, route, and stop counts across all time. ' +
+    description: 'Get all-time totals: trips, different routes, stops and agencies, plus timedTrips, ' +
+      'the number of trips that have a recorded duration. ' +
       'Call this for "total ever", "all time", or "since I started" questions.',
   },
   {
@@ -313,14 +333,15 @@ const QUERY_TOOLS = [
   },
   {
     name: 'get_all_time_route_stats',
-    description: 'Get all routes and their frequency across all time. ' +
-      'Call this for all-time route frequency questions.',
+    description: 'Get the number of different routes and the most-ridden routes (up to 50) with their ' +
+      'trip counts across all time. Call this for all-time route frequency questions.',
   },
   {
     name: 'get_monthly_trip_counts',
-    description: 'Get trip counts grouped by year-month across all time. ' +
-      'Call this for questions about a specific month, year, or date range ' +
-      'that may fall outside the recent window.',
+    description: 'Get trip counts for every month (by_month) and every year (by_year) across all time, ' +
+      'with the all-time total. Call this for questions about a specific month or year, such as ' +
+      '"how many trips this year?", and for per-month averages. Read a year from by_year instead of ' +
+      'adding months up.',
   },
   {
     name: 'get_day_of_week_stats',
@@ -334,7 +355,7 @@ const QUERY_TOOLS = [
       'Call this for questions like "how many Tuesdays in 2026" or "busiest day this year". ' +
       'Requires a year parameter (e.g. 2026).',
     input_schema: toolInput({
-      year: { type: 'number', description: 'The year to filter by (e.g. 2026)' },
+      year: { type: 'integer', description: 'The year to filter by (e.g. 2026)' },
     }),
   },
   {
@@ -348,7 +369,8 @@ const QUERY_TOOLS = [
   },
   {
     name: 'get_trip_details_for_date',
-    description: 'Get the full details of each trip taken on a specific date — route, direction, boarding stop, exit stop, and time. ' +
+    description: 'Get the full details of each trip taken on a specific date — agency, route, direction, ' +
+      'boarding stop, exit stop, and time. ' +
       'Call this when the user asks "which trips", "what routes", "where did I go", "what did I ride", ' +
       'or any question about the specific trips taken on a day (not just the count).',
     input_schema: toolInput({
@@ -376,15 +398,29 @@ const QUERY_TOOLS = [
     }),
   },
   {
+    name: 'get_agency_stats',
+    description: 'Get trip counts per transit agency (e.g. TTC, GO Transit), the number of different agencies, ' +
+      'and how many trips have no agency recorded. For an all-time answer set both dates to null; do not ' +
+      'pass an early start date instead. Set both dates only when the question names a period. ' +
+      'Call this for questions like "how many different agencies have I ridden?", ' +
+      '"which agency do I ride most?" or "how many GO Transit trips this year?".',
+    input_schema: toolInput({
+      start_date: optionalDateInput('Start date in YYYY-MM-DD format (inclusive), or null for all time'),
+      end_date: optionalDateInput('End date in YYYY-MM-DD format (inclusive), or null for all time'),
+    }),
+  },
+  {
     name: 'get_riding_streak',
     description: 'Get the longest streak of consecutive days with at least one trip, ' +
-      'and the current streak. Call this for questions like "what\'s my longest streak?" ' +
+      'the current streak and the number of different days ridden. Call this for questions like "what\'s my longest streak?" ' +
       'or "how many days in a row have I ridden?".',
   },
   {
     name: 'get_average_trip_duration',
-    description: 'Get the average trip duration in minutes, optionally filtered by route. ' +
-      'Call this for questions like "what is my average commute time?" or ' +
+    description: 'Get the average and longest trip duration in minutes, optionally filtered by route. ' +
+      'Durations exist only for trips with a recorded end time: timed_trips is how many the figures ' +
+      'cover and total_trips is every trip counted. ' +
+      'Call this for questions like "what is my average commute time?", "what was my longest trip?" or ' +
       '"how long is a typical 505 trip?".',
     input_schema: toolInput({
       route: {
@@ -395,7 +431,7 @@ const QUERY_TOOLS = [
   },
   {
     name: 'get_weekday_vs_weekend_stats',
-    description: 'Get trip counts split between weekdays (Mon–Fri) and weekends (Sat–Sun). ' +
+    description: 'Get all-time trip counts split between weekdays (Mon–Fri) and weekends (Sat–Sun). ' +
       'Call this for questions like "do I ride more on weekdays or weekends?".',
   },
   {
@@ -410,8 +446,9 @@ const QUERY_TOOLS = [
   },
   {
     name: 'get_stop_pair_stats',
-    description: 'Get trip counts AND individual run times for a specific origin and/or ' +
-      'destination stop, optionally filtered by day of week. Call this for questions like ' +
+    description: 'Get trip counts AND run times for a specific origin and/or destination stop, with ' +
+      'counts by day of week. Run times cover only the timed_trips that have a recorded end time; ' +
+      'individual run times are listed when there are 100 or fewer. Call this for questions like ' +
       '"how many times have I gone from Spadina to York University?", ' +
       '"what days do I travel to York U?", "how often do I board at Bloor?", ' +
       '"what are all the run times between Queens Park and York U?", or ' +
@@ -426,320 +463,191 @@ const QUERY_TOOLS = [
   },
 ].map((tool) => ({ input_schema: toolInput(), ...tool, strict: true }));
 
+// Fields the ASK tools read. One projection for every read keeps reads small.
+const ASK_TRIP_FIELDS = [
+  'startTime', 'endTime', 'discarded', 'duration', 'route', 'direction', 'agency', 'source',
+  'startStopName', 'startStop', 'startStopCode', 'endStopName', 'endStop', 'endStopCode',
+];
+// Fields of an imported PRESTO row that decide whether and when it counts as a ride.
+const ASK_PRESTO_FIELDS = ['type', 'agency', 'agencySource', 'amountCents', 'occurredAtSortKey'];
+// Most run times or routes one tool result may list.
+const MAX_LISTED_RUN_TIMES = 100;
+const MAX_LISTED_ROUTES = 50;
+
 /**
- * Build the ASK tool implementations for one user.
+ * Build the ASK tool implementations for one user. Every figure comes from the
+ * shared counting module (trip-stats), the same one the dashboard uses.
  * @param {object} db - Firestore instance
- * @param {string} userId - The asking user; every query is filtered to this id
+ * @param {string} userId - The asking user; every read is filtered to this id
  * @param {string} timezone - IANA timezone used for date bucketing
+ * @param {object} [options] - countUnreadableTexts overrides the shared setting (tests only)
  * @returns {object} Map of tool name to async function
  */
-function buildQueryToolExecutors(db, userId, timezone) {
+function buildQueryToolExecutors(db, userId, timezone, { countUnreadableTexts } = {}) {
+  const zone = { timeZone: timezone };
+  // The only place trips are read: the asking user's logged trips and imported
+  // PRESTO rows, both filtered by the handler's user id, combined into the one
+  // list every tool counts. Read once per question (this memo lives inside one
+  // call to buildQueryToolExecutors and is never shared between questions).
+  const userDocs = (collection, fields) =>
+    db.collection(collection).where('userId', '==', userId).select(...fields).get()
+      .then((snapshot) => snapshot.docs.map((doc) => doc.data()));
+  let ridesRead = null;
+  const allRides = () => {
+    if (!ridesRead) {
+      const read = Promise.all([
+        userDocs('trips', ASK_TRIP_FIELDS),
+        userDocs('prestoTransactions', ASK_PRESTO_FIELDS),
+      ]).then(([trips, prestoRows]) => countedRides(trips, buildPrestoTrips(prestoRows), { countUnreadableTexts }));
+      ridesRead = read;
+      // A failed read is not remembered, so the next tool call reads again.
+      read.catch(() => { if (ridesRead === read) ridesRead = null; });
+    }
+    return ridesRead;
+  };
+  /** Counted rides on the local calendar days start to end, inclusive. */
+  const ridesBetween = async (startDate, endDate) => {
+    const from = requireDate(startDate);
+    const to = requireDate(endDate);
+    return tripsBetweenDays(await allRides(), from, to, zone);
+  };
+  // Totals shared by the tools that group trips by date.
+  const dateTotals = (trips, dates) => ({ total_trips: trips.length, trips_without_date: dates.withoutDate });
+
   const toolExecutors = {
     get_all_time_stats: async () => {
-      const tripsCol = db.collection('trips').where('userId', '==', userId).where('endTime', '!=', null);
-      const snapshot = await tripsCol.count().get();
-      const count = snapshot.data().count;
-
-      const trips = await tripsCol.select('route', 'startStopName', 'endStopName').get();
-      const routes = new Set(trips.docs.map((t) => t.data().route).filter(Boolean)).size;
-      const boarding = new Set(trips.docs.map((t) => t.data().startStopName).filter(Boolean));
-      const exit = new Set(trips.docs.map((t) => t.data().endStopName).filter(Boolean));
-      const stops = new Set([...boarding, ...exit]).size;
-
-      return { totalTrips: count, uniqueRoutes: routes, uniqueStops: stops };
+      const trips = await allRides();
+      return {
+        totalTrips: trips.length,
+        uniqueRoutes: countRoutes(trips),
+        uniqueStops: tripsByStop(trips).all.length,
+        uniqueAgencies: countAgencies(trips),
+        timedTrips: finishedTrips(trips).length,
+      };
     },
     get_all_time_stop_stats: async () => {
-      const trips = await db.collection('trips')
-        .where('userId', '==', userId)
-        .where('endTime', '!=', null)
-        .select('startStopName', 'endStopName')
-        .get();
-
-      const boarding = {};
-      const exit = {};
-      trips.docs.forEach((d) => {
-        const t = d.data();
-        if (t.startStopName) boarding[t.startStopName] = (boarding[t.startStopName] || 0) + 1;
-        if (t.endStopName) exit[t.endStopName] = (exit[t.endStopName] || 0) + 1;
-      });
-
-      const topBoarding = Object.entries(boarding).sort((a, b) => b[1] - a[1]).slice(0, 20);
-      const topExit = Object.entries(exit).sort((a, b) => b[1] - a[1]).slice(0, 20);
-      return { topBoardingStops: topBoarding, topExitStops: topExit };
+      const stops = tripsByStop(await allRides());
+      return { topBoardingStops: stops.boarding.slice(0, 20), topExitStops: stops.exit.slice(0, 20) };
     },
     get_all_time_route_stats: async () => {
-      const trips = await db.collection('trips')
-        .where('userId', '==', userId)
-        .where('endTime', '!=', null)
-        .select('route')
-        .get();
-
-      const routes = {};
-      trips.docs.forEach((d) => {
-        const r = d.data().route;
-        if (r) routes[r] = (routes[r] || 0) + 1;
-      });
-      return Object.entries(routes).sort((a, b) => b[1] - a[1]);
+      const trips = await allRides();
+      const routes = tripsByRoute(trips);
+      return {
+        total_trips: trips.length,
+        route_count: routes.counts.length,
+        trips_without_route: routes.withoutRoute,
+        top_routes: routes.counts.slice(0, MAX_LISTED_ROUTES),
+      };
     },
     get_monthly_trip_counts: async () => {
-      const trips = await db.collection('trips')
-        .where('userId', '==', userId)
-        .where('endTime', '!=', null)
-        .select('endTime')
-        .get();
-
-      const months = {};
-      trips.docs.forEach((d) => {
-        const ts = d.data().endTime;
-        const date = ts.toDate ? ts.toDate() : new Date(ts);
-        const parts = getTimezoneDateParts(date, timezone);
-        const key = `${parts.year}-${String(parts.month).padStart(2, '0')}`;
-        months[key] = (months[key] || 0) + 1;
-      });
-      return months;
+      const trips = await allRides();
+      const dates = tripsByDate(trips, zone);
+      return { by_month: dates.byMonth, by_year: dates.byYear, ...dateTotals(trips, dates) };
     },
     get_day_of_week_stats: async () => {
-      const trips = await db.collection('trips')
-        .where('userId', '==', userId)
-        .where('endTime', '!=', null)
-        .select('startTime')
-        .get();
-
-      const days = {};
-      trips.docs.forEach((d) => {
-        const ts = d.data().startTime;
-        if (!ts) return;
-        const date = ts.toDate ? ts.toDate() : new Date(ts);
-        const day = getTimezoneDateParts(date, timezone).weekday;
-        days[day] = (days[day] || 0) + 1;
-      });
-      return days;
+      const trips = await allRides();
+      const dates = tripsByDate(trips, zone);
+      return { by_day_of_week: dates.byWeekday, ...dateTotals(trips, dates) };
     },
     get_unique_stops: async () => {
-      const snap = await db.collection('trips')
-        .where('userId', '==', userId)
-        .select('startStopName', 'endStopName')
-        .get();
-
-      const stops = new Set();
-      snap.docs.forEach((d) => {
-        const t = d.data();
-        if (t.startStopName) stops.add(t.startStopName);
-        if (t.endStopName) stops.add(t.endStopName);
-      });
-      return { unique_stop_count: stops.size, stops: [...stops].sort() };
+      const stops = tripsByStop(await allRides()).all.map(([stop]) => stop);
+      return { unique_stop_count: stops.length, stops: stops.sort() };
     },
     get_busiest_weeks: async () => {
-      const snap = await db.collection('trips')
-        .where('userId', '==', userId)
-        .select('startTime')
-        .get();
-
-      const weeks = {};
-      snap.docs.forEach((d) => {
-        const ts = d.data().startTime;
-        if (!ts) return;
-        const date = ts.toDate ? ts.toDate() : new Date(ts);
-        const key = getWeekStartDateKeyInTimezone(date, timezone);
-        weeks[key] = (weeks[key] || 0) + 1;
-      });
-
-      return Object.entries(weeks)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([week, count]) => ({ week_starting: week, trips: count }));
+      const weeks = tripsByDate(await allRides(), zone).byWeek;
+      return sortedCounts(weeks).slice(0, 5).map(([week, count]) => ({ week_starting: week, trips: count }));
     },
     get_weekday_vs_weekend_stats: async () => {
-      const snap = await db.collection('trips')
-        .where('userId', '==', userId)
-        .select('startTime')
-        .get();
-
-      let weekdays = 0;
-      let weekends = 0;
-      snap.docs.forEach((d) => {
-        const ts = d.data().startTime;
-        if (!ts) return;
-        const date = ts.toDate ? ts.toDate() : new Date(ts);
-        const day = DAY_NAMES.indexOf(getTimezoneDateParts(date, timezone).weekday);
-        if (day === 0 || day === 6) weekends++;
-        else weekdays++;
-      });
-      return { weekdays, weekends, total: weekdays + weekends };
+      const trips = await allRides();
+      const dates = tripsByDate(trips, zone);
+      const weekends = (dates.byWeekday.Saturday || 0) + (dates.byWeekday.Sunday || 0);
+      const dated = trips.length - dates.withoutDate;
+      return { weekdays: dated - weekends, weekends, ...dateTotals(trips, dates) };
     },
     get_average_trip_duration: async ({ route }) => {
-      const snap = await db.collection('trips')
-        .where('userId', '==', userId)
-        .where('endTime', '!=', null)
-        .select('duration', 'route')
-        .get();
-
-      const durations = [];
-      snap.docs.forEach((d) => {
-        const t = d.data();
-        if (route && t.route?.toString() !== route.toString()) return;
-        if (t.duration > 0) durations.push(t.duration);
-      });
-
-      if (durations.length === 0) return { average_minutes: null, trip_count: 0 };
-      const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
-      return { average_minutes: Math.round(avg), trip_count: durations.length };
+      const trips = (await allRides())
+        .filter((trip) => !route || trip.route?.toString() === route.toString());
+      const timed = durationSummary(trips);
+      return {
+        average_minutes: timed.average,
+        longest_minutes: timed.longest,
+        timed_trips: timed.count,
+        total_trips: trips.length,
+      };
     },
     get_stop_pair_stats: async ({ start_stop, end_stop }) => {
-      const snap = await db.collection('trips')
-        .where('userId', '==', userId)
-        .where('endTime', '!=', null)
-        .select('startStopName', 'endStopName', 'startTime', 'duration')
-        .get();
-
-      const byDay = {};
-      const durations = [];
-
-      snap.docs.forEach((d) => {
-        const t = d.data();
-        const start = (t.startStopName || '').toLowerCase();
-        const end = (t.endStopName || '').toLowerCase();
-        const startMatch = !start_stop || start.includes(start_stop.toLowerCase());
-        const endMatch = !end_stop || end.includes(end_stop.toLowerCase());
-        if (!startMatch || !endMatch) return;
-
-        const ts = t.startTime;
-        if (!ts) return;
-        const date = ts.toDate ? ts.toDate() : new Date(ts);
-        const day = getTimezoneDateParts(date, timezone).weekday;
-        byDay[day] = (byDay[day] || 0) + 1;
-
-        if (t.duration > 0) durations.push(t.duration);
+      const matches = (await allRides()).filter((trip) => {
+        const start = String(boardingStop(trip) || '').toLowerCase();
+        const end = String(exitStop(trip) || '').toLowerCase();
+        return (!start_stop || start.includes(start_stop.toLowerCase())) &&
+          (!end_stop || end.includes(end_stop.toLowerCase()));
       });
-
-      const total = Object.values(byDay).reduce((a, b) => a + b, 0);
-      const avg = durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null;
-      const min = durations.length ? Math.min(...durations) : null;
-      const max = durations.length ? Math.max(...durations) : null;
+      const timed = durationSummary(matches);
 
       return {
-        total,
-        by_day_of_week: byDay,
-        run_times_minutes: durations,
-        avg_duration_minutes: avg,
-        min_duration_minutes: min,
-        max_duration_minutes: max,
+        total: matches.length,
+        by_day_of_week: tripsByDate(matches, zone).byWeekday,
+        timed_trips: timed.count,
+        // Individual run times only while the list is short.
+        run_times_minutes: timed.count <= MAX_LISTED_RUN_TIMES ? timed.minutes : null,
+        avg_duration_minutes: timed.average,
+        min_duration_minutes: timed.shortest,
+        max_duration_minutes: timed.longest,
       };
     },
     get_riding_streak: async () => {
-      const snap = await db.collection('trips')
-        .where('userId', '==', userId)
-        .select('startTime')
-        .get();
-
-      const days = new Set();
-      snap.docs.forEach((d) => {
-        const ts = d.data().startTime;
-        if (!ts) return;
-        const date = ts.toDate ? ts.toDate() : new Date(ts);
-        days.add(getTimezoneDateParts(date, timezone).dateKey);
-      });
-
-      const sorted = [...days].sort();
-      let longest = 0;
-      let current = 0;
-      let prev = null;
-      for (const day of sorted) {
-        if (prev) {
-          const diff = (new Date(day) - new Date(prev)) / 86400000;
-          current = diff === 1 ? current + 1 : 1;
-        } else {
-          current = 1;
-        }
-        longest = Math.max(longest, current);
-        prev = day;
-      }
-
-      const today = getTimezoneDateParts(new Date(), timezone).dateKey;
-      const yesterday = getTimezoneDateParts(new Date(Date.now() - 86400000), timezone).dateKey;
-      const currentStreak = days.has(today) || days.has(yesterday) ? current : 0;
-
-      return { longest_streak_days: longest, current_streak_days: currentStreak };
+      const streaks = ridingStreaks(await allRides(), zone);
+      return {
+        longest_streak_days: streaks.longest,
+        current_streak_days: streaks.current,
+        days_ridden: streaks.daysRidden,
+      };
     },
     get_route_stats_for_period: async ({ start_date, end_date }) => {
-      const { start } = dayBoundsInTimezone(requireDate(start_date), timezone);
-      const { end } = dayBoundsInTimezone(requireDate(end_date), timezone);
-      const snap = await db.collection('trips')
-        .where('userId', '==', userId)
-        .where('startTime', '>=', start)
-        .where('startTime', '<=', end)
-        .select('route')
-        .get();
-
-      const routes = {};
-      snap.docs.forEach((d) => {
-        const route = d.data().route;
-        if (!route) return;
-        routes[route] = (routes[route] || 0) + 1;
-      });
-      return routes;
+      return Object.fromEntries(tripsByRoute(await ridesBetween(start_date, end_date)).counts);
+    },
+    get_agency_stats: async ({ start_date, end_date }) => {
+      // A period needs both dates; a half-given one is refused before any read.
+      const allTime = start_date == null && end_date == null;
+      const trips = allTime ? await allRides() : await ridesBetween(start_date, end_date);
+      const agencies = tripsByAgency(trips);
+      return {
+        period: allTime ? 'all time' : { start_date, end_date },
+        total_trips: trips.length,
+        agency_count: agencies.counts.length,
+        trips_by_agency: agencies.counts,
+        trips_without_agency: agencies.withoutAgency,
+      };
     },
     get_trips_for_date_range: async ({ start_date, end_date }) => {
-      const { start } = dayBoundsInTimezone(requireDate(start_date), timezone);
-      const { end } = dayBoundsInTimezone(requireDate(end_date), timezone);
-      const snap = await db.collection('trips')
-        .where('userId', '==', userId)
-        .where('startTime', '>=', start)
-        .where('startTime', '<=', end)
-        .get();
-      return { start_date, end_date, count: snap.size };
+      const trips = await ridesBetween(start_date, end_date);
+      return { start_date, end_date, count: trips.length };
     },
     get_trips_for_date: async ({ date }) => {
-      const { start, end } = dayBoundsInTimezone(requireDate(date), timezone);
-      const snap = await db.collection('trips')
-        .where('userId', '==', userId)
-        .where('startTime', '>=', start)
-        .where('startTime', '<=', end)
-        .get();
-      return { date, count: snap.size };
+      const trips = await ridesBetween(date, date);
+      return { date, count: trips.length };
     },
     get_trip_details_for_date: async ({ date }) => {
-      const { start, end } = dayBoundsInTimezone(requireDate(date), timezone);
-      const snap = await db.collection('trips')
-        .where('userId', '==', userId)
-        .where('startTime', '>=', start)
-        .where('startTime', '<=', end)
-        .orderBy('startTime', 'asc')
-        .get();
-      const trips = snap.docs.map((d) => {
-        const t = d.data();
-        const startTime = t.startTime?.toDate ? t.startTime.toDate() : new Date(t.startTime);
-        const timeStr = startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: timezone });
-        return {
-          time: timeStr,
-          route: t.route || 'Unknown',
-          direction: t.direction || null,
-          from: t.startStopName || t.startStop || t.startStopCode || 'Unknown',
-          to: t.endStopName || t.endStop || t.endStopCode || null,
-          duration_min: t.duration || null,
-        };
-      });
+      const trips = (await ridesBetween(date, date))
+        .map((trip) => ({ trip, startTime: tripStartDate(trip) }))
+        .sort((a, b) => a.startTime - b.startTime)
+        .map(({ trip, startTime }) => ({
+          time: startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: timezone }),
+          agency: tripAgency(trip),
+          route: trip.route || 'Unknown',
+          direction: trip.direction || null,
+          from: boardingStop(trip) || 'Unknown',
+          to: exitStop(trip),
+          duration_min: trip.duration || null,
+          // An imported PRESTO ride has only a time and an agency.
+          ...(trip.imported ? { source: 'PRESTO import' } : {}),
+        }));
       return { date, trips };
     },
     get_day_of_week_stats_for_year: async ({ year: rawYear }) => {
       const year = parseInt(rawYear, 10);
-      const trips = await db.collection('trips')
-        .where('userId', '==', userId)
-        .where('endTime', '!=', null)
-        .select('startTime')
-        .get();
-
-      const days = {};
-      trips.docs.forEach((d) => {
-        const ts = d.data().startTime;
-        if (!ts) return;
-        const date = ts.toDate ? ts.toDate() : new Date(ts);
-        const parts = getTimezoneDateParts(date, timezone);
-        if (parts.year !== year) return;
-        const day = parts.weekday;
-        days[day] = (days[day] || 0) + 1;
-      });
-      return days;
+      const trips = (await allRides()).filter((trip) => tripLocalDay(trip, zone)?.year === year);
+      return { year, by_day_of_week: tripsByDate(trips, zone).byWeekday, total_trips: trips.length };
     },
   };
 
@@ -759,9 +667,15 @@ or anything else that is not a real question:
   and state the answer directly, e.g. "12 trips on Fridays."
 - When something can't be answered, say so without first person, e.g. "That isn't in your trip
   data." or "No trips found for that date." Never "I can't" or "I couldn't".
+- When the tools and the data provided do not hold what the question needs, say that it is not
+  available in one short sentence. Do not estimate, guess or infer an answer from other fields
+  such as stop names or route numbers.
 - When the message is not a question about the rider's trips, reply briefly that questions about
   your trips can be answered, and suggest topics rather than quoting a sample question,
   e.g. "Try asking about trips last week or your top route."
+- Trip counts cover every logged trip. Durations come only from trips with a recorded duration,
+  so a duration answer names how many trips it covers, e.g. "Average 18 min across 1,116 timed
+  trips." Never present the timed-trip number as the total number of trips.
 - Be concise and friendly.`;
 
 /**
@@ -798,11 +712,11 @@ You have access to the most recent 200 trips spanning ${stats.windowStart || '?'
 - Top 5 routes in window: ${JSON.stringify(stats.routeStats.slice(0, 5))}
 - Top stop pairs: ${JSON.stringify(stats.pairStats.slice(0, 5))}
 - Trips by day of week in window: ${JSON.stringify(stats.dayOfWeek || {})}
-- Daily trip counts (YYYY-MM-DD): ${JSON.stringify(stats.dailyCounts || {})}
 - Stops visited recently: ${stats.allStops?.join(', ')}
-
+${stats.total ? '' : `- This window holds no logged trips, but the rider may have imported rides, which the tools count. CALL a tool for every count instead of answering that there are no trips.
+`}
 IMPORTANT:
-- "Window size" is NOT the answer to any date-scoped question. For "last month", "this year", or any specific period, sum the relevant entries from dailyCounts, or call get_monthly_trip_counts.
+- "Window size" is NOT the answer to any date-scoped question. For a specific date, "yesterday", "this week", "last month", "this year", or any other period, CALL a tool (get_trips_for_date, get_trips_for_date_range or get_monthly_trip_counts). Never count trips for a date or period from the figures above.
 - If the question asks about dates outside ${stats.windowStart || '?'}–${stats.windowEnd || today}, or asks for all-time stats, CALL the appropriate tool. NEVER guess!
 
 Today's date: ${today}
@@ -993,6 +907,8 @@ async function lookupAgencyTimezone(agency, traceId = null) {
 
 module.exports = {
   answerQueryWithClaude,
+  buildQueryToolExecutors,
+  ASK_PRESTO_FIELDS,
   parseWithClaude,
   lookupAgencyTimezone,
 };

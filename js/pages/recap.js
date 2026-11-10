@@ -6,7 +6,7 @@ import { Profile } from '../profile.js';
 import { Stats } from '../stats.js';
 import { UI } from '../ui-utils.js';
 import { db } from '../firebase.js';
-import { buildPrestoTrips, projectPrestoTripsForStats } from '../presto-stop-matcher.js';
+import { buildPrestoTrips } from '../presto-stop-matcher.js';
 import { downloadBlob, drawWrappedCard, loadCardFonts, renderWrappedPngBlob, TICKET_RECT } from '../wrapped-card.js';
 
 // Dev-only sample data: /wrapped?demo=1 skips sign-in. Stripped from production builds.
@@ -273,8 +273,8 @@ function onTrips(trips) {
 
 function rebuildTrips() {
     allTrips = INCLUDE_PRESTO_TRIPS
-        ? Stats.mergeImportedRides(loggedTrips, prestoRides)
-        : [...loggedTrips];
+        ? Stats.countedRides(loggedTrips, prestoRides)
+        : Stats.countedRides(loggedTrips, []);
     refresh();
 }
 
@@ -311,7 +311,7 @@ async function init() {
     if (INCLUDE_PRESTO_TRIPS) {
         db.collection('prestoTransactions').where('userId', '==', user.uid).onSnapshot(
             snap => {
-                prestoRides = projectPrestoTripsForStats(buildPrestoTrips(snap.docs.map(doc => doc.data())));
+                prestoRides = buildPrestoTrips(snap.docs.map(doc => doc.data()));
                 rebuildTrips();
             },
             err => {

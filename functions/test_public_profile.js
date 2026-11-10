@@ -331,7 +331,8 @@ test('publicProfile counts days in the trip timezone and agencies/routes like th
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.totalTrips, 3);
   assert.equal(res.body.daysRidden, 2);
-  assert.equal(res.body.agencies, 2);
+  // "TTC" and "ttc" are one agency.
+  assert.equal(res.body.agencies, 1);
   assert.equal(res.body.routes, 2);
   assert.equal(res.body.countries, 1);
   assert.equal(res.body.totalHours, 1.5);

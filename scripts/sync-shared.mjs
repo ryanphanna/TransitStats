@@ -1,5 +1,7 @@
-// Generates CommonJS copies of the dependency-free shared modules in js/shared
-// for the Cloud Functions (which deploy without access to js/).
+// Generates CommonJS copies of the shared modules in js/shared for the Cloud
+// Functions (which deploy without access to js/). A shared module may import
+// only from another shared module in this list, as
+// `import { a, b } from './name.js';` on one line.
 // Usage: node scripts/sync-shared.mjs [--check]
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +12,10 @@ export const SHARED_MODULES = ['ride-merge', 'presto-trips', 'agency-aliases', '
 
 export function toCommonJs(source, name) {
     const exported = [...source.matchAll(/^export (?:const|function) (\w+)/gm)].map(match => match[1]);
-    const body = source.replace(/^export (const|function) /gm, '$1 ');
+    const body = source
+        .replace(/^import \{([^}]+)\} from '\.\/([\w-]+)\.js';$/gm, "const {$1} = require('./$2');")
+        .replace(/^export (const|function) /gm, '$1 ');
+    if (/^import /m.test(body)) throw new Error(`js/shared/${name}.js has an import the sync script cannot convert`);
     return `// GENERATED from js/shared/${name}.js by scripts/sync-shared.mjs. Do not edit.\n${body}\nmodule.exports = { ${exported.join(', ')} };\n`;
 }
 

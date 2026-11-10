@@ -109,7 +109,7 @@ describe('Stats calendar-month Wrapped helpers', () => {
             { startTime: new Date(2026, 8, 2, 8, 5), agency: 'TTC' },   // same ride as the logged one
             { startTime: new Date(2026, 8, 4, 9, 0), agency: 'GO' },
         ];
-        const merged = Stats.mergeImportedRides(logged, imported);
+        const merged = Stats.countedRides(logged, imported);
         expect(merged).toHaveLength(2);
 
         const wrapped = Stats.computeWrapped(merged, 2026, 8);
@@ -127,7 +127,7 @@ describe('Stats calendar-month Wrapped helpers', () => {
             { startTime: new Date(2026, 8, 2, 8, 3), agency: 'TTC' },   // closest, cancelled
             { startTime: new Date(2026, 8, 2, 8, 20), agency: 'TTC' },
         ];
-        const merged = Stats.mergeImportedRides(logged, imported);
+        const merged = Stats.countedRides(logged, imported);
         expect(merged).toHaveLength(3);
         expect(merged.filter(t => t.agency === 'TTC').map(t => t.startTime.getMinutes()).sort((a, b) => a - b))
             .toEqual([12, 20]);

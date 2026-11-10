@@ -1,5 +1,5 @@
 /**
- * Gemini AI helper for stop-sign photos, plus trip-stat and date helpers shared with claude.js.
+ * Gemini AI helper for stop-sign photos, plus the recent-trips summary and date helper used for the ASK prompt.
  * Trip text parsing, ASK answers and agency time zones live in claude.js.
  */
 const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -8,7 +8,6 @@ const logger = require('./logger');
 
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const GEMINI_MODEL = 'gemini-2.5-flash';
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function getTimezoneDateParts(date, timezone) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -36,14 +35,6 @@ function getTimezoneDateParts(date, timezone) {
     weekday: parts.weekday,
     dateKey: `${parts.year}-${parts.month}-${parts.day}`,
   };
-}
-
-function getWeekStartDateKeyInTimezone(date, timezone) {
-  const parts = getTimezoneDateParts(date, timezone);
-  const weekdayIndex = DAY_NAMES.indexOf(parts.weekday);
-  const utcMidday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12, 0, 0));
-  utcMidday.setUTCDate(utcMidday.getUTCDate() - ((weekdayIndex + 6) % 7));
-  return getTimezoneDateParts(utcMidday, timezone).dateKey;
 }
 
 /**
@@ -172,16 +163,6 @@ function aggregateTripStats(trips, defaultTimezone = 'America/Toronto') {
     else timeOfDay.night += count;
   });
 
-  // Daily trip counts (YYYY-MM-DD → count) for specific date queries
-  const dailyCounts = {};
-  trips.forEach((trip) => {
-    if (!trip.startTime) return;
-    const tripTimezone = trip.timezone || defaultTimezone;
-    const date = trip.startTime.toDate ? trip.startTime.toDate() : new Date(trip.startTime);
-    const key = getTimezoneDateParts(date, tripTimezone).dateKey;
-    dailyCounts[key] = (dailyCounts[key] || 0) + 1;
-  });
-
   const allStops = Array.from(new Set([
     ...Object.keys(boardingStopMap),
     ...Object.keys(exitStopMap),
@@ -189,34 +170,10 @@ function aggregateTripStats(trips, defaultTimezone = 'America/Toronto') {
 
   return {
     total: trips.length,
-    routeStats, pairStats, boardingStops, exitStops, timeOfDay, dailyCounts, allStops,
+    routeStats, pairStats, boardingStops, exitStops, timeOfDay, allStops,
     dayOfWeek: dayOfWeekMap,
     windowStart: windowStart ? windowStart.toLocaleDateString('en-CA', { timeZone: defaultTimezone }) : null,
     windowEnd: windowEnd ? windowEnd.toLocaleDateString('en-CA', { timeZone: defaultTimezone }) : null,
-  };
-}
-
-/**
- * Returns UTC Date objects for the start and end of a calendar day in the given timezone.
- * Uses noon as a DST-safe reference point to calculate the UTC offset.
- * @param {string} dateStr - YYYY-MM-DD
- * @param {string} timezone - IANA timezone string
- * @returns {{ start: Date, end: Date }}
- */
-function dayBoundsInTimezone(dateStr, timezone) {
-  const [year, month, day] = dateStr.split('-').map(Number);
-  const refUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false,
-  }).formatToParts(refUTC).reduce((o, p) => { o[p.type] = p.value; return o; }, {});
-  const localNoonMs = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
-  const offsetMs = refUTC.getTime() - localNoonMs;
-  return {
-    start: new Date(Date.UTC(year, month - 1, day, 0, 0, 0) + offsetMs),
-    end: new Date(Date.UTC(year, month - 1, day, 23, 59, 59) + offsetMs),
   };
 }
 
@@ -300,10 +257,7 @@ Rules:
 }
 
 module.exports = {
-  DAY_NAMES,
   getTimezoneDateParts,
-  getWeekStartDateKeyInTimezone,
-  dayBoundsInTimezone,
   retryWithBackoff,
   aggregateTripStats,
   constructStopInput,
