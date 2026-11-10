@@ -287,6 +287,8 @@ const toolInput = (properties = {}) => ({
 const DATE_ERROR = 'Dates must be in YYYY-MM-DD format.';
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const dateInput = (description) => ({ type: 'string', format: 'date', description });
+// No "format" here: with strict tools a date format on a nullable field stops the model sending null.
+const optionalDateInput = (description) => ({ type: ['string', 'null'], description });
 
 /**
  * Reject a date the tools cannot use, so the model is told and can correct it.
@@ -348,7 +350,8 @@ const QUERY_TOOLS = [
   },
   {
     name: 'get_trip_details_for_date',
-    description: 'Get the full details of each trip taken on a specific date — route, direction, boarding stop, exit stop, and time. ' +
+    description: 'Get the full details of each trip taken on a specific date — agency, route, direction, ' +
+      'boarding stop, exit stop, and time. ' +
       'Call this when the user asks "which trips", "what routes", "where did I go", "what did I ride", ' +
       'or any question about the specific trips taken on a day (not just the count).',
     input_schema: toolInput({
@@ -373,6 +376,18 @@ const QUERY_TOOLS = [
     input_schema: toolInput({
       start_date: dateInput('Start date in YYYY-MM-DD format (inclusive)'),
       end_date: dateInput('End date in YYYY-MM-DD format (inclusive)'),
+    }),
+  },
+  {
+    name: 'get_agency_stats',
+    description: 'Get trip counts per transit agency (e.g. TTC, GO Transit), the number of different agencies, ' +
+      'and how many trips have no agency recorded. For an all-time answer set both dates to null; do not ' +
+      'pass an early start date instead. Set both dates only when the question names a period. ' +
+      'Call this for questions like "how many different agencies have I ridden?", ' +
+      '"which agency do I ride most?" or "how many GO Transit trips this year?".',
+    input_schema: toolInput({
+      start_date: optionalDateInput('Start date in YYYY-MM-DD format (inclusive), or null for all time'),
+      end_date: optionalDateInput('End date in YYYY-MM-DD format (inclusive), or null for all time'),
     }),
   },
   {
@@ -434,6 +449,13 @@ const QUERY_TOOLS = [
  * @returns {object} Map of tool name to async function
  */
 function buildQueryToolExecutors(db, userId, timezone) {
+  const { normalizeAgency } = require('./utils');
+  // Stored agency in its canonical form, or null when the trip has none.
+  const tripAgency = (trip) => {
+    const name = typeof trip.agency === 'string' ? normalizeAgency(trip.agency) : '';
+    return name || null;
+  };
+
   const toolExecutors = {
     get_all_time_stats: async () => {
       const tripsCol = db.collection('trips').where('userId', '==', userId).where('endTime', '!=', null);
@@ -679,6 +701,34 @@ function buildQueryToolExecutors(db, userId, timezone) {
       });
       return routes;
     },
+    get_agency_stats: async ({ start_date, end_date }) => {
+      // Same trips as the matching tools: finished trips for all time (get_all_time_stats),
+      // trips started in the period otherwise (get_route_stats_for_period).
+      const allTime = start_date == null && end_date == null;
+      // A period needs both dates; a half-given one is refused before any query runs.
+      const start = allTime ? null : dayBoundsInTimezone(requireDate(start_date), timezone).start;
+      const end = allTime ? null : dayBoundsInTimezone(requireDate(end_date), timezone).end;
+      let query = db.collection('trips').where('userId', '==', userId);
+      query = allTime
+        ? query.where('endTime', '!=', null)
+        : query.where('startTime', '>=', start).where('startTime', '<=', end);
+      const snap = await query.select('agency').get();
+
+      const agencies = {};
+      let withoutAgency = 0;
+      snap.docs.forEach((d) => {
+        const agency = tripAgency(d.data());
+        if (agency) agencies[agency] = (agencies[agency] || 0) + 1;
+        else withoutAgency++;
+      });
+      return {
+        period: allTime ? 'all time' : { start_date, end_date },
+        total_trips: snap.size,
+        agency_count: Object.keys(agencies).length,
+        trips_by_agency: Object.entries(agencies).sort((a, b) => b[1] - a[1]),
+        trips_without_agency: withoutAgency,
+      };
+    },
     get_trips_for_date_range: async ({ start_date, end_date }) => {
       const { start } = dayBoundsInTimezone(requireDate(start_date), timezone);
       const { end } = dayBoundsInTimezone(requireDate(end_date), timezone);
@@ -712,6 +762,7 @@ function buildQueryToolExecutors(db, userId, timezone) {
         const timeStr = startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: timezone });
         return {
           time: timeStr,
+          agency: tripAgency(t),
           route: t.route || 'Unknown',
           direction: t.direction || null,
           from: t.startStopName || t.startStop || t.startStopCode || 'Unknown',
@@ -759,6 +810,9 @@ or anything else that is not a real question:
   and state the answer directly, e.g. "12 trips on Fridays."
 - When something can't be answered, say so without first person, e.g. "That isn't in your trip
   data." or "No trips found for that date." Never "I can't" or "I couldn't".
+- When the tools and the data provided do not hold what the question needs, say that it is not
+  available in one short sentence. Do not estimate, guess or infer an answer from other fields
+  such as stop names or route numbers.
 - When the message is not a question about the rider's trips, reply briefly that questions about
   your trips can be answered, and suggest topics rather than quoting a sample question,
   e.g. "Try asking about trips last week or your top route."

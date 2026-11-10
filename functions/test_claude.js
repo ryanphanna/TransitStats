@@ -427,8 +427,9 @@ test('answerQueryWithClaude declares every ASK tool in Claude format', async () 
     await claude.answerQueryWithClaude('user-1', 'q', [], STATS, []);
     const tools = requests[0].tools;
     assert.deepEqual(tools.map((t) => t.name).sort(), [
-      'get_all_time_route_stats', 'get_all_time_stats', 'get_all_time_stop_stats', 'get_average_trip_duration',
-      'get_busiest_weeks', 'get_day_of_week_stats', 'get_day_of_week_stats_for_year', 'get_monthly_trip_counts',
+      'get_agency_stats', 'get_all_time_route_stats', 'get_all_time_stats', 'get_all_time_stop_stats',
+      'get_average_trip_duration', 'get_busiest_weeks', 'get_day_of_week_stats', 'get_day_of_week_stats_for_year',
+      'get_monthly_trip_counts',
       'get_riding_streak', 'get_route_stats_for_period', 'get_stop_pair_stats', 'get_trip_details_for_date',
       'get_trips_for_date', 'get_trips_for_date_range', 'get_unique_stops', 'get_weekday_vs_weekend_stats',
     ]);
@@ -450,6 +451,84 @@ test('answerQueryWithClaude declares every ASK tool in Claude format', async () 
     assert.deepEqual(byName.get_stop_pair_stats.input_schema.properties.start_stop.type, ['string', 'null']);
     assert.deepEqual(byName.get_average_trip_duration.input_schema.properties.route.type, ['string', 'null']);
     assert.deepEqual(byName.get_all_time_stats.input_schema.properties, {});
+    // Agency counts take an optional period and nothing that could name a user or collection.
+    assert.deepEqual(byName.get_agency_stats.input_schema.required, ['start_date', 'end_date']);
+    for (const key of ['start_date', 'end_date']) {
+      assert.deepEqual(byName.get_agency_stats.input_schema.properties[key].type, ['string', 'null']);
+      // A date format on a nullable field keeps the model from sending null (seen live).
+      assert.equal('format' in byName.get_agency_stats.input_schema.properties[key], false);
+    }
+  } finally {
+    restore();
+  }
+});
+
+test('get_agency_stats counts trips per agency for the asking user only and reports trips with none', async () => {
+  const { claude, requests, queries, restore } = loadClaude({
+    tripDocs: [
+      { agency: 'TTC' }, { agency: ' ttc ' }, { agency: 'GO Transit' },
+      { agency: null }, { agency: '  ' }, { route: '510' }, { agency: 42 },
+    ],
+    replies: [
+      toolReply(
+        ['toolu_1', 'get_agency_stats', { start_date: null, end_date: null }],
+        ['toolu_2', 'get_agency_stats', { start_date: '2026-03-01', end_date: '2026-03-31' }],
+        ['toolu_3', 'get_agency_stats', { start_date: '2026-03-01', end_date: null }],
+        ['toolu_4', 'get_agency_stats',
+          { start_date: null, end_date: null, userId: 'user-2', collection: 'profiles' }],
+        ['toolu_5', 'get_trip_details_for_date', { date: '2026-03-01' }],
+      ),
+      textReply('2 agencies: TTC and GO Transit.'),
+    ],
+  });
+  try {
+    const answer = await claude.answerQueryWithClaude('user-1', 'How many agencies?', [], STATS, []);
+    assert.equal(answer, '2 agencies: TTC and GO Transit.');
+
+    const results = requests[1].messages.at(-1).content;
+    const allTime = JSON.parse(results[0].content);
+    // Spelling variants merge; trips with no usable agency are counted, not dropped.
+    assert.deepEqual(allTime, {
+      period: 'all time',
+      total_trips: 7,
+      agency_count: 2,
+      trips_by_agency: [['TTC', 2], ['GO Transit', 1]],
+      trips_without_agency: 4,
+    });
+    const period = JSON.parse(results[1].content);
+    assert.deepEqual(period.period, { start_date: '2026-03-01', end_date: '2026-03-31' });
+    assert.equal(period.trips_without_agency, 4);
+    // A half-given period is refused instead of silently widened to all time.
+    assert.equal(results[2].is_error, true);
+    assert.match(results[2].content, /YYYY-MM-DD/);
+    // Extra arguments are ignored: the result is the same as the plain all-time call.
+    assert.deepEqual(JSON.parse(results[3].content), allTime);
+    // Per-trip details carry the agency, or null when the trip has none.
+    assert.deepEqual(JSON.parse(results[4].content).trips.map((t) => t.agency),
+      ['TTC', 'TTC', 'GO Transit', null, null, null, null]);
+
+    // Every query is on the trips collection, filtered first by the handler's user id.
+    assert.equal(queries.length, 4);
+    for (const query of queries) {
+      assert.equal(query.collection, 'trips');
+      assert.deepEqual(query.wheres[0], ['userId', '==', 'user-1']);
+      assert.equal(JSON.stringify(query.wheres).includes('user-2'), false);
+    }
+    // All time counts finished trips, like get_all_time_stats; a period filters on start time.
+    assert.deepEqual(queries[0].wheres.slice(1), [['endTime', '!=', null]]);
+    assert.deepEqual(queries[1].wheres.slice(1).map(([field, op]) => [field, op]),
+      [['startTime', '>='], ['startTime', '<=']]);
+  } finally {
+    restore();
+  }
+});
+
+test('answerQueryWithClaude tells the model not to infer answers the data does not hold', async () => {
+  const { claude, requests, restore } = loadClaude({ replies: [textReply('ok')] });
+  try {
+    await claude.answerQueryWithClaude('user-1', 'q', [], STATS, []);
+    assert.match(requests[0].system, /not\s+available in one short sentence/);
+    assert.match(requests[0].system, /Do not estimate, guess or infer/);
   } finally {
     restore();
   }
