@@ -19,7 +19,7 @@ Transit riders have almost no personal tracking tools built for transit. There i
 - **Frontend**: Vanilla JS (ES modules), Vite, Leaflet
 - **Backend**: Firebase Auth, Firestore, Hosting, and Cloud Functions
 - **Messaging**: Twilio SMS/MMS
-- **AI + Models**: Google Gemini, V4 logistic regression models, and V5 XGBoost models running through ONNX Runtime
+- **AI + Models**: Anthropic Claude, Google Gemini, V4 logistic regression models, and V5 XGBoost models running through ONNX Runtime
 - **Transit Intelligence**: Custom Prediction, Network, Transfer, and Habit engines
 
 ---
