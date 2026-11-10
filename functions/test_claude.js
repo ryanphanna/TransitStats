@@ -577,7 +577,7 @@ const AGREEMENT_TRIPS = [
   // 00:30 on the day the clocks go back: before the hour that repeats, still summer time.
   { userId: 'user-1', agency: 'TTC', route: '300', startStopName: 'Yonge',
     startTime: toronto('2026-11-01T00:30:00'), endTime: null },
-  // Discarded record with no start time: the dashboard counts it, so ASK does too.
+  // Discarded record with no start time: still a logged trip, so it is counted, without a date.
   { userId: 'user-1', discarded: true, raw_text: 'hello' },
   // Never counted: an unreadable text that was not discarded, and another rider's trip.
   { userId: 'user-1', raw_text: 'what', needs_review: true },
@@ -930,5 +930,122 @@ test('lookupAgencyTimezone falls back to Toronto on a bad answer, refusal, error
     } finally {
       restore();
     }
+  }
+});
+
+test('a trip with a null start time is counted but never given a date', async () => {
+  const { claude, restore } = loadClaude();
+  try {
+    const { tripStartDate } = require('./lib/trip-stats');
+    assert.equal(tripStartDate({ startTime: null }), null);
+    assert.equal(tripStartDate({}), null);
+    assert.equal(tripStartDate({ startTime: 'not a date' }), null);
+    assert.equal(tripStartDate({ startTime: 0 }).getTime(), 0);
+
+    const { db } = fakeTripsDb([
+      { userId: 'user-1', agency: 'TTC', route: '510', startTime: toronto('2026-09-12T09:00:00'),
+        endTime: toronto('2026-09-12T09:20:00'), duration: 20 },
+      { userId: 'user-1', agency: 'TTC', route: '510', startTime: null, endTime: toronto('2026-09-13T09:20:00') },
+      { userId: 'user-1', discarded: true, startTime: null },
+    ]);
+    const tools = claude.buildQueryToolExecutors(db, 'user-1', 'America/Toronto');
+    const monthly = await tools.get_monthly_trip_counts();
+    assert.deepEqual(monthly,
+      { by_month: { '2026-09': 1 }, by_year: { 2026: 1 }, total_trips: 3, trips_without_date: 2 });
+    assert.deepEqual((await tools.get_day_of_week_stats()).by_day_of_week, { Saturday: 1 });
+    assert.equal((await tools.get_riding_streak()).days_ridden, 1);
+    assert.deepEqual(await tools.get_busiest_weeks(), [{ week_starting: '2026-09-07', trips: 1 }]);
+    assert.equal((await tools.get_day_of_week_stats_for_year({ year: 1970 })).total_trips, 0);
+    assert.equal((await tools.get_trips_for_date_range({ start_date: '1969-12-31', end_date: '1970-01-01' })).count, 0);
+  } finally {
+    restore();
+  }
+});
+
+test('a failed all-time read is not remembered, and the read is never shared between questions', async () => {
+  const { claude, restore } = loadClaude();
+  try {
+    const trip = { userId: 'user-1', agency: 'TTC', route: '510', startTime: toronto('2026-09-12T09:00:00'),
+      endTime: toronto('2026-09-12T09:20:00'), duration: 20 };
+    const { db: working, queries } = fakeTripsDb([trip]);
+    let reads = 0;
+    const flaky = {
+      collection: (name) => {
+        const chain = working.collection(name);
+        const get = chain.get;
+        chain.get = async () => {
+          reads++;
+          if (reads === 1) throw new Error('UNAVAILABLE');
+          return get();
+        };
+        return chain;
+      },
+    };
+    const tools = claude.buildQueryToolExecutors(flaky, 'user-1', 'America/Toronto');
+    // Two tools in the same turn share the one failing read.
+    const failed = await Promise.allSettled([tools.get_all_time_stats(), tools.get_monthly_trip_counts()]);
+    assert.deepEqual(failed.map((result) => result.status), ['rejected', 'rejected']);
+    assert.equal(reads, 1);
+    // The retry reads again and works; later tools reuse that read.
+    assert.equal((await tools.get_all_time_stats()).totalTrips, 1);
+    assert.equal((await tools.get_monthly_trip_counts()).total_trips, 1);
+    assert.equal(reads, 2);
+
+    // Another question (another rider) gets its own read, never this one's.
+    const before = queries.length;
+    const other = claude.buildQueryToolExecutors(working, 'user-2', 'America/Toronto');
+    assert.equal((await other.get_all_time_stats()).totalTrips, 0);
+    assert.equal(queries.length, before + 1);
+    assert.deepEqual(queries[queries.length - 1].wheres, [['userId', '==', 'user-2']]);
+  } finally {
+    restore();
+  }
+});
+
+test('trips land on the right day when the clocks go forward (a 23-hour day)', async () => {
+  const { claude, restore } = loadClaude();
+  try {
+    // Toronto, 8 March 2026: 02:00 EST jumps to 03:00 EDT.
+    const at = (iso) => ({ userId: 'user-1', agency: 'TTC', route: '510', startTime: new Date(iso), endTime: null });
+    const { db } = fakeTripsDb([
+      at('2026-03-07T23:59:30-05:00'),
+      at('2026-03-08T00:00:30-05:00'),
+      at('2026-03-08T01:59:30-05:00'),
+      at('2026-03-08T03:00:30-04:00'),
+      at('2026-03-08T23:59:30-04:00'),
+      at('2026-03-09T00:00:30-04:00'),
+    ]);
+    const { dayBoundsInTimezone } = require('./lib/gemini');
+    // The query window must cover the whole local day; the exact day is then picked in memory.
+    const bounds = dayBoundsInTimezone('2026-03-08', 'America/Toronto');
+    assert.ok(bounds.start <= new Date('2026-03-08T05:00:00Z'));
+    assert.ok(bounds.end >= new Date('2026-03-09T03:59:59Z'));
+
+    const tools = claude.buildQueryToolExecutors(db, 'user-1', 'America/Toronto');
+    assert.equal((await tools.get_trips_for_date({ date: '2026-03-07' })).count, 1);
+    assert.equal((await tools.get_trips_for_date({ date: '2026-03-08' })).count, 4);
+    assert.equal((await tools.get_trips_for_date({ date: '2026-03-09' })).count, 1);
+    assert.equal((await tools.get_trips_for_date_range({ start_date: '2026-03-07', end_date: '2026-03-08' })).count, 5);
+    assert.deepEqual((await tools.get_trip_details_for_date({ date: '2026-03-08' })).trips.map((trip) => trip.time),
+      ['12:00 AM', '1:59 AM', '3:00 AM', '11:59 PM']);
+    // The all-time tools put the same trips on the same days.
+    assert.deepEqual((await tools.get_day_of_week_stats()).by_day_of_week, { Saturday: 1, Sunday: 4, Monday: 1 });
+    assert.equal((await tools.get_riding_streak()).days_ridden, 3);
+  } finally {
+    restore();
+  }
+});
+
+test('ASK sends date and count questions to the tools, with no daily counts in the prompt', async () => {
+  const { claude, requests, restore } = loadClaude({ replies: [textReply('ok')] });
+  try {
+    await claude.answerQueryWithClaude('user-1', 'q', [], { ...STATS, dailyCounts: { '2026-11-08': 2 } }, []);
+    const prompt = requests[0].messages[requests[0].messages.length - 1].content;
+    assert.doesNotMatch(prompt, /dailyCounts|Daily trip counts|2026-11-08/);
+    assert.match(prompt, /CALL a tool \(get_trips_for_date, get_trips_for_date_range or get_monthly_trip_counts\)/);
+    const year = requests[0].tools.find((tool) => tool.name === 'get_day_of_week_stats_for_year').input_schema;
+    assert.equal(year.properties.year.type, 'integer');
+  } finally {
+    restore();
   }
 });

@@ -341,7 +341,7 @@ const QUERY_TOOLS = [
       'Call this for questions like "how many Tuesdays in 2026" or "busiest day this year". ' +
       'Requires a year parameter (e.g. 2026).',
     input_schema: toolInput({
-      year: { type: 'number', description: 'The year to filter by (e.g. 2026)' },
+      year: { type: 'integer', description: 'The year to filter by (e.g. 2026)' },
     }),
   },
   {
@@ -462,9 +462,9 @@ const MAX_LISTED_RUN_TIMES = 100;
 const MAX_LISTED_ROUTES = 50;
 
 /**
- * Counted trips: the trips every ASK total is based on. This is the rule the
- * dashboard and the public profile use for their trip totals (isHistoryTrip):
- * every logged trip, with or without an end time, except one still in progress.
+ * Counted trips: the trips every ASK total is based on (isHistoryTrip): every
+ * logged trip, with or without an end time, except one still in progress.
+ * Imported PRESTO rides are not trips and are not counted here.
  * @param {Array<object>} trips - Trip documents for one user
  * @param {number} now - Current time in ms
  * @returns {Array<object>}
@@ -516,7 +516,12 @@ function buildQueryToolExecutors(db, userId, timezone) {
    */
   const countedTrips = async (startDate = null, endDate = null) => {
     if (startDate == null && endDate == null) {
-      if (!allTimeRead) allTimeRead = userTrips().select(...ASK_TRIP_FIELDS).get().then(toEntries);
+      if (!allTimeRead) {
+        const read = userTrips().select(...ASK_TRIP_FIELDS).get().then(toEntries);
+        allTimeRead = read;
+        // A failed read is not remembered, so the next tool call reads again.
+        read.catch(() => { if (allTimeRead === read) allTimeRead = null; });
+      }
       return allTimeRead;
     }
     const from = requireDate(startDate);
@@ -802,11 +807,10 @@ You have access to the most recent 200 trips spanning ${stats.windowStart || '?'
 - Top 5 routes in window: ${JSON.stringify(stats.routeStats.slice(0, 5))}
 - Top stop pairs: ${JSON.stringify(stats.pairStats.slice(0, 5))}
 - Trips by day of week in window: ${JSON.stringify(stats.dayOfWeek || {})}
-- Daily trip counts (YYYY-MM-DD): ${JSON.stringify(stats.dailyCounts || {})}
 - Stops visited recently: ${stats.allStops?.join(', ')}
 
 IMPORTANT:
-- "Window size" is NOT the answer to any date-scoped question. For "last month", "this year", or any specific period, sum the relevant entries from dailyCounts, or call get_monthly_trip_counts.
+- "Window size" is NOT the answer to any date-scoped question. For a specific date, "yesterday", "this week", "last month", "this year", or any other period, CALL a tool (get_trips_for_date, get_trips_for_date_range or get_monthly_trip_counts). Never count trips for a date or period from the figures above.
 - If the question asks about dates outside ${stats.windowStart || '?'}–${stats.windowEnd || today}, or asks for all-time stats, CALL the appropriate tool. NEVER guess!
 
 Today's date: ${today}

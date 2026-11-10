@@ -23,9 +23,10 @@ function agencyCountry(agency) {
 }
 
 function tripStartDate(trip) {
-    const date = trip?.startTime?.toDate
-        ? trip.startTime.toDate()
-        : new Date(trip?.startTime);
+    const value = trip?.startTime;
+    // No start time means no date. `new Date(null)` would be 1 January 1970.
+    if (value === null || value === undefined) return null;
+    const date = value.toDate ? value.toDate() : new Date(value);
     return Number.isNaN(date.getTime()) ? null : date;
 }
 
