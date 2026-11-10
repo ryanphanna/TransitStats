@@ -97,7 +97,7 @@ test('a new trip for an unknown agency stores no timezone (not UTC)', async () =
 });
 
 test('lookupAgencyTimezone answers previously missing agencies from the shared table', async () => {
-  const { lookupAgencyTimezone } = require('./lib/gemini');
+  const { lookupAgencyTimezone } = require('./lib/claude');
   for (const [agency, zone] of Object.entries(PREVIOUSLY_MISSING)) {
     assert.equal(await lookupAgencyTimezone(agency), zone, agency);
   }

@@ -107,12 +107,13 @@ async function handleApiRequest(req, res) {
 
 const { defineSecret } = require('firebase-functions/params');
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
+const anthropicApiKey = defineSecret('ANTHROPIC_API_KEY');
 const twilioAuthToken = defineSecret('TWILIO_AUTH_TOKEN');
 const twilioAccountSid = defineSecret('TWILIO_ACCOUNT_SID');
 const twilioPhoneNumber = defineSecret('TWILIO_PHONE_NUMBER');
 
 exports.api = onRequest({
-  secrets: [geminiApiKey, twilioAuthToken, twilioAccountSid, twilioPhoneNumber, turnstileSecretKey],
+  secrets: [geminiApiKey, anthropicApiKey, twilioAuthToken, twilioAccountSid, twilioPhoneNumber, turnstileSecretKey],
   concurrency: 80,
   maxInstances: 10,
 }, handleApiRequest);

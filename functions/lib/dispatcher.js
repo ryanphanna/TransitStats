@@ -31,7 +31,8 @@ const {
   FieldValue,
 } = require('./db');
 const { sendSmsReply, getTwilioPhoneNumber } = require('./twilio');
-const { parseWithGemini, constructStopInput } = require('./gemini');
+const { constructStopInput } = require('./gemini');
+const { parseWithClaude } = require('./claude');
 const { parseMultiLineTripFormat, parseSingleLineTripFormat, parseCasualTripFormat, parseEndTripFormat } = require('./parsing');
 const { isValidRoute, normalizeDirection, getRouteDisplay, getStopDisplay, normalizeAgency, generateVerificationCode } = require('./utils');
 const { getConfiguredPrimaryAgency } = require('./primary-agency');
@@ -253,7 +254,7 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
   const tripHandled = await handleTripFlow(phoneNumber, user, tripBody, receivedAt, trace);
   if (tripHandled) return '';
 
-  // 8. AI Intent Recognition (Gemini)
+  // 8. AI Intent Recognition (Claude)
   const aiHandled = await handleAIIntent(phoneNumber, user, tripBody, receivedAt, trace);
   if (aiHandled) return '';
 
@@ -656,13 +657,13 @@ async function handleTripFlow(phoneNumber, user, body, receivedAt = Date.now(), 
  */
 async function handleAIIntent(phoneNumber, user, body, receivedAt = Date.now(), traceId = null) {
   const trace = traceId || generateTraceIdLocal();
-  const geminiResult = await parseWithGemini(body, trace);
+  const aiResult = await parseWithClaude(body, trace);
 
-  // If Gemini missed a query (returned OTHER/null), fall back to a word-count
+  // If the AI missed a query (returned OTHER/null), fall back to a word-count
   // heuristic. By this point in the dispatch chain all trip command formats
   // have already been ruled out, so a multi-word sentence is almost certainly
-  // a natural-language question that Gemini mis-classified.
-  if (!geminiResult || geminiResult.intent === 'OTHER') {
+  // a natural-language question that the AI mis-classified.
+  if (!aiResult || aiResult.intent === 'OTHER') {
     if (body.trim().split(/\s+/).length >= 2) {
       await handlers.handleQuery(phoneNumber, user, body.trim(), trace);
       return true;
@@ -674,25 +675,25 @@ async function handleAIIntent(phoneNumber, user, body, receivedAt = Date.now(), 
   const configuredAgency = getConfiguredPrimaryAgency(userProfile);
   const defaultAgency = configuredAgency || (getLastTripAgency ? await getLastTripAgency(user.userId) : null);
 
-  switch (geminiResult.intent) {
+  switch (aiResult.intent) {
   case 'START_TRIP': {
-    const startStop = constructStopInput(geminiResult);
-    if (geminiResult.route && startStop && isValidRoute(geminiResult.route)) {
+    const startStop = constructStopInput(aiResult);
+    if (aiResult.route && startStop && isValidRoute(aiResult.route)) {
       const CANONICAL_DIRECTIONS = new Set([
         'Northbound', 'Southbound', 'Eastbound', 'Westbound',
         'Clockwise', 'Counterclockwise', 'Inbound', 'Outbound',
       ]);
-      const normalizedDir = normalizeDirection(geminiResult.direction);
+      const normalizedDir = normalizeDirection(aiResult.direction);
       const safeDir = CANONICAL_DIRECTIONS.has(normalizedDir) ? normalizedDir : null;
-      const aiAgency = geminiResult.agency ? normalizeAgency(geminiResult.agency) : null;
+      const aiAgency = aiResult.agency ? normalizeAgency(aiResult.agency) : null;
       await handlers.handleTripLog(
         phoneNumber,
         user,
         startStop,
-        geminiResult.route,
+        aiResult.route,
         safeDir,
         aiAgency || defaultAgency,
-        { parsed_by: 'ai', agencyExplicit: !!aiAgency, startTime: receivedAt, vehicle: geminiResult.vehicle },
+        { parsed_by: 'ai', agencyExplicit: !!aiAgency, startTime: receivedAt, vehicle: aiResult.vehicle },
         trace
       );
       return true;
@@ -700,18 +701,18 @@ async function handleAIIntent(phoneNumber, user, body, receivedAt = Date.now(), 
     break;
   }
   case 'END_TRIP': {
-    const endStop = constructStopInput(geminiResult);
-    await handlers.handleEndTrip(phoneNumber, user, endStop || null, null, geminiResult.notes, trace);
+    const endStop = constructStopInput(aiResult);
+    await handlers.handleEndTrip(phoneNumber, user, endStop || null, null, aiResult.notes, trace);
     return true;
   }
   case 'DISCARD_TRIP':
     await handlers.handleDiscard(phoneNumber, user, trace);
     return true;
   case 'INCOMPLETE_TRIP':
-    await handlers.handleIncomplete(phoneNumber, user, trace); // internal Gemini intent, maps to FORGOT
+    await handlers.handleIncomplete(phoneNumber, user, trace); // internal AI intent, maps to FORGOT
     return true;
   case 'QUERY':
-    await handlers.handleQuery(phoneNumber, user, geminiResult.question || body, trace);
+    await handlers.handleQuery(phoneNumber, user, aiResult.question || body, trace);
     return true;
   }
 

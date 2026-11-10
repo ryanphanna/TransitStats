@@ -51,7 +51,7 @@ const {
 } = require('./utils');
 const {
   lookupAgencyTimezone,
-} = require('./gemini');
+} = require('./claude');
 const { parseStopInput } = require('./parsing');
 const { getEligibility, artifactSupportsAgency } = require('./intelligence-eligibility');
 

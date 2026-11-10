@@ -171,10 +171,14 @@ function loadHandlers(overrides = {}) {
 
   const gemini = {
     aggregateTripStats: () => ({}),
-    answerQueryWithGemini: async () => 'ok',
-    lookupAgencyTimezone: async () => 'America/Toronto',
     parseStopSignImage: async () => ({ routes: [{ route: '510', agency: 'TTC' }], stopCode: '11985' }),
     ...overrides.gemini,
+  };
+
+  const claude = {
+    answerQueryWithClaude: async () => 'ok',
+    lookupAgencyTimezone: async () => 'America/Toronto',
+    ...overrides.claude,
   };
 
   const parsing = {
@@ -261,6 +265,7 @@ function loadHandlers(overrides = {}) {
       if (request === './twilio') return twilio;
       if (request === './utils') return utils;
       if (request === './gemini') return gemini;
+      if (request === './claude') return claude;
       if (request === './parsing') return parsing;
       if (request === './predict.js') return predict;
       if (request === './transfer.js') return transfer;

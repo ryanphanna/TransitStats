@@ -27,6 +27,7 @@ const { normalizeInbound } = require('./lib/rcs-buttons');
 
 // Secrets (Modern defineSecret pattern)
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
+const anthropicApiKey = defineSecret('ANTHROPIC_API_KEY');
 const twilioAuthToken = defineSecret('TWILIO_AUTH_TOKEN');
 const twilioAccountSid = defineSecret('TWILIO_ACCOUNT_SID');
 const twilioPhoneNumber = defineSecret('TWILIO_PHONE_NUMBER');
@@ -76,7 +77,7 @@ app.post('/', (req, res, next) => {
 
 // Export 2nd Gen Function
 exports.sms = onRequest({
-  secrets: [geminiApiKey, twilioAuthToken, twilioAccountSid, twilioPhoneNumber],
+  secrets: [geminiApiKey, anthropicApiKey, twilioAuthToken, twilioAccountSid, twilioPhoneNumber],
   memory: '512MiB', // 256MiB default ran out under load (dropped trip texts)
   concurrency: 50, // Optimize costs by handling more requests on one instance
   maxInstances: 10,

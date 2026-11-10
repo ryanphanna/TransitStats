@@ -33,7 +33,7 @@ const text = require('./sms-text');
 const { KNOWN_AGENCIES } = require('./constants');
 const {
   lookupAgencyTimezone,
-} = require('./gemini');
+} = require('./claude');
 
 /**
  * Handle HELP command
