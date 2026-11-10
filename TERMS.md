@@ -1,6 +1,6 @@
 # Terms of Service
 
-Last updated: July 2026.
+Last updated: November 2026.
 
 ## What this is
 
@@ -15,7 +15,7 @@ You agree not to:
 - Attempt to gain unauthorized access to TransitStats' systems, infrastructure, source code repositories, or backend services — including exploiting, probing, or attacking security vulnerabilities — except as part of the good-faith responsible disclosure process described in [SECURITY.md](./docs/SECURITY.md)
 - Misuse the service's AI features (stop-sign photo parsing, natural-language stats queries): no prompt injection or jailbreak attempts, no trying to extract underlying prompts/instructions, and no using them for anything unrelated to your own trip logging and stats
 - Send any photo, message, or other content via MMS/SMS or any other channel that is illegal, sexually explicit, exploitative, or otherwise inappropriate — see **Illegal content and mandatory reporting** below
-- Use the service in any way that disrupts it for other users or the operator's Twilio/Gemini/Firebase usage quotas and costs
+- Use the service in any way that disrupts it for other users or the operator's Twilio/Anthropic/Gemini/Firebase usage quotas and costs
 
 Violating this may result in your phone number or account being rate-limited, suspended, or permanently blocked, without notice, and may be reported to relevant authorities where applicable.
 
@@ -35,7 +35,7 @@ By registering your phone number, you consent to receive SMS/MMS messages from T
 
 ## What data is collected
 
-See [SECURITY.md](./docs/SECURITY.md) for the full technical breakdown. In summary: trip data (routes, stops, timestamps, and GPS coordinates at trip start/end) tied to your account; your phone number and email for authentication; and, for premium AI-query users, trip data is sent to Google Gemini to answer natural-language questions (never used to train Google's models — see SECURITY.md for the specific privacy commitment). Stop-sign photos sent by MMS are processed in memory and never stored. Third-party services used to operate TransitStats: Twilio (SMS/MMS), Google Gemini (AI parsing/queries), Google Firebase (auth, database, hosting, functions), and [Atlas](https://github.com/Civic-Minds/Atlas) (public, read-only route/stop data — no user data is ever sent to it).
+See [SECURITY.md](./docs/SECURITY.md) for the full technical breakdown. In summary: trip data (routes, stops, timestamps, and GPS coordinates at trip start/end) tied to your account; your phone number and email for authentication; and, for premium AI-query users, trip data is sent to Anthropic Claude to answer natural-language questions (not used to train Anthropic's models — see SECURITY.md for the specific privacy commitment). Stop-sign photos sent by MMS are processed in memory and never stored. Third-party services used to operate TransitStats: Twilio (SMS/MMS), Anthropic Claude (trip-text parsing and AI queries), Google Gemini (stop-sign photo parsing), Google Firebase (auth, database, hosting, functions), and [Atlas](https://github.com/Civic-Minds/Atlas) (public, read-only route/stop data — no user data is ever sent to it).
 
 ## Your data
 

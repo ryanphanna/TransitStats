@@ -4,6 +4,7 @@ const twilioAccountSid = defineSecret('TWILIO_ACCOUNT_SID');
 const twilioAuthToken = defineSecret('TWILIO_AUTH_TOKEN');
 const twilioPhone = defineSecret('TWILIO_PHONE_NUMBER');
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
+const anthropicApiKey = defineSecret('ANTHROPIC_API_KEY');
 
 /**
  * Validate required environment configuration on cold start
@@ -21,7 +22,12 @@ function validateConfiguration() {
   // Check Gemini configuration
   const gemini = geminiApiKey.value();
   if (!gemini) {
-    warnings.push('Missing gemini.api_key (AI parsing disabled, will use heuristics)');
+    warnings.push('Missing gemini.api_key (stop-sign photo reading disabled)');
+  }
+
+  // Check Claude configuration
+  if (!anthropicApiKey.value()) {
+    warnings.push('Missing anthropic.api_key (AI parsing disabled, will use heuristics)');
   }
 
   // Log results

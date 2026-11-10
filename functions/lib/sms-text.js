@@ -350,7 +350,7 @@ const ASK_HELP = 'Ask anything about your trips, ' +
   'e.g. "ASK how many trips have I taken on Fridays?"';
 const NO_COMPLETED_TRIPS = 'You don\'t have any completed trips yet!';
 const AI_LIMIT_REACHED = 'AI limit reached. Try again later.';
-// Sent when the AI answer fails (gemini.js).
+// Sent when the AI answer fails (claude.js).
 const ASK_FAILED = 'Could not search your trips. Try again.';
 const NO_RECENT_TRIPS = 'No trips logged in the last 60 days.';
 

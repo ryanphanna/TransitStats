@@ -5,8 +5,8 @@ TransitStats is built with privacy and security as its foundation.
 - **Authentication & Authorization**: A multi-tier model using invite-only whitelists and role-based access control (RBAC).
 - **Data Ownership**: Firestore rules ensure users only access their own trips, profiles, and templates. Trip documents are tied to your account (`userId`) and are never publicly readable, even when a trip is marked public on your profile — only aggregate stats (trip/hour totals, an anonymized location heatmap) are exposed there, computed server-side.
 - **Stop-Sign Photos**: MMS photos sent to log a trip are fetched into memory, sent directly to Gemini for parsing, and discarded — they are never written to Cloud Storage, Firestore, or disk. Image EXIF metadata (which can carry a phone's GPS location) is never read or extracted; the only location data TransitStats stores is your phone's own GPS reading at trip start/end.
-- **AI Privacy**: TransitStats uses Gemini to interpret and process location-based trip data.
-    - **Privacy Commitment**: Covered by [Google's Enterprise Privacy protections](https://cloud.google.com/vertex-ai/docs/generative-ai/learn/privacy).
+- **AI Privacy**: TransitStats uses Claude to interpret trip texts and answer questions, and Gemini to read stop-sign photos.
+    - **Privacy Commitment**: Stop-sign photos are covered by [Google's Enterprise Privacy protections](https://cloud.google.com/vertex-ai/docs/generative-ai/learn/privacy). Trip text and question data goes to Anthropic's API and is not used to train its models.
     - **No Training**: Your trip data is never used to train global AI models.
     - **Isolation**: Data is processed in isolated sessions and is not shared with other users.
 - **Secure Integration**: Server-side validation, rate limiting, and secure secret management via Google Cloud.
@@ -18,7 +18,7 @@ TransitStats is built with privacy and security as its foundation.
 
 - **SMS Validation**: Incoming webhooks from Twilio are validated to prevent spoofing.
 - **Rate Limiting**: Applied to all SMS processing to prevent abuse.
-- **Secret Management**: API keys (Gemini, Twilio) are stored in Google Cloud Secret Manager via `defineSecret`.
+- **Secret Management**: API keys (Anthropic, Gemini, Twilio) are stored in Google Cloud Secret Manager via `defineSecret`.
 - **Frontend Configuration**: The browser uses Firebase's public client configuration for authentication and Firestore access, with authorization enforced by Firebase rules and server-side checks. Maps use keyless Leaflet tiles from CARTO/OpenStreetMap; no Google Maps key is used.
 
 ### Repository Security (GitHub)

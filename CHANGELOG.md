@@ -8,6 +8,11 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+### Texting
+
+- **Trip texts, ASK answers and time-zone lookups now run on Claude** instead of Gemini, the pick from a side-by-side test on real messages. Stop-sign photos still use Gemini.
+- **ASK replies stay plain text and never say "I"**, including when the message isn't really a question.
+
 ### Fixes
 
 - **GO Transit shows up once** in the agency list, and imported PRESTO rides use the same name as texted trips.

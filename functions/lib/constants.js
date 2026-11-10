@@ -70,7 +70,7 @@ exports.VALID_SENTIMENTS = ['POSITIVE', 'NEGATIVE', 'NEUTRAL'];
 
 // Maps canonical agency name (as stored on trips, see agency-aliases.js) to its IANA timezone.
 // The one table for every timezone decision: trip creation (db/trips.js), the agency timezone
-// lookup (gemini.js), the recompute after an agency correction (finalization.js), and local-time
+// lookup (claude.js), the recompute after an agency correction (finalization.js), and local-time
 // habit/ML features (habit.js, ml_utils.js).
 exports.AGENCY_TIMEZONE = {
   // Ontario

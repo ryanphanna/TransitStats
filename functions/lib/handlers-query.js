@@ -24,9 +24,11 @@ const {
 const text = require('./sms-text');
 const {
   aggregateTripStats,
-  answerQueryWithGemini,
-  lookupAgencyTimezone,
 } = require('./gemini');
+const {
+  answerQueryWithClaude,
+  lookupAgencyTimezone,
+} = require('./claude');
 
 /**
  * Handle natural-language query (premium feature)
@@ -67,7 +69,7 @@ async function handleQuery(phoneNumber, user, question, traceId = null) {
     await sendSmsReply(phoneNumber, text.AI_LIMIT_REACHED);
     return;
   }
-  const answer = await answerQueryWithGemini(
+  const answer = await answerQueryWithClaude(
     user.userId,
     question,
     trips,

@@ -118,8 +118,11 @@ function buildHarness({
   };
 
   const gemini = {
-    parseWithGemini: async () => null,
     constructStopInput: () => null,
+  };
+
+  const claude = {
+    parseWithClaude: async () => null,
   };
 
   const parsing = {
@@ -151,6 +154,7 @@ function buildHarness({
       if (request === './db') return dbModule;
       if (request === './twilio') return twilio;
       if (request === './gemini') return gemini;
+      if (request === './claude') return claude;
       if (request === './parsing') return parsing;
       if (request === './utils') return utils;
       if (request === './handlers') return handlers;
