@@ -70,10 +70,10 @@ describe('which records count as trips', () => {
         expect(isUnreadableText({ source: 'sms', discarded: true })).toBe(false);
     });
 
-    it('counts discarded unreadable texts today, as the dashboard always has', () => {
-        expect(COUNT_UNREADABLE_TEXTS).toBe(true);
-        expect(countedTrips(all, NOW)).toEqual([...readable, unreadableDiscarded]);
-        expect(countedTrips(all, NOW)).toEqual(all.filter(record => isHistoryTrip(record, NOW)));
+    it('leaves discarded unreadable texts out of totals by default', () => {
+        expect(COUNT_UNREADABLE_TEXTS).toBe(false);
+        expect(countedTrips(all, NOW)).toEqual(readable);
+        expect(countedTrips(all, NOW, true)).toEqual(all.filter(record => isHistoryTrip(record, NOW)));
     });
 
     it('leaves them out of every total when the rule is switched off', () => {
@@ -330,7 +330,7 @@ describe('the website and ASK give the same totals from the same records', () =>
 
     it('agrees on every shared figure', async () => {
         const { tiles, profile, range, lastDay, monthly } = await compareEverything('America/Toronto', COUNT_UNREADABLE_TEXTS);
-        expect(tiles.totalTrips).toBe(10);
+        expect(tiles.totalTrips).toBe(9);
         expect(profile.daysRidden).toBe(tiles.daysRidden);
         expect(profile.thisMonth).toBe(tiles.thisMonth);
         expect(profile.thisWeek).toBe(tiles.thisWeek);
@@ -342,7 +342,7 @@ describe('the website and ASK give the same totals from the same records', () =>
     it('agrees on every shared figure for a rider in another time zone', async () => {
         // The trip at 00:00:30 on 1 October in Toronto is still 30 September in Vancouver.
         const { tiles, range, lastDay, monthly } = await compareEverything('America/Vancouver', COUNT_UNREADABLE_TEXTS);
-        expect(tiles.totalTrips).toBe(10);
+        expect(tiles.totalTrips).toBe(9);
         expect(range.count).toBe(6);
         expect(lastDay.count).toBe(3);
         // And the one at 01:30 on 1 November is still 31 October there.

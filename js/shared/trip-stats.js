@@ -63,9 +63,9 @@ export function isUnreadableText(trip) {
 }
 
 // Whether unreadable texts that reach history (the discarded ones) count as
-// trips. They do today. Not yet decided (CIV-1378): set to false to leave
-// them out of every total on the website and in ASK.
-export const COUNT_UNREADABLE_TEXTS = true;
+// trips. They do not (CIV-1378): they have no route, stop or time, so they
+// are left out of every total on the website and in ASK.
+export const COUNT_UNREADABLE_TEXTS = false;
 
 /** A counted trip: in history and, unless unreadable texts count, not one of those. */
 export function isCountedTrip(trip, now = Date.now(), countUnreadableTexts = COUNT_UNREADABLE_TEXTS) {
