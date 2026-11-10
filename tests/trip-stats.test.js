@@ -2,9 +2,9 @@ import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { summaryTrips } from '../js/shared/ride-merge.js';
 import {
     computeSummaryStats,
+    countedRides,
     isActiveTrip,
     isHistoryTrip,
     storedTripTimeZone,
@@ -15,7 +15,6 @@ import { generated } from '../scripts/sync-shared.mjs';
 // The public profile runs the generated CommonJS copies in Cloud Functions.
 const require = createRequire(import.meta.url);
 const serverStats = require('../functions/lib/trip-stats.js');
-const serverRideMerge = require('../functions/lib/ride-merge.js');
 const serverPrestoTrips = require('../functions/lib/presto-trips.js');
 
 const originalTz = process.env.TZ;
@@ -52,15 +51,14 @@ describe('dashboard and public profile give the same totals', () => {
         // Dashboard: a viewer in Toronto, days in the browser's local time.
         process.env.TZ = 'America/Toronto';
         const dashboard = computeSummaryStats(
-            summaryTrips(loggedTrips, serverPrestoTrips.buildPrestoTrips(prestoRecords)),
+            countedRides(loggedTrips, serverPrestoTrips.buildPrestoTrips(prestoRecords), { now: now.getTime() }),
             { now },
         );
 
         // Public profile: a server on UTC, days in each trip's stored timezone.
         process.env.TZ = 'UTC';
-        const prestoTrips = serverRideMerge.unmatchedImportedRides(loggedTrips, serverPrestoTrips.buildPrestoTrips(prestoRecords));
         const publicStats = serverStats.computeSummaryStats(
-            [...loggedTrips, ...serverRideMerge.projectPrestoTripsForStats(prestoTrips)],
+            serverStats.countedRides(loggedTrips, serverPrestoTrips.buildPrestoTrips(prestoRecords), { now: now.getTime() }),
             { now, timeZoneFor: serverStats.storedTripTimeZone },
         );
 
@@ -71,7 +69,8 @@ describe('dashboard and public profile give the same totals', () => {
             thisWeek: 6,
             daysRidden: 7,
             totalHours: 2,
-            agencies: 4,
+            // TTC, ttc and " TTC " are one agency; GO and MiWay are the others.
+            agencies: 3,
             routes: 4,
             countries: 1,
         });

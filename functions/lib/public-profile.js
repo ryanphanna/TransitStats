@@ -12,9 +12,9 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { db, getUserProfile, getStopsLibrary } = require('./db');
 const logger = require('./logger');
 const { getMapStopMode } = require('./profile-fields');
-const { unmatchedImportedRides, projectPrestoTripsForStats } = require('./ride-merge');
+const { unmatchedImportedRides } = require('./ride-merge');
 const { buildPrestoTrips } = require('./presto-trips');
-const { isHistoryTrip, computeSummaryStats, storedTripTimeZone } = require('./trip-stats');
+const { countedTrips, countedRides, computeSummaryStats, storedTripTimeZone } = require('./trip-stats');
 
 function normalizeStopLabel(value) {
   return String(value || '')
@@ -164,12 +164,10 @@ async function handlePublicProfile(req, res) {
       db.collection('prestoTransactions').where('userId', '==', userId).get(),
       db.collection('stops').get(),
     ]);
-    const historyTrips = [];
     const nowMs = Date.now();
-    tripsSnap.forEach((doc) => {
-      const trip = doc.data();
-      if (isHistoryTrip(trip, nowMs)) historyTrips.push(trip);
-    });
+    const tripDocs = [];
+    tripsSnap.forEach((doc) => { tripDocs.push(doc.data()); });
+    const historyTrips = countedTrips(tripDocs, nowMs);
     const prestoRecords = prestoSnap.docs
       .map(doc => doc.data())
       .filter(record => record.type === 'fare_payment');
@@ -236,11 +234,12 @@ async function handlePublicProfile(req, res) {
     }
 
     // Rides the user also logged as trips are already counted and mapped.
-    const prestoTrips = unmatchedImportedRides(historyTrips, buildPrestoTrips(prestoRecords));
-    // Same totals as the dashboard (summaryTrips in ride-merge), with days
-    // counted in each trip's stored timezone (Toronto when it has none),
+    const allPrestoTrips = buildPrestoTrips(prestoRecords);
+    const prestoTrips = unmatchedImportedRides(historyTrips, allPrestoTrips);
+    // Same totals as the dashboard and ASK (countedRides in trip-stats), with
+    // days counted in each trip's stored timezone (Toronto when it has none),
     // never the server clock.
-    const stats = computeSummaryStats([...historyTrips, ...projectPrestoTripsForStats(prestoTrips)], {
+    const stats = computeSummaryStats(countedRides(historyTrips, allPrestoTrips, { now: nowMs }), {
       timeZoneFor: storedTripTimeZone,
     });
 

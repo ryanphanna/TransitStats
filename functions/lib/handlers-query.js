@@ -28,8 +28,8 @@ const {
 const {
   answerQueryWithClaude,
   lookupAgencyTimezone,
-  selectCountedTrips,
 } = require('./claude');
+const { countedTrips } = require('./trip-stats');
 
 /**
  * Handle natural-language query (premium feature)
@@ -56,7 +56,7 @@ async function handleQuery(phoneNumber, user, question, traceId = null) {
   ]);
 
   // The same trips the ASK tools count: every logged trip except one in progress.
-  const trips = selectCountedTrips(snapshot.docs.map((d) => d.data()));
+  const trips = countedTrips(snapshot.docs.map((d) => d.data()));
 
   if (trips.length === 0) {
     await sendSmsReply(phoneNumber, text.NO_COMPLETED_TRIPS);

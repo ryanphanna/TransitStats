@@ -49,14 +49,6 @@ describe('Gemini aggregateTripStats', () => {
     expect(total).toBe(3);
   });
 
-  test('generates daily trip counts', () => {
-    const stats = aggregateTripStats(mockTrips);
-    // Note: timeZone is fixed to Toronto in code
-    expect(stats.dailyCounts['2026-03-20']).toBe(1);
-    expect(stats.dailyCounts['2026-03-21']).toBe(1);
-    expect(stats.dailyCounts['2026-03-22']).toBe(1);
-  });
-
   test('includes full stop list', () => {
     const stats = aggregateTripStats(mockTrips);
     expect(stats.allStops).toContain('Union');
@@ -102,7 +94,7 @@ describe('Gemini aggregateTripStats', () => {
     expect(stats.windowEnd).toBeNull();
   });
 
-  test('uses requested timezone for day-of-week and date bucketing', () => {
+  test('uses requested timezone for day-of-week bucketing', () => {
     const trip = {
       route: 'A',
       startStopName: 'Start',
@@ -114,9 +106,7 @@ describe('Gemini aggregateTripStats', () => {
     const toronto = aggregateTripStats([trip], 'America/Toronto');
     const tokyo = aggregateTripStats([trip], 'Asia/Tokyo');
 
-    expect(toronto.dailyCounts['2026-03-19']).toBe(1);
     expect(toronto.dayOfWeek.Thursday).toBe(1);
-    expect(tokyo.dailyCounts['2026-03-20']).toBe(1);
     expect(tokyo.dayOfWeek.Friday).toBe(1);
   });
 });

@@ -1,10 +1,13 @@
-import { mergeImportedRides } from './shared/ride-merge.js';
 import {
     agencyCountry,
     computePeriodCounts,
     countCountries,
-    countRoutes,
+    countedRides,
+    ridingStreaks,
     totalTripHours,
+    tripsByDate,
+    tripsByRoute,
+    tripsByStop,
     tripStartDate,
 } from './shared/trip-stats.js';
 
@@ -44,48 +47,29 @@ export const Stats = {
             };
         }
 
-        const filtered = trips;
-
-        const routeCounts = {};
-        const stopCounts = {};
-
-        filtered.forEach(t => {
-            // Count Route
-            if (t.route) {
-                routeCounts[t.route] = (routeCounts[t.route] || 0) + 1;
-            }
-
-            // Count Stops — intentionally union of boarding + exiting stops.
-            // The "Stops" metric represents every distinct physical stop the user has
-            // ever touched, regardless of role. Once all stops are normalized to
-            // canonical names via the stop library, duplicate entries within a single
-            // trip (e.g. a stop that is both a start and an end across different trips)
-            // will be naturally deduplicated by the shared key in stopCounts.
-            const start = t.startStopName || t.startStop || t.startStopCode;
-            const end = t.endStopName || t.endStop || t.endStopCode;
-            if (start) stopCounts[start] = (stopCounts[start] || 0) + 1;
-            if (end) stopCounts[end] = (stopCounts[end] || 0) + 1;
-        });
+        // Routes and stops are tallied by the shared counting module. "Stops"
+        // is every distinct stop the rider has touched, boarding or exiting.
+        const routes = tripsByRoute(trips).counts;
+        const stops = tripsByStop(trips).all;
+        const top = counts => counts.slice(0, 5).map(([name, count]) => ({ name, count }));
 
         return {
-            trips: filtered.length,
-            routes: countRoutes(filtered),
-            hours: totalTripHours(filtered),
-            stops: Object.keys(stopCounts).length,
-            topRoutes: this.getTopItems(routeCounts, 5),
-            topStops: this.getTopItems(stopCounts, 5)
+            trips: trips.length,
+            routes: routes.length,
+            hours: totalTripHours(trips),
+            stops: stops.length,
+            topRoutes: top(routes),
+            topStops: top(stops)
         };
     },
 
     /**
-     * Combine logged trips with imported PRESTO rides. Each logged trip cancels
-     * at most one imported ride (the closest one within windowMs), since that is
-     * the same ride recorded twice; extra imported rides nearby are kept.
-     * Imported rides carry only a start time and agency, so they add
-     * trips/days/streaks but no hours, routes, or stops.
+     * The trips a recap counts: counted logged trips plus the imported PRESTO
+     * rides that were not also logged. Imported rides carry only a start time
+     * and agency, so they add trips/days/streaks but no hours, routes, or stops.
      */
-    mergeImportedRides(loggedTrips, importedRides, windowMs) {
-        return mergeImportedRides(loggedTrips, importedRides, windowMs);
+    countedRides(loggedTrips, importedRides) {
+        return countedRides(loggedTrips, importedRides);
     },
 
     /**
@@ -116,18 +100,7 @@ export const Stats = {
     },
 
     computeBusiestDay(trips) {
-        const dayCounts = {};
-        (trips || []).forEach(trip => {
-            const date = this.getTripDate(trip);
-            if (!date) return;
-            const key = [
-                date.getFullYear(),
-                String(date.getMonth() + 1).padStart(2, '0'),
-                String(date.getDate()).padStart(2, '0'),
-            ].join('-');
-            dayCounts[key] = (dayCounts[key] || 0) + 1;
-        });
-        const top = Object.entries(dayCounts).sort(([, a], [, b]) => b - a)[0];
+        const top = Object.entries(tripsByDate(trips).byDay).sort(([, a], [, b]) => b - a)[0];
         if (!top) return null;
         const [iso, count] = top;
         const [y, m, d] = iso.split('-').map(Number);
@@ -184,59 +157,9 @@ export const Stats = {
         };
     },
 
-    getTopItems(countsObj, limit) {
-        return Object.entries(countsObj)
-            .sort(([, a], [, b]) => b - a)
-            .slice(0, limit)
-            .map(([name, count]) => ({ name, count }));
-    },
-
     calculateStreaks(trips) {
-        if (!trips || trips.length === 0) return { current: 0, best: 0 };
-
-        const dayTimestamps = new Set();
-        trips.forEach(t => {
-            const date = t.startTime?.toDate ? t.startTime.toDate() : new Date(t.startTime);
-            if (isNaN(date.getTime())) return;
-            const normalized = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-            dayTimestamps.add(normalized);
-        });
-
-        const sorted = Array.from(dayTimestamps).sort((a, b) => b - a);
-        if (sorted.length === 0) return { current: 0, best: 0 };
-
-        // Best Streak
-        let best = 1;
-        let temp = 1;
-        for (let i = 0; i < sorted.length - 1; i++) {
-            const diffDays = Math.round((sorted[i] - sorted[i+1]) / (24 * 60 * 60 * 1000));
-            if (diffDays === 1) {
-                temp++;
-            } else {
-                best = Math.max(best, temp);
-                temp = 1;
-            }
-        }
-        best = Math.max(best, temp);
-
-        // Current Streak
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        const todayTs = today.getTime();
-        const yesterdayTs = todayTs - (24 * 60 * 60 * 1000);
-        
-        const latest = sorted[0];
-        let current = 0;
-        if (latest === todayTs || latest === yesterdayTs) {
-            current = 1;
-            for (let i = 0; i < sorted.length - 1; i++) {
-                const diffDays = Math.round((sorted[i] - sorted[i+1]) / (24 * 60 * 60 * 1000));
-                if (diffDays === 1) current++;
-                else break;
-            }
-        }
-
-        return { current, best };
+        const streaks = ridingStreaks(trips);
+        return { current: streaks.current, best: streaks.longest };
     },
 
     /**

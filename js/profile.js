@@ -1,6 +1,7 @@
 import { db, auth, serverTimestamp } from './firebase.js';
 import { UI } from './ui-utils.js';
 import { Identity } from './identity.js';
+import { tripAgency } from './shared/trip-stats.js';
 import { setupProfileListeners } from './profile-settings-ui.js';
 import { initializeIdentityPicker, updateUsernameDisplay } from './profile-identity.js';
 import {
@@ -117,7 +118,8 @@ export const Profile = {
     setAgenciesFromTrips(trips = []) {
         const optionsByValue = new Map(BUILT_IN_AGENCY_OPTIONS.map(option => [option.value, option]));
         trips.forEach(trip => {
-            const value = String(trip.agency || '').trim();
+            // Canonical names, so spelling variants of one agency list once.
+            const value = tripAgency(trip);
             if (!value || optionsByValue.has(value)) return;
             optionsByValue.set(value, { value, label: displayAgencyName(value) });
         });

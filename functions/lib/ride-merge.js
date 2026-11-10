@@ -3,22 +3,16 @@
 //
 // This file is the single source of truth. The Cloud Functions can't import
 // from js/, so functions/lib/ride-merge.js is generated from it by
-// `npm run sync:shared` (a test fails if the copy drifts). Keep this file
-// dependency-free, with plain `export function` declarations only.
+// `npm run sync:shared` (a test fails if the copy drifts). Keep it to plain
+// `export function` declarations, importing only from other shared modules.
+const { canonicalAgency } = require('./agency-aliases');
 
 const RIDE_MATCH_WINDOW_MS = 30 * 60 * 1000;
 const PRESTO_TIME_ZONE = 'America/Toronto';
 
-const AGENCY_ALIASES = {
-    'toronto transit commission': 'ttc',
-    'mississauga transit': 'miway',
-    'hamilton street railway': 'hsr',
-    'york region transit': 'yrt',
-};
-
+/** Agency key for matching rides: the canonical name, lowercased. */
 function normalizeRideAgency(value) {
-    const key = String(value || '').trim().toLowerCase();
-    return AGENCY_ALIASES[key] || key;
+    return String(canonicalAgency(String(value || '')) || '').toLowerCase();
 }
 
 // PRESTO exports carry wall-clock times with no zone. occurredAtSortKey is that
@@ -113,7 +107,7 @@ function mergeImportedRides(loggedTrips, importedRides, windowMs = RIDE_MATCH_WI
 }
 
 /**
- * A lightweight `{ agency, startTime }` projection of PRESTO trips, shaped to
+ * A lightweight `{ agency, startTime, imported }` projection of PRESTO trips, shaped to
  * match what the summary stats (js/shared/trip-stats.js) expect from logged
  * trips. This only covers the summary counts (trip counts, agencies, days
  * ridden, countries) that don't depend on duration, route, or stop names —
@@ -127,13 +121,14 @@ function projectPrestoTripsForStats(prestoTrips = []) {
         .map(({ trip, time }) => ({
             agency: trip.agency,
             startTime: new Date(time),
+            imported: true,
         }));
 }
 
 /**
- * The trips behind the summary tiles: logged history trips plus the imported
- * PRESTO rides that weren't also logged. The dashboard and the public profile
- * both use this, so they count the same rides.
+ * Logged trips plus the imported PRESTO rides that weren't also logged. Call
+ * it through countedRides (trip-stats.js), which first keeps only the logged
+ * trips that count.
  */
 function summaryTrips(loggedTrips, prestoTrips) {
     return [

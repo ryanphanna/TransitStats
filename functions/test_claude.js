@@ -515,25 +515,21 @@ test('get_agency_stats counts trips per agency for the asking user only and repo
     assert.deepEqual(JSON.parse(results[4].content).trips.map((t) => t.agency),
       ['TTC', 'TTC', 'GO Transit', null, null, null, null]);
 
-    // Every query is on the trips collection, filtered first by the handler's user id.
-    // Both all-time calls share one read; the period and the single day read once each.
-    assert.equal(queries.length, 3);
+    // One read per question, shared by every call: the asking user's trips and
+    // imported rides, each filtered only by the handler's user id. Nothing the
+    // model sent (user-2, profiles) reaches a query.
+    assert.deepEqual(queries.map((query) => query.collection).sort(), ['prestoTransactions', 'trips']);
     for (const query of queries) {
-      assert.equal(query.collection, 'trips');
-      assert.deepEqual(query.wheres[0], ['userId', '==', 'user-1']);
-      assert.equal(JSON.stringify(query.wheres).includes('user-2'), false);
+      assert.deepEqual(query.wheres, [['userId', '==', 'user-1']]);
     }
-    // All time reads every trip, finished or not; a period filters on start time.
-    assert.deepEqual(queries[0].wheres.slice(1), []);
-    assert.deepEqual(queries[1].wheres.slice(1).map(([field, op]) => [field, op]),
-      [['startTime', '>='], ['startTime', '<=']]);
   } finally {
     restore();
   }
 });
 
-// Firestore stand-in for the ASK tools: applies the user and start-time filters and records each query.
-function fakeTripsDb(docs) {
+// Firestore stand-in for the ASK tools: applies the user filter and records each query.
+// Imported PRESTO rows, when given, are served only from their own collection.
+function fakeTripsDb(tripDocs, prestoDocs = null) {
   const queries = [];
   const compare = { '==': (a, b) => a === b, '>=': (a, b) => a >= b, '<=': (a, b) => a <= b };
   const db = {
@@ -544,6 +540,7 @@ function fakeTripsDb(docs) {
         where: (field, op, value) => { query.wheres.push([field, op, value]); return chain; },
         select: (...fields) => { query.fields = fields; return chain; },
         get: async () => {
+          const docs = prestoDocs && collection === 'prestoTransactions' ? prestoDocs : tripDocs;
           const matching = docs.filter((doc) => query.wheres.every(([field, op, value]) =>
             doc[field] != null && compare[op](doc[field], value)));
           return { size: matching.length, docs: matching.map((data) => ({ data: () => data })) };
@@ -585,8 +582,10 @@ const AGREEMENT_TRIPS = [
     startTime: toronto('2026-09-15T08:00:00'), endTime: toronto('2026-09-15T08:30:00'), duration: 30 },
 ];
 
-test('selectCountedTrips keeps every history trip and selectFinishedTrips only the timed ones', () => {
-  const { claude, restore } = loadClaude();
+test('countedTrips keeps every history trip and finishedTrips only the timed ones', () => {
+  const { restore } = loadClaude();
+  const tripStats = require('./lib/trip-stats');
+  const claude = { selectCountedTrips: tripStats.countedTrips, selectFinishedTrips: tripStats.finishedTrips };
   try {
     const now = Date.parse('2026-11-09T17:00:00Z');
     const inProgress = { route: '510', startTime: new Date(now - 60 * 60 * 1000), endTime: null };
@@ -669,13 +668,51 @@ test('every ASK tool counts the same trips for the same rider', async () => {
     assert.deepEqual((await tools.get_trip_details_for_date({ date: '2026-09-30' })).trips.map((t) => t.route),
       ['506', '506']);
 
-    // All-time tools share one read; every query is the asking rider's trips with a field projection.
-    assert.equal(queries.filter((query) => query.wheres.length === 1).length, 1);
+    // Every tool shares one read: the asking rider's trips and imported rides, with a field projection.
+    assert.deepEqual(queries.map((query) => query.collection).sort(), ['prestoTransactions', 'trips']);
     for (const query of queries) {
-      assert.equal(query.collection, 'trips');
-      assert.deepEqual(query.wheres[0], ['userId', '==', 'user-1']);
+      assert.deepEqual(query.wheres, [['userId', '==', 'user-1']]);
       assert.ok(query.fields.length > 0 && !query.fields.includes('raw_text'));
     }
+  } finally {
+    restore();
+  }
+});
+
+test('ASK counts imported PRESTO rides once, like the dashboard', async () => {
+  const { claude, restore } = loadClaude();
+  try {
+    // PRESTO rows carry Toronto wall-clock times read as UTC.
+    const presto = (userId, wallClock, agency = 'TTC') => ({
+      userId, type: 'fare_payment', agency, amountCents: -330, occurredAtSortKey: Date.parse(`${wallClock}Z`),
+    });
+    const { db, queries } = fakeTripsDb(AGREEMENT_TRIPS, [
+      presto('user-1', '2026-09-12T09:03:00'),            // the logged 9:00 ride, recorded again
+      presto('user-1', '2026-09-13T08:00:00'),            // not logged: a ninth trip
+      presto('user-1', '2026-09-14T08:00:00', 'Mississauga Transit'),
+      { userId: 'user-1', type: 'load', agency: 'TTC', occurredAtSortKey: Date.parse('2026-09-15T08:00:00Z') },
+      presto('user-2', '2026-09-16T08:00:00'),            // another rider's
+    ]);
+    const tools = claude.buildQueryToolExecutors(db, 'user-1', 'America/Toronto');
+    const all = await tools.get_all_time_stats();
+    assert.equal(all.totalTrips, 10);
+    // Imported rides add trips, agencies and days, never routes, stops or durations.
+    assert.equal(all.uniqueRoutes, 5);
+    assert.equal(all.timedTrips, 3);
+    assert.deepEqual((await tools.get_agency_stats({ start_date: null, end_date: null })).trips_by_agency,
+      [['TTC', 6], ['MiWay', 2], ['GO Transit', 1]]);
+    assert.equal((await tools.get_monthly_trip_counts()).by_month['2026-09'], 5);
+    assert.equal((await tools.get_trips_for_date({ date: '2026-09-12' })).count, 1);
+    assert.equal((await tools.get_riding_streak()).longest_streak_days, 3);
+    assert.deepEqual((await tools.get_trip_details_for_date({ date: '2026-09-13' })).trips, [{
+      time: '8:00 AM', agency: 'TTC', route: 'Unknown', direction: null, from: 'Unknown', to: null,
+      duration_min: null, source: 'PRESTO import',
+    }]);
+    // One read of each collection, each filtered only by the handler's user id.
+    assert.deepEqual(queries.map((query) => [query.collection, query.wheres]).sort(), [
+      ['prestoTransactions', [['userId', '==', 'user-1']]],
+      ['trips', [['userId', '==', 'user-1']]],
+    ]);
   } finally {
     restore();
   }
@@ -738,9 +775,8 @@ test('answerQueryWithClaude returns all tool results for a turn in one user mess
       { total_trips: 2, route_count: 2, trips_without_route: 0, top_routes: [['504', 1], ['510', 1]] });
 
     // Account separation: every Firestore read is filtered to the asking user.
-    assert.ok(queries.length > 0);
+    assert.deepEqual(queries.map((query) => query.collection).sort(), ['prestoTransactions', 'trips']);
     for (const query of queries) {
-      assert.equal(query.collection, 'trips');
       assert.deepEqual(query.wheres[0], ['userId', '==', 'user-1']);
     }
   } finally {
@@ -974,6 +1010,7 @@ test('a failed all-time read is not remembered, and the read is never shared bet
         const chain = working.collection(name);
         const get = chain.get;
         chain.get = async () => {
+          if (name !== 'trips') return get();
           reads++;
           if (reads === 1) throw new Error('UNAVAILABLE');
           return get();
@@ -995,8 +1032,8 @@ test('a failed all-time read is not remembered, and the read is never shared bet
     const before = queries.length;
     const other = claude.buildQueryToolExecutors(working, 'user-2', 'America/Toronto');
     assert.equal((await other.get_all_time_stats()).totalTrips, 0);
-    assert.equal(queries.length, before + 1);
-    assert.deepEqual(queries[queries.length - 1].wheres, [['userId', '==', 'user-2']]);
+    assert.equal(queries.length, before + 2);
+    for (const query of queries.slice(before)) assert.deepEqual(query.wheres, [['userId', '==', 'user-2']]);
   } finally {
     restore();
   }
@@ -1015,12 +1052,6 @@ test('trips land on the right day when the clocks go forward (a 23-hour day)', a
       at('2026-03-08T23:59:30-04:00'),
       at('2026-03-09T00:00:30-04:00'),
     ]);
-    const { dayBoundsInTimezone } = require('./lib/gemini');
-    // The query window must cover the whole local day; the exact day is then picked in memory.
-    const bounds = dayBoundsInTimezone('2026-03-08', 'America/Toronto');
-    assert.ok(bounds.start <= new Date('2026-03-08T05:00:00Z'));
-    assert.ok(bounds.end >= new Date('2026-03-09T03:59:59Z'));
-
     const tools = claude.buildQueryToolExecutors(db, 'user-1', 'America/Toronto');
     assert.equal((await tools.get_trips_for_date({ date: '2026-03-07' })).count, 1);
     assert.equal((await tools.get_trips_for_date({ date: '2026-03-08' })).count, 4);
