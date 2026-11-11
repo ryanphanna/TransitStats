@@ -32,6 +32,7 @@ const {
 } = require('./claude');
 const { buildPrestoTrips } = require('./presto-trips');
 const { countedTrips } = require('./trip-stats');
+const { recentRideStats } = require('./stats-summary');
 
 /**
  * Handle natural-language query (premium feature)
@@ -108,34 +109,27 @@ async function handleQuery(phoneNumber, user, question, traceId = null) {
  */
 async function handleStatsCommand(phoneNumber, user, traceId = null) {
   const now = new Date();
-
-  // Windows
-  const sevenDaysAgo = new Date(now); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const fourteenDaysAgo = new Date(now); fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-  const thirtyDaysAgo = new Date(now); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const sixtyDaysAgo = new Date(now); sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
 
-  const snapshot = await db.collection('trips')
-    .where('userId', '==', user.userId)
-    .where('startTime', '>=', Timestamp.fromDate(sixtyDaysAgo))
-    .get();
+  // Both reads are filtered to this user. Imported PRESTO rides count the same
+  // way they do on the dashboard and in ASK.
+  const [tripDocs, prestoDocs] = await Promise.all([
+    db.collection('trips')
+      .where('userId', '==', user.userId)
+      .where('startTime', '>=', Timestamp.fromDate(sixtyDaysAgo))
+      .get(),
+    db.collection('prestoTransactions')
+      .where('userId', '==', user.userId)
+      .select(...ASK_PRESTO_FIELDS)
+      .get(),
+  ]);
+  const stats = recentRideStats(
+    tripDocs.docs.map((d) => d.data()),
+    buildPrestoTrips(prestoDocs.docs.map((d) => d.data())),
+    now,
+  );
 
-  const toDate = (t) => t.startTime?.toDate ? t.startTime.toDate() : new Date(t.startTime);
-  const allTrips = snapshot.docs.map((d) => d.data()).filter((t) => t.endStopName != null || t.endStopCode != null);
-
-  // Filter buckets
-  const thisWeek = allTrips.filter((t) => toDate(t) >= sevenDaysAgo);
-  const lastWeek = allTrips.filter((t) => {
-    const d = toDate(t);
-    return d >= fourteenDaysAgo && d < sevenDaysAgo;
-  });
-  const last30 = allTrips.filter((t) => toDate(t) >= thirtyDaysAgo);
-  const prev30 = allTrips.filter((t) => {
-    const d = toDate(t);
-    return d >= sixtyDaysAgo && d < thirtyDaysAgo;
-  });
-
-  if (allTrips.length === 0) {
+  if (stats.total === 0) {
     await sendSmsReply(phoneNumber, text.NO_RECENT_TRIPS);
     return;
   }
@@ -150,24 +144,14 @@ async function handleStatsCommand(phoneNumber, user, traceId = null) {
     return Math.round(((current - previous) / previous) * 100);
   };
 
-  const totalMin30 = last30.reduce((sum, t) => sum + (t.duration || 0), 0);
-  const uniqueRoutes30 = new Set(last30.map((t) => t.route).filter(Boolean)).size;
-
-  // Top route in the last 30 days
-  const routeCounts30 = {};
-  for (const t of last30) {
-    if (t.route) routeCounts30[t.route] = (routeCounts30[t.route] || 0) + 1;
-  }
-  const topRoute = Object.entries(routeCounts30).sort((a, b) => b[1] - a[1])[0];
-
   await sendSmsReply(phoneNumber, text.statsSummary({
-    weekCount: thisWeek.length,
-    weekTrendPct: getTrendPct(thisWeek.length, lastWeek.length),
-    monthCount: last30.length,
-    monthTrendPct: getTrendPct(last30.length, prev30.length),
-    routeCount: uniqueRoutes30,
-    totalMinutes: totalMin30,
-    topRoute,
+    weekCount: stats.weekCount,
+    weekTrendPct: getTrendPct(stats.weekCount, stats.prevWeekCount),
+    monthCount: stats.monthCount,
+    monthTrendPct: getTrendPct(stats.monthCount, stats.prevMonthCount),
+    routeCount: stats.routeCount,
+    totalMinutes: stats.totalMinutes,
+    topRoute: stats.topRoute,
   }));
 }
 
