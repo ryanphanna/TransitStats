@@ -192,6 +192,7 @@ test('parseWithClaude sends a structured-output request to Haiku and sanitizes t
     assert.equal(result.route, '510');
     assert.equal(result.stop_name, 'Spadina Station'); // HTML stripped
     assert.equal(result.direction, 'Northbound');
+    assert.equal(result.vehicle, '4412');
     assert.deepEqual(result.tags, ['crowded']);
 
     assert.equal(requests.length, 1);

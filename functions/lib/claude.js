@@ -157,6 +157,7 @@ function sanitizeParsedOutput(parsed) {
     stop_id: sanitizeField(parsed.stop_id, 20),
     direction: sanitizeField(parsed.direction, 30),
     agency: sanitizeField(parsed.agency, 50),
+    vehicle: sanitizeField(parsed.vehicle, 30),
     sentiment,
     tags,
     question: sanitizeField(parsed.question, 300),
