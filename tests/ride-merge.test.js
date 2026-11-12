@@ -199,7 +199,7 @@ describe('matchImportedRides, fast version', () => {
         expect(matchedSomewhere).toBeGreaterThan(1000);
         expect([...matchImportedRides(null, null)]).toEqual([]);
         expect([...matchImportedRides([logged(0)], undefined)]).toEqual([]);
-    });
+    }, 30000); // the all-pairs reference is slow; under a full parallel run it can pass 5 s
 
     it('agrees with the all-pairs version across a clock change', () => {
         const random = seededRandom(7);
