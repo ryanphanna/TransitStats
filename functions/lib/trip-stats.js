@@ -140,12 +140,29 @@ function weekStartKey(dayKey) {
 }
 
 /**
- * Options for placing trips on calendar days: `timeZone` puts every trip in
- * one zone, `timeZoneFor(trip)` gives each trip its own, and neither means the
- * runtime's local time.
+ * Every trip is placed on the calendar day it happened in its own stored time
+ * zone (Toronto when it has none, which covers imported PRESTO rides), the
+ * same on the dashboard, public profile and in ASK (CIV-1394). `timeZoneFor`
+ * overrides that per trip (tests). `timeZone` is only the zone "today" is
+ * read in; with none, "today" is the runtime's local day.
  */
-function zoneOf(trip, { timeZone = null, timeZoneFor = null } = {}) {
-    return timeZoneFor ? timeZoneFor(trip) : timeZone;
+function zoneOf(trip, { timeZoneFor = null } = {}) {
+    return timeZoneFor ? timeZoneFor(trip) : storedTripTimeZone(trip);
+}
+
+const HOUR_FORMATTERS = new Map();
+
+function hourFormatter(timeZone) {
+    if (!HOUR_FORMATTERS.has(timeZone)) {
+        let formatter;
+        try {
+            formatter = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' });
+        } catch {
+            formatter = timeZone === DEFAULT_TRIP_TIME_ZONE ? null : hourFormatter(DEFAULT_TRIP_TIME_ZONE);
+        }
+        HOUR_FORMATTERS.set(timeZone, formatter);
+    }
+    return HOUR_FORMATTERS.get(timeZone);
 }
 
 /**
@@ -162,6 +179,13 @@ function tripLocalDay(trip, options = {}) {
         year: Number(dayKey.slice(0, 4)),
         weekday: DAY_NAMES[new Date(dayNumber(dayKey) * 86400000).getUTCDay()],
     };
+}
+
+/** The local hour (0-23) a trip started at in its own time zone, or null when it has no start time. */
+function tripLocalHour(trip, options = {}) {
+    const date = tripStartDate(trip);
+    if (!date) return null;
+    return Number(hourFormatter(zoneOf(trip, options)).format(date)) % 24;
 }
 
 /** Trips that started on the local days `fromDay` to `toDay` (YYYY-MM-DD), inclusive. */
@@ -343,4 +367,4 @@ function computeSummaryStats(trips, options = {}) {
     };
 }
 
-module.exports = { ACTIVE_TRIP_WINDOW_MS, DEFAULT_TRIP_TIME_ZONE, AGENCY_COUNTRIES, agencyCountry, tripStartDate, isActiveTrip, isHistoryTrip, isUnreadableText, COUNT_UNREADABLE_TEXTS, isCountedTrip, countedTrips, countedRides, finishedTrips, storedTripTimeZone, tripDayKey, DAY_NAMES, weekStartKey, tripLocalDay, tripsBetweenDays, sortedCounts, tripsByDate, ridingStreaks, computePeriodCounts, tripAgency, tripsByAgency, countAgencies, countCountries, tripsByRoute, countRoutes, boardingStop, exitStop, tripsByStop, durationSummary, totalTripHours, computeSummaryStats };
+module.exports = { ACTIVE_TRIP_WINDOW_MS, DEFAULT_TRIP_TIME_ZONE, AGENCY_COUNTRIES, agencyCountry, tripStartDate, isActiveTrip, isHistoryTrip, isUnreadableText, COUNT_UNREADABLE_TEXTS, isCountedTrip, countedTrips, countedRides, finishedTrips, storedTripTimeZone, tripDayKey, DAY_NAMES, weekStartKey, tripLocalDay, tripLocalHour, tripsBetweenDays, sortedCounts, tripsByDate, ridingStreaks, computePeriodCounts, tripAgency, tripsByAgency, countAgencies, countCountries, tripsByRoute, countRoutes, boardingStop, exitStop, tripsByStop, durationSummary, totalTripHours, computeSummaryStats };

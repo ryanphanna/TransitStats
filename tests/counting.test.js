@@ -215,16 +215,18 @@ describe('the website and ASK give the same totals from the same records', () =>
     const makeDb = (trips, prestoRows) => ({
         collection: name => {
             const filters = [];
+            let fields = null;
             const chain = {
                 where: (field, op, value) => { filters.push([field, op, value]); return chain; },
-                select: () => chain,
+                select: (...names) => { fields = names; return chain; },
                 orderBy: () => chain,
                 limit: () => chain,
                 add: async () => ({}),
                 get: async () => {
                     expect(filters).toEqual([['userId', '==', 'user-1']]);
                     const docs = (name === 'trips' ? trips : prestoRows).filter(doc => doc.userId === 'user-1');
-                    return { docs: docs.map(data => ({ data: () => data })) };
+                    const pick = data => (fields ? Object.fromEntries(fields.filter(f => f in data).map(f => [f, data[f]])) : data);
+                    return { docs: docs.map(data => ({ data: () => pick(data) })) };
                 },
             };
             return chain;
@@ -339,14 +341,48 @@ describe('the website and ASK give the same totals from the same records', () =>
         expect(lastDay.count).toBe(2);
     });
 
-    it('agrees on every shared figure for a rider in another time zone', async () => {
-        // The trip at 00:00:30 on 1 October in Toronto is still 30 September in Vancouver.
-        const { tiles, range, lastDay, monthly } = await compareEverything('America/Vancouver', COUNT_UNREADABLE_TEXTS);
+    it('gives the same days wherever the viewer is (CIV-1394)', async () => {
+        // These trips were taken in Toronto, so a viewer in Vancouver sees them
+        // on their Toronto days: 00:00:30 on 1 October stays in October.
+        const { tiles, profile, range, lastDay, monthly } = await compareEverything('America/Vancouver', COUNT_UNREADABLE_TEXTS);
         expect(tiles.totalTrips).toBe(9);
-        expect(range.count).toBe(6);
-        expect(lastDay.count).toBe(3);
-        // And the one at 01:30 on 1 November is still 31 October there.
-        expect(monthly.by_month['2026-11']).toBe(1);
+        expect(range.count).toBe(5);
+        expect(lastDay.count).toBe(2);
+        expect(monthly.by_month['2026-11']).toBe(2);
+        expect(profile.daysRidden).toBe(tiles.daysRidden);
+    });
+
+    it('puts a trip on the day it happened in its own time zone, in all three places (CIV-1394)', async () => {
+        // 11:30 PM on 30 September in Los Angeles is already 1 October in Toronto,
+        // where the viewer is.
+        const laTrip = finished('2026-09-30T23:30:00-07:00', 15, {
+            agency: 'LA Metro', route: 'E', timezone: 'America/Los_Angeles', startStopName: '7th St', endStopName: 'Santa Monica',
+        });
+        const docs = [...tripDocs, laTrip];
+        vi.useFakeTimers({ toFake: ['Date'], now: NOW });
+        const mine = docs.filter(doc => doc.userId === 'user-1');
+        const minePresto = prestoDocs.filter(doc => doc.userId === 'user-1');
+        const rides = countedRides(mine.filter(doc => isHistoryTrip(doc, NOW)), buildPrestoTrips(minePresto), { now: NOW });
+        const tools = claude.buildQueryToolExecutors(makeDb(docs, prestoDocs), 'user-1', 'America/Toronto');
+        const profile = publicProfile.publicProfileRides(mine, minePresto, { now: NOW }).stats;
+
+        expect(tripLocalDay(laTrip).dayKey).toBe('2026-09-30');
+        // Dashboard and recap.
+        const septemberOnSite = Stats.filterByCalendarMonth(rides, 2026, 8);
+        expect(septemberOnSite).toContain(laTrip);
+        expect(Stats.computeWrapped(rides, 2026, 8).dayCounts[29]).toBe(3);
+        expect(Stats.computePeakTimes([laTrip])).toEqual({ Morning: 0, Day: 0, Evening: 0, Night: 1 });
+        // ASK.
+        const lastDay = await tools.get_trip_details_for_date({ date: '2026-09-30' });
+        expect(lastDay.trips.map(t => t.time)).toContain('11:30 PM');
+        expect((await tools.get_trips_for_date({ date: '2026-10-01' })).count).toBe(1);
+        expect((await tools.get_trips_for_date_range({ start_date: '2026-09-01', end_date: '2026-09-30' })).count)
+            .toBe(septemberOnSite.length);
+        expect((await tools.get_monthly_trip_counts()).by_month).toEqual(tripsByDate(rides).byMonth);
+        // Public profile.
+        const tiles = computeSummaryStats(rides, { now: new Date(NOW) });
+        expect(profile.daysRidden).toBe(tiles.daysRidden);
+        expect((await tools.get_riding_streak()).days_ridden).toBe(tiles.daysRidden);
     });
 
     it('agrees on every shared figure with unreadable texts left out', async () => {

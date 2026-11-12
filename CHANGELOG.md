@@ -15,6 +15,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **ASK can answer questions about transit agencies**, such as how many you have ridden or which you ride most. It used to guess from stop names.
 - **ASK says when something isn't in your trip data** instead of estimating an answer from other details.
 - **ASK totals now count every trip and agree with each other.** Trips without an end time, such as imported history, used to be left out of all-time answers, so ASK could report 1,146 trips for a rider with over 3,000 logged, and a month could differ by one depending on how the question was worded. Every count now comes from the same set of logged trips; trip lengths still use only trips with an end time, and the reply says how many.
+- **Trips taken in another time zone land on the day they happened, everywhere.** A late-evening trip in Los Angeles used to count as the next day on the dashboard and in ASK, and ASK showed its time in Toronto time. The dashboard, recap, public profile and ASK now all use each trip's own time zone.
 - **The STATS reply counts trips the same way as the dashboard and ASK.** It used to count only trips with an exit stop and skip imported PRESTO rides, so its 7-day and 30-day numbers could come out lower.
 - **The dashboard, public profile and ASK now give the same totals.** They used to count with separate code, so the same question could get different numbers. ASK now includes imported PRESTO rides the same way the dashboard does.
 

@@ -8,6 +8,8 @@ import {
     tripsByDate,
     tripsByRoute,
     tripsByStop,
+    tripLocalDay,
+    tripLocalHour,
     tripStartDate,
 } from './shared/trip-stats.js';
 
@@ -73,16 +75,16 @@ export const Stats = {
     },
 
     /**
-     * Keep trips whose local start date falls in a calendar month.
-     * monthIndex is 0–11 (JavaScript Date month).
+     * Keep trips whose start date falls in a calendar month, in each trip's
+     * own time zone. monthIndex is 0–11 (JavaScript Date month).
      */
     filterByCalendarMonth(trips, year, monthIndex) {
         const y = Number(year);
         const m = Number(monthIndex);
         if (!Number.isInteger(y) || !Number.isInteger(m) || m < 0 || m > 11) return [];
         return (trips || []).filter(trip => {
-            const date = this.getTripDate(trip);
-            return date && date.getFullYear() === y && date.getMonth() === m;
+            const local = tripLocalDay(trip);
+            return local !== null && local.year === y && Number(local.month.slice(5)) === m + 1;
         });
     },
 
@@ -132,8 +134,8 @@ export const Stats = {
         const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
         const dayCounts = Array(daysInMonth).fill(0);
         monthTrips.forEach(trip => {
-            const date = this.getTripDate(trip);
-            if (date) dayCounts[date.getDate() - 1]++;
+            const local = tripLocalDay(trip);
+            if (local) dayCounts[Number(local.dayKey.slice(8)) - 1]++;
         });
 
         return {
@@ -168,8 +170,8 @@ export const Stats = {
     computePeakTimes(trips) {
         const buckets = { 'Morning': 0, 'Day': 0, 'Evening': 0, 'Night': 0 };
         trips.forEach(t => {
-            const date = t.startTime?.toDate ? t.startTime.toDate() : new Date(t.startTime);
-            const hour = date.getHours();
+            const hour = tripLocalHour(t);
+            if (hour === null) return;
             if (hour >= 5 && hour < 11) buckets['Morning']++;
             else if (hour >= 11 && hour < 17) buckets['Day']++;
             else if (hour >= 17 && hour < 21) buckets['Evening']++;

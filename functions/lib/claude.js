@@ -18,6 +18,7 @@ const {
   finishedTrips,
   ridingStreaks,
   sortedCounts,
+  storedTripTimeZone,
   tripAgency,
   tripLocalDay,
   tripStartDate,
@@ -468,6 +469,7 @@ const QUERY_TOOLS = [
 const ASK_TRIP_FIELDS = [
   'startTime', 'endTime', 'discarded', 'duration', 'route', 'direction', 'agency', 'source',
   'startStopName', 'startStop', 'startStopCode', 'endStopName', 'endStop', 'endStopCode',
+  'timezone',
 ];
 // Fields of an imported PRESTO row that decide whether and when it counts as a ride.
 const ASK_PRESTO_FIELDS = ['type', 'agency', 'agencySource', 'amountCents', 'occurredAtSortKey'];
@@ -633,7 +635,9 @@ function buildQueryToolExecutors(db, userId, timezone, { countUnreadableTexts } 
         .map((trip) => ({ trip, startTime: tripStartDate(trip) }))
         .sort((a, b) => a.startTime - b.startTime)
         .map(({ trip, startTime }) => ({
-          time: startTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: timezone }),
+          time: startTime.toLocaleTimeString('en-US', {
+            hour: 'numeric', minute: '2-digit', timeZone: storedTripTimeZone(trip),
+          }),
           agency: tripAgency(trip),
           route: trip.route || 'Unknown',
           direction: trip.direction || null,
