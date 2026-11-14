@@ -26,6 +26,7 @@ import pandas as pd
 import firebase_admin
 from firebase_admin import credentials, firestore
 from route_normalization import agency_id, normalize_route_for_ml, scoped_route_key, load_policies
+from stop_canon import ml_index, ml_norm
 
 
 def compute_primary_agency_map(df):
@@ -89,7 +90,8 @@ def load_stops_library():
     lib = []
     for doc in docs:
         d = doc.to_dict()
-        lib.append({"name": d.get("name"), "aliases": d.get("aliases", [])})
+        lib.append({"name": d.get("name"), "aliases": d.get("aliases", []),
+                    "agency": d.get("agency"), "agencies": d.get("agencies", [])})
     return lib
 
 _DIRECTION_MAP = {
@@ -107,21 +109,13 @@ def normalize_direction(d):
 
 def _normalize_stop_str(s):
     """Same steps, in the same order, as canonicalizeStop() in functions/lib/ml_utils.js."""
-    s = str(s).strip().lower()
-    s = re.sub(r"\s+and\s+", "/", s)
-    s = re.sub(r"\s*[/&@]\s*", "/", s)
-    s = re.sub(r"\s+at\s+", "/", s)
-    return s
+    return ml_norm(s)
 
-def canonicalize_stop(name, lib):
+def canonicalize_stop(name, lib, agency=None):
+    """ml_utils.js canonicalizeStop(): the first library entry at the trip's agency, else the first
+    entry at any agency (stop_canon.py)."""
     if not name: return "unknown"
-    lower = _normalize_stop_str(name)
-    for item in lib:
-        candidates = [item["name"]] + item.get("aliases", [])
-        for c in candidates:
-            if _normalize_stop_str(c) == lower:
-                return _normalize_stop_str(item["name"])
-    return lower
+    return ml_index(lib).canon(name, agency)
 
 def compute_ride_count_weights(df, halflife_rides=100):
     df = df.copy()
@@ -177,9 +171,12 @@ def clean(df, lib, apply_filters=True):
         if row["prev_route"] else "none",
         axis=1,
     )
-    df["start_stop"] = df["start_stop"].apply(lambda x: canonicalize_stop(x, lib))
-    df["end_stop"] = df["end_stop"].apply(lambda x: canonicalize_stop(x, lib))
-    df["last_end_stop"] = df["last_end_stop"].apply(lambda x: canonicalize_stop(x, lib) if x else "none")
+    # Each name resolves within the current trip's agency, as serving does (buildEndStopFeatures
+    # passes context.agency for the start and the last end stop).
+    df["start_stop"] = [canonicalize_stop(x, lib, a) for x, a in zip(df["start_stop"], df["agency"])]
+    df["end_stop"] = [canonicalize_stop(x, lib, a) for x, a in zip(df["end_stop"], df["agency"])]
+    df["last_end_stop"] = [canonicalize_stop(x, lib, a) if x else "none"
+                           for x, a in zip(df["last_end_stop"], df["agency"])]
     df["direction_norm"] = df["direction"].apply(normalize_direction)
     df = df.sort_values(["user_id", "start_time"])
     df["minutes_since_last_trip"] = df["minutes_since_last_trip"].fillna(-1)

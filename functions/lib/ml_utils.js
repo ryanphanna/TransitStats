@@ -3,27 +3,69 @@
  * Centralizes the canonicalization logic used by both training (Python) and inference (Node).
  */
 
-/**
- * Standardize a stop name using the stops library.
- * This MUST match the behavior used in ml/train_endstop.py for feature alignment.
- */
-function canonicalizeStop(name, stopsLibrary = []) {
-  if (!name) return 'unknown';
-  
-  const normalize = s => s.trim().toLowerCase()
+const { canonicalAgency } = require('./agency-aliases');
+
+function normalizeStopString(s) {
+  return s.trim().toLowerCase()
     .replace(/\s+and\s+/g, '/')
     .replace(/\s*[/&@]\s*/g, '/')
     .replace(/\s+at\s+/g, '/');
+}
 
-  const lower = normalize(name);
+function agencyKey(agency) {
+  return canonicalAgency(agency.toString()).toLowerCase();
+}
+
+// Normalized name/alias -> [{ canonical, agencies }] in library order, cached per library array.
+const _stopIndexByLibrary = new WeakMap();
+
+function stopIndex(stopsLibrary) {
+  let index = _stopIndexByLibrary.get(stopsLibrary);
+  if (index) return index;
+  index = new Map();
+  for (const s of stopsLibrary) {
+    if (!s || !s.name) continue;
+    const entry = {
+      canonical: normalizeStopString(s.name),
+      agencies: new Set([s.agency, ...(s.agencies || [])].filter(Boolean).map(agencyKey)),
+    };
+    const seen = new Set();
+    for (const c of [s.name, ...(s.aliases || [])]) {
+      if (!c) continue;
+      const key = normalizeStopString(c);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!index.has(key)) index.set(key, []);
+      index.get(key).push(entry);
+    }
+  }
+  _stopIndexByLibrary.set(stopsLibrary, index);
+  return index;
+}
+
+/**
+ * Standardize a stop name using the stops library.
+ * This MUST match canonicalize_stop() in ml/train_endstop.py for feature alignment.
+ *
+ * The same name can belong to stops at different agencies (TTC's "Union Station" and LA Metro's
+ * "Union Station Patsaouras Bus Plaza", alias "Union Station"), so the first library entry at the
+ * trip's agency wins. With no agency, or no entry at that agency, the first entry at any agency
+ * wins, as V3's _canonicalizeStop does.
+ */
+function canonicalizeStop(name, stopsLibrary = [], agency = null) {
+  if (!name) return 'unknown';
+
+  const lower = normalizeStopString(name);
 
   if (stopsLibrary && stopsLibrary.length > 0) {
-    const match = stopsLibrary.find(s => {
-      const candidates = [s.name, ...(s.aliases || [])];
-      return candidates.some(c => normalize(c) === lower);
-    });
-    if (match) {
-      return normalize(match.name);
+    const entries = stopIndex(stopsLibrary).get(lower);
+    if (entries) {
+      if (agency) {
+        const want = agencyKey(agency);
+        const own = entries.find(e => e.agencies.has(want));
+        if (own) return own.canonical;
+      }
+      return entries[0].canonical;
     }
   }
   return lower;
@@ -32,8 +74,8 @@ function canonicalizeStop(name, stopsLibrary = []) {
 /**
  * Build a consistent feature vector key for a stop.
  */
-function getStopFeature(name, stopsLibrary = []) {
-  const canon = canonicalizeStop(name, stopsLibrary);
+function getStopFeature(name, stopsLibrary = [], agency = null) {
+  const canon = canonicalizeStop(name, stopsLibrary, agency);
   return `stop_${canon.replace(/[^a-z0-9]/g, '_')}`;
 }
 
@@ -283,7 +325,7 @@ function buildEndStopFeatures(context, timeBasis) {
   const { hour, pyDay } = getHourAndDay(date, context.agency, timeBasis);
   const primary = context.primaryAgency || context.defaultAgency;
   const lastStopKey = context.lastEndStopName
-    ? getStopFeature(context.lastEndStopName, context.stopsLibrary).replace('stop_', '')
+    ? getStopFeature(context.lastEndStopName, context.stopsLibrary, context.agency).replace('stop_', '')
     : 'none';
   const prevRoute = scopedRouteKey(context.lastRoute, context.agency, primary) || 'none';
   const route = String(scopedRouteKey(context.route, context.agency, primary)).toLowerCase();
@@ -297,7 +339,7 @@ function buildEndStopFeatures(context, timeBasis) {
     gap_log: gapLog,
     gap_missing: gapMissing,
     [`agency_${sanitizeFeature(context.agency || 'unknown')}`]: 1.0,
-    [getStopFeature(context.startStopName, context.stopsLibrary)]: 1.0,
+    [getStopFeature(context.startStopName, context.stopsLibrary, context.agency)]: 1.0,
     [`route_${route}`]: 1.0,
     [`prev_route_${prevRoute.toString().toLowerCase()}`]: 1.0,
     [`last_stop_${lastStopKey}`]: 1.0,

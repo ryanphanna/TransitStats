@@ -51,7 +51,8 @@ jobs:
           import json, os, firebase_admin
           from firebase_admin import credentials, firestore
           firebase_admin.initialize_app(credentials.Certificate(os.environ["GOOGLE_APPLICATION_CREDENTIALS"]), {"projectId": "transitstats-21ba4"})
-          lib = [{"name": d.get("name"), "aliases": d.get("aliases", [])}
+          lib = [{"name": d.get("name"), "aliases": d.get("aliases", []),
+                  "agency": d.get("agency"), "agencies": d.get("agencies", [])}
                  for d in (doc.to_dict() for doc in firestore.client().collection("stops").stream())]
           json.dump(lib, open(os.path.join(os.environ["RUNNER_TEMP"], "stops.json"), "w"))
           print(f"Stops library: {len(lib)} stops")

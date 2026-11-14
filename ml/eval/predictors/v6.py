@@ -92,8 +92,8 @@ class V6:
                 gap = max(0, round((t["_start"] - last["_start"]).total_seconds() / 60))
             self._ctx[t["_id"]] = {
                 "prev_route": h.route_base_for_grading(last.get("route")) if last and last.get("route") else None,
-                "prev_end": c.v3(h.end_stop_of(last)) if last and h.end_stop_of(last) else None,
-                "prev_start": c.v3(h.start_stop_of(last)) if last and h.start_stop_of(last) else None,
+                "prev_end": c.v3(h.end_stop_of(last), last.get("agency")) if last and h.end_stop_of(last) else None,
+                "prev_start": c.v3(h.start_stop_of(last), last.get("agency")) if last and h.start_stop_of(last) else None,
                 "gap": gap_bucket(gap),
                 "gap_min": gap,
             }
@@ -109,12 +109,12 @@ class V6:
                 "agency": (t.get("agency") or "").lower(),
                 "route": h.route_base_for_grading(t.get("route")) if t.get("route") else None,
                 "route_disp": t.get("route"),
-                "start": c.v3(h.start_stop_of(t)) if h.start_stop_of(t) else None,
+                "start": c.v3(h.start_stop_of(t), t.get("agency")) if h.start_stop_of(t) else None,
                 "dir": h.norm_dir(t.get("direction")),
                 "hb": lt.hour // 3,
                 "hour": lt.hour,
                 "day": "weekend" if lt.weekday() >= 5 else "weekday",
-                "end": c.v3(end) if end else None,
+                "end": c.v3(end, t.get("agency")) if end else None,
                 "end_disp": end,
                 **{k: s[k] for k in ("prev_route", "prev_end", "prev_start", "gap")},
             }
@@ -186,6 +186,7 @@ class V6:
         """Candidate keys -> display + per-candidate features (all from history before the trip)."""
         h, c = self.h, self.data.canon
         f = self.feat(trip)
+        ag = trip.get("agency")
         full = h._full_history(self.data, trip) if view == "full" else \
             [x for x in h.serve_context(self.data, trip)["hist"] if h.is_clean(x) and x.get("_start")]
         pool = [x for x in full if (x.get("agency") or "").lower() == f["agency"]]
@@ -194,13 +195,13 @@ class V6:
         bo, bo_keys, _ = self.backoff(trip, view, RERANK_BACKOFF, depth=5)
         disp = {}
         for d, _ in v3 + b3 + bo:
-            disp.setdefault(c.v3(d), d)
+            disp.setdefault(c.v3(d, ag), d)
         last_disp = {}
         hist = h.serve_context(self.data, trip)["hist"]
         if hist:
             for name in (h.end_stop_of(hist[0]), h.start_stop_of(hist[0])):
                 if name:
-                    last_disp.setdefault(c.v3(name), name)
+                    last_disp.setdefault(c.v3(name, ag), name)
         for k, d in last_disp.items():
             disp.setdefault(k, d)
         disp.pop(None, None)
@@ -230,8 +231,8 @@ class V6:
             s_h1 = {k: v / sm for k, v in tot.items()}
         else:
             s_h1 = {}
-        v3_rank = {c.v3(d): (i, conf) for i, (d, conf) in enumerate(v3)}
-        b3_rank = {c.v3(d): i for i, (d, _) in enumerate(b3)}
+        v3_rank = {c.v3(d, ag): (i, conf) for i, (d, conf) in enumerate(v3)}
+        b3_rank = {c.v3(d, ag): i for i, (d, _) in enumerate(b3)}
         bo_rank = {k: i for i, k in enumerate(bo_keys)}
         gap = f["gap"]
         out = []

@@ -49,7 +49,7 @@ const PredictionEngineV5 = {
       const networkMask = NetworkEngine.getMask(context.networkGraph, displayClasses, context.startStopName, context.direction);
       const topology = TopologyConstraints.getMask(_topology, context.route, context.startStopName, context.direction, displayClasses, {
       // Canonicalize both sides through the stops library, as V3's own matching does.
-        canonicalizeStop: name => canonicalizeStop(name, context.stopsLibrary || []),
+        canonicalizeStop: name => canonicalizeStop(name, context.stopsLibrary || [], context.agency),
       });
       const mask = TopologyConstraints.combineMasks(topology, networkMask);
       const constraintSource = topology && networkMask ? 'topology+network' : (topology ? 'topology' : (networkMask ? 'network' : 'none'));
