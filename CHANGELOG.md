@@ -24,6 +24,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ### Map and dashboard
 
+- **Map pin popups show just the stop name.** A stop you both board and exit at used to say only "Boarding"; the boarding/exiting filter already shows which way a stop was used. Guessed exits still say no exit was recorded.
 - **New Trip times page** shows how long your trips take on one route between the same two stops: the typical time, the middle half, the fastest and slowest, and the typical time by time of day. Platform stops count as their station, and route variants like 510A ride with 510.
 
 ### Fixes
