@@ -12,7 +12,7 @@ const PLACEHOLDER_STOPS = new Set([
     'unknown stop',
 ]);
 
-export function usableStopLabel(value) {
+function usableStopLabel(value) {
     if (typeof value !== 'string') return null;
     const label = value.trim();
     return label && !PLACEHOLDER_STOPS.has(label.toLowerCase()) ? label : null;

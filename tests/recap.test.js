@@ -36,7 +36,7 @@ describe('Recap page', () => {
         const vite = read('vite.config.js');
         expect(vite).toContain("recap: './recap.html'");
         expect(vite).toContain("'/wrapped'");
-        expect(vite).toMatch(/const targets = \[[^\]]*'\/recap'/);
+        expect(vite).toContain("'/recap']");
     });
 
     it('the stats card no longer links to the recap', () => {

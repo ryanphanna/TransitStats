@@ -35,7 +35,6 @@ export default defineConfig(({ mode, command }) => {
                     import: './import.html',
                     'route-heatmap': './route-heatmap.html',
                     recap: './recap.html',
-                    'trip-times': './trip-times.html',
                 },
                 output: {
                     // Name the shared vendor chunk after what it is (Rollup otherwise borrows a module's name).
@@ -121,7 +120,7 @@ export default defineConfig(({ mode, command }) => {
                         res.end();
                         return;
                     }
-                    const targets = ['/dashboard', '/public', '/terms', '/privacy', '/import', '/route-heatmap', '/recap', '/trip-times'];
+                    const targets = ['/dashboard', '/public', '/terms', '/privacy', '/import', '/route-heatmap', '/recap'];
                     const isUserProfilePath = url === '/user' || url.startsWith('/user/');
                     if (targets.includes(url)) {
                         req.url = url + '.html' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '');
