@@ -10,6 +10,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ### Texting
 
+- **Every new trip saves its direction in the app's standard form**, whichever way the text was read: "SOUTH", "North" or "WB" are stored as Southbound, Northbound and Westbound instead of as typed, so the same direction no longer splits into several. Destination-style directions like "Downtown" are still kept as typed.
 - **Trip texts, ASK answers and time-zone lookups now run on Claude** instead of Gemini, the pick from a side-by-side test on real messages. Stop-sign photos still use Gemini.
 - **ASK replies stay plain text and never say "I"**, including when the message isn't really a question.
 - **ASK can answer questions about transit agencies**, such as how many you have ridden or which you ride most. It used to guess from stop names.

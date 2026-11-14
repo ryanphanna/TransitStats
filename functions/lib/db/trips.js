@@ -5,6 +5,7 @@ const { db, FieldValue, Timestamp } = require('./core');
 const { getUserProfile } = require('./users');
 const { timezoneForAgency } = require('../constants');
 const { ACTIVE_TRIP_WINDOW_MS } = require('../trip-stats');
+const { normalizeDirection } = require('../utils');
 
 const HIGH_IMPACT_CORRECTION_FIELDS = new Set([
   'route',
@@ -58,8 +59,14 @@ async function createTrip(tripData) {
 
   // Unknown agencies get no timezone (not 'UTC'), so readers fall back to their own default.
   const timezone = timezoneForAgency(tripData.agency);
+  // Every new trip stores the app's direction words ("SOUTH", "sb" -> "Southbound"), whichever
+  // path built it. Text that is not a known direction ("Downtown", "To SJ") is kept as typed.
+  const direction = typeof restTripData.direction === 'string'
+    ? (normalizeDirection(restTripData.direction) || null)
+    : (restTripData.direction ?? null);
   const docRef = await db.collection('trips').add({
     ...restTripData,
+    ...('direction' in restTripData ? { direction } : {}),
     startTime,
     endTime: null,
     source: tripData.source || 'sms',

@@ -438,4 +438,5 @@ module.exports = {
   parseEndTripFormat,
   parseAgencyOverride,
   isHeuristicLogValid,
+  looseDirection,
 };
