@@ -68,6 +68,44 @@ function stats(values) {
   return { n: s.length, median: percentile(s, 50), p25: percentile(s, 25), p75: percentile(s, 75), min: s[0], max: s[s.length - 1] };
 }
 
+// ---- Sparklines ----
+// Copies the look of Atlas's sparkline bars (src/components/charts/HourSpark.tsx and sparkParts.tsx): one narrow
+// rounded bar per column (60% of the column, 3 to 12 px wide, 2 px corners, 1 px gap), 90% opacity, at least 2 px tall,
+// empty columns left empty rather than drawn as zero, the tallest bar's value written above it in small bold text, a
+// dashed reference line in the dim text colour, and small dim labels under the first and last columns, hung from the edges.
+const SPARK_COL = { min: 5, max: 20 };
+/**
+ * values: one per column, oldest first; null leaves the column empty. Options: height (bar area, px), width (target
+ * px; columns stay 5 to 20 px), scaleMax (shared top for small multiples), ref (dashed line value), format, labels
+ * ([first, last] under the edges), titles (hover text per column), ariaLabel.
+ */
+function sparkline(values, { height = 64, width = 240, scaleMax, ref = null, format = v => String(v), labels = null, titles = [], ariaLabel = '' } = {}) {
+  const n = values.length;
+  if (!n) return '';
+  const col = Math.max(SPARK_COL.min, Math.min(SPARK_COL.max, width / n));
+  const w = col * n;
+  const top = 15; // room for the peak value
+  const bottomH = labels ? 16 : 0;
+  const shown = values.filter(v => v != null);
+  const max = Math.max(scaleMax ?? 0, ...shown, ref ?? 0) || 1;
+  const y = v => top + height - (Math.max(0, v) / max) * height;
+  const barW = Math.max(3, Math.min(12, (col - 1) * 0.6));
+  let peak = -1;
+  values.forEach((v, i) => { if (v != null && v > 0 && (peak < 0 || v > values[peak])) peak = i; });
+  const bars = values.map((v, i) => {
+    if (v == null) return '';
+    const h = Math.max(2, (Math.max(0, v) / max) * height);
+    const x = i * col + (col - 1 - barW) / 2;
+    const tip = titles[i] ? `<title>${esc(titles[i])}</title>` : '';
+    return `<rect x="${x.toFixed(1)}" y="${(top + height - h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="var(--accent)" opacity="0.9">${tip}</rect>`;
+  }).join('');
+  const refLine = ref != null ? `<line x1="0" x2="${w}" y1="${y(ref).toFixed(1)}" y2="${y(ref).toFixed(1)}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>` : '';
+  const anchorOf = i => (i < 2 ? ['start', i * col] : i > n - 3 ? ['end', (i + 1) * col - 1] : ['middle', i * col + (col - 1) / 2]);
+  const peakText = peak >= 0 ? (([a, x]) => `<text x="${x.toFixed(1)}" y="${(y(values[peak]) - 3).toFixed(1)}" text-anchor="${a}" class="spark-peak">${esc(format(values[peak]))}</text>`)(anchorOf(peak)) : '';
+  const under = labels ? `<text x="0" y="${top + height + 14}" text-anchor="start" class="spark-label">${esc(labels[0])}</text>${n > 1 && labels[1] ? `<text x="${w - 1}" y="${top + height + 14}" text-anchor="end" class="spark-label">${esc(labels[1])}</text>` : ''}` : '';
+  return `<svg class="spark" width="${w}" height="${top + height + bottomH}" viewBox="0 0 ${w} ${top + height + bottomH}" role="img" aria-label="${esc(ariaLabel)}">${refLine}${bars}${peakText}${under}</svg>`;
+}
+
 /** "HIGHWAY 407 STATION" reads as "Highway 407 Station"; mixed-case names stay as typed. */
 function displayName(label) {
   const text = stationBaseName(String(label || '').trim());
@@ -106,6 +144,7 @@ function localDateTime(trip) {
   if (!d) return '';
   return d.toLocaleString('en-CA', { timeZone: TS.storedTripTimeZone(trip), dateStyle: 'medium', timeStyle: 'short' });
 }
+const shortDay = dayKey => new Date(`${dayKey}T12:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', dateStyle: 'medium' });
 const prettyDay = dayKey => new Date(`${dayKey}T12:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', dateStyle: 'long' });
 
 // ---- Data ----
@@ -260,6 +299,19 @@ function analyze(allTrips, resolver) {
     .map(r => ({ ...r, s: stats(r.trips.map(t => t._min)) }))
     .sort((a, b) => b.s.median - a.s.median);
 
+  // Trips per month: every month from the first trip to the last, overall and for each route that passes the threshold.
+  const monthKeys = Object.keys(byDate.byMonth).sort();
+  const months = [];
+  if (monthKeys.length) {
+    let [y, m] = monthKeys[0].split('-').map(Number);
+    const [ly, lm] = monthKeys[monthKeys.length - 1].split('-').map(Number);
+    while (y < ly || (y === ly && m <= lm)) { months.push(`${y}-${String(m).padStart(2, '0')}`); if (++m > 12) { m = 1; y++; } }
+  }
+  const routeMonths = routeLengths.map(x => {
+    const byMonth = TS.tripsByDate(counted.filter(t => (TS.tripAgency(t) || '') === x.agency && routeFamily(t.route) === x.route)).byMonth;
+    return { agency: x.agency, route: x.route, n: Object.values(byMonth).reduce((a, b) => a + b, 0), byMonth };
+  }).sort((a, b) => b.n - a.n);
+
   // Away from home (trips in another time zone), grouped by agency
   const away = new Map();
   counted.filter(t => TS.storedTripTimeZone(t) !== homeZone && t.timezone).forEach(t => {
@@ -279,6 +331,7 @@ function analyze(allTrips, resolver) {
     first: dated[0], last: dated[dated.length - 1], daysRidden: byDate.daysRidden,
     agencies, routes, topRoutes, topStops, countries, best, busiestDay, busiestMonth, weekdays, hourCounts, peakHour,
     agencyFirsts, regular, steadiest, leastSteady, timeOfDay, routeLengths, awayRows,
+    months, byMonth: byDate.byMonth, routeMonths,
   };
 }
 
@@ -325,6 +378,27 @@ function render(r) {
 
   const routeLens = table(['Route', 'Timed trips', 'Typical ride', 'Middle half'], r.routeLengths.slice(0, 15).map(x => [routeName(x), fmtInt(x.s.n), mins(x.s.median), range(x.s)]));
 
+  const monthName = (k, style = 'short') => new Date(`${k}-15T12:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', month: style, year: 'numeric' });
+  const monthEdges = r.months.length ? [monthName(r.months[0]), monthName(r.months[r.months.length - 1])] : null;
+  const monthSpark = (byMonth, opts) => sparkline(r.months.map(k => byMonth[k] || null), {
+    format: fmtInt, labels: monthEdges, titles: r.months.map(k => `${monthName(k, 'long')}: ${plural(byMonth[k] || 0, 'trip')}`), ...opts,
+  });
+  const monthsOverall = monthSpark(r.byMonth, { height: 64, width: 560, ariaLabel: 'Trips per month, all routes' });
+  const routeScale = Math.max(0, ...r.routeMonths.flatMap(x => Object.values(x.byMonth)));
+  const monthsByRoute = table(['Route', 'Trips', 'Trips per month'], r.routeMonths.map(x => [
+    routeName(x), fmtInt(x.n), monthSpark(x.byMonth, { height: 38, width: 240, scaleMax: routeScale, ariaLabel: `Trips per month on ${x.agency} ${x.route}` }),
+  ]));
+
+  const timesOverTime = table(['Trip', 'Typical', 'Each trip, oldest first'], r.regular.map(p => {
+    const inOrder = [...p.trips].sort((a, b) => toDate(a.startTime) - toDate(b.startTime));
+    return [pairName(p), `${mins(p.s.median)}<br><span class="note">${p.s.n} trips</span>`, sparkline(inOrder.map(t => t._min), {
+      height: 38, width: 240, ref: p.s.median, format: mins,
+      labels: [inOrder[0], inOrder[inOrder.length - 1]].map(t => (t._day ? shortDay(t._day.dayKey) : '')),
+      titles: inOrder.map(t => `${localDateTime(t)}: ${mins(t._min)}`),
+      ariaLabel: `Trip times for ${p.agency} ${p.route}, ${p.from} to ${p.to}, oldest first; dashed line is the typical time`,
+    })];
+  }));
+
   const away = table(['Agency', 'Country or time zone', 'Trips', 'Days', 'Routes', 'When', 'Typical ride'], r.awayRows.map(x => [
     esc(x.agency), esc(x.country || x.zone), fmtInt(x.n), fmtInt(x.days), fmtInt(x.routes),
     x.from === x.to ? esc(prettyDay(x.from)) : `${esc(prettyDay(x.from))} to ${esc(prettyDay(x.to))}`,
@@ -348,6 +422,10 @@ function render(r) {
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { color: var(--muted); font-weight: 600; }
   .scroll { overflow-x: auto; }
+  .spark { display: block; overflow: visible; }
+  .spark-peak { font-size: 12px; font-weight: 700; fill: var(--fg); opacity: 0.8; }
+  .spark-label { font-size: 12px; fill: var(--muted); }
+  td .spark { margin-top: 2px; }
 </style></head><body><main>
 <h1>Trip insights</h1>
 <p class="note">Generated ${esc(new Date().toLocaleString('en-CA', { timeZone: r.homeZone, dateStyle: 'long', timeStyle: 'short' }))} from ${fmtInt(r.counted)} logged trips. Private: personal trip data, not for sharing as is.</p>
@@ -362,12 +440,14 @@ ${section('Totals', totals)}
 <div class="scroll">${section('Most-ridden routes', topRoutes, 'Branches like 510A and 510B are listed separately here.')}</div>
 <div class="scroll">${section('Most-used stops and stations', topStops)}</div>
 <div class="scroll">${section('Agencies', topAgencies)}</div>
+<div class="scroll">${section('Trips per month', `${monthsOverall}${monthsByRoute}`, `All trips, then each route with at least ${MIN_ROUTE_TRIPS} timed trips. The route charts share one scale so their bars compare; the number over each chart is its busiest month. Hover a bar for the month.`)}</div>
 ${section('Streaks and busy stretches', streaks)}
 <div class="scroll">${section('Firsts with each agency', firsts, `Agencies with at least ${MIN_FINDING_TRIPS} trips, oldest first.`)}</div>
 ${section('Steadiest regular trips', steady, 'Trips whose time barely changes, compared by how wide the middle half is next to the typical time.')}
 ${section('Least predictable regular trips', unsteady)}
 ${section('Biggest time-of-day differences on the same trip', tod)}
 <div class="scroll">${section('Fastest and slowest on regular trips', extremes, 'The 15 most-repeated trips between two stops.')}</div>
+<div class="scroll">${section('Trip times over time', timesOverTime, `Every regular trip between two stops (${MIN_ROUTE_TRIPS}+ timed trips), one bar per trip in date order. The dashed line is the typical time; the number over each chart is the slowest trip. Hover a bar for its date.`)}</div>
 <div class="scroll">${section('Longest typical rides by route', routeLens, 'Any start and end stop on that route.')}</div>
 <div class="scroll">${section('Trips away from home', away, `Trips logged in a time zone other than ${esc(r.homeZone)}, by agency. The app doesn't store a city, so agency and country stand in for it.`)}</div>
 </main></body></html>
