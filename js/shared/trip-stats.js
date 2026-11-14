@@ -294,15 +294,42 @@ export function countCountries(trips) {
         .filter(Boolean)).size;
 }
 
+/**
+ * Route counts keyed by label, where labels that differ only by letter case are one route
+ * ("510a" counts with "510A"). Branches and wording stay apart: 510A and 510B are two routes,
+ * and "510 Shuttle" is not 510. A number with a letter suffix is shown with the letter
+ * uppercased (510A); any other label is shown the way it was most often typed.
+ */
+export function routeCounts(routes) {
+    const groups = new Map();
+    (routes || []).forEach(route => {
+        const typed = String(route).trim();
+        if (!typed) return;
+        const key = typed.toLowerCase();
+        if (!groups.has(key)) groups.set(key, { count: 0, spellings: new Map() });
+        const group = groups.get(key);
+        group.count++;
+        group.spellings.set(typed, (group.spellings.get(typed) || 0) + 1);
+    });
+    const counts = {};
+    groups.forEach(({ count, spellings }) => {
+        let label = [...spellings.entries()].sort((a, b) => b[1] - a[1])[0][0];
+        const branch = label.match(/^(\d+)([a-z]+)$/i);
+        if (branch) label = branch[1] + branch[2].toUpperCase();
+        counts[label] = count;
+    });
+    return counts;
+}
+
 /** Trips per route, most first, and how many trips have no route. */
 export function tripsByRoute(trips) {
-    const counts = {};
+    const routes = [];
     let withoutRoute = 0;
     (trips || []).forEach(trip => {
-        if (trip.route) tally(counts, String(trip.route));
+        if (trip.route && String(trip.route).trim()) routes.push(trip.route);
         else withoutRoute++;
     });
-    return { counts: sortedCounts(counts), withoutRoute };
+    return { counts: sortedCounts(routeCounts(routes)), withoutRoute };
 }
 
 export function countRoutes(trips) {

@@ -62,6 +62,14 @@ test('top route and route count come from the last 30 days', () => {
   assert.deepEqual(stats.topRoute, ['510', 2]);
 });
 
+test('route labels that differ only by case are one route; branches stay apart', () => {
+  const stats = recentRideStats([
+    trip(1, { route: '510a' }), trip(2, { route: '510A' }), trip(3, { route: '510a' }), trip(4, { route: '510B' }),
+  ], [], NOW);
+  assert.equal(stats.routeCount, 2);
+  assert.deepEqual(stats.topRoute, ['510A', 3]);
+});
+
 test('ignores negative durations', () => {
   const stats = recentRideStats([trip(1, { duration: -5 }), trip(2, { duration: 12 })], [], NOW);
   assert.equal(stats.totalMinutes, 12);

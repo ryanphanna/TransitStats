@@ -23,6 +23,7 @@ Keep reusable scripts here. Do not create a second top-level scripts folder unle
 - `retro-verify.js`
 - `backfill-atlas-stops.js` — dry-run-first repair: add missing Atlas stops and mark fully-resolved trips matched (undo file on `--apply`)
 - `audit-unresolved.js`
+- `repair-trip-directions.js` — dry-run-first repair: turn stored direction typos ("SOUTH", "Northq") into app directions and mark unmarked zero-length trips incomplete (undo file on `--apply`)
 
 ## Prediction and Intelligence
 

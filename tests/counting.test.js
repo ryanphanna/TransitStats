@@ -145,6 +145,18 @@ describe('canonical agency names', () => {
     });
 });
 
+describe('route labels', () => {
+    const trips = ['510A', '510a', '510a', '510B', '510b', '510', '510 Short TURN', '510 short turn', '510 Shuttle', 'Line 1', 'line 1', 'Line 1', '', null]
+        .map(route => ({ route }));
+
+    it('counts labels that differ only by case as one route, keeping branches and wording apart', () => {
+        expect(tripsByRoute(trips)).toEqual({
+            counts: [['510A', 3], ['Line 1', 3], ['510B', 2], ['510 Short TURN', 2], ['510', 1], ['510 Shuttle', 1]],
+            withoutRoute: 2,
+        });
+    });
+});
+
 describe('calendar days across a clock change', () => {
     // Toronto, 8 March 2026: 02:00 EST jumps to 03:00 EDT (a 23-hour day).
     // Toronto, 1 November 2026: 02:00 EDT falls back to 01:00 EST (a 25-hour day).

@@ -2,7 +2,7 @@
  * Figures for the STATS text reply, counted with the shared trip rule
  * (countedRides in trip-stats), the same one the dashboard and ASK use.
  */
-const { countedRides, finishedTrips, tripStartDate } = require('./trip-stats');
+const { countedRides, finishedTrips, routeCounts, tripStartDate } = require('./trip-stats');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -23,10 +23,8 @@ function recentRideStats(loggedTrips, prestoTrips, now = new Date()) {
     .map(({ ride }) => ride);
 
   const last30 = aged(0, 30);
-  const routeCounts = {};
-  for (const ride of last30) {
-    if (ride.route) routeCounts[ride.route] = (routeCounts[ride.route] || 0) + 1;
-  }
+  // Labels that differ only by case ("510a", "510A") are one route, as on the dashboard.
+  const routesLast30 = routeCounts(last30.map(ride => ride.route).filter(Boolean));
 
   return {
     total: rides.length,
@@ -34,9 +32,9 @@ function recentRideStats(loggedTrips, prestoTrips, now = new Date()) {
     prevWeekCount: aged(7, 14).length,
     monthCount: last30.length,
     prevMonthCount: aged(30, 60).length,
-    routeCount: Object.keys(routeCounts).length,
+    routeCount: Object.keys(routesLast30).length,
     totalMinutes: finishedTrips(last30).reduce((sum, ride) => sum + ride.duration, 0),
-    topRoute: Object.entries(routeCounts).sort((x, y) => y[1] - x[1])[0],
+    topRoute: Object.entries(routesLast30).sort((x, y) => y[1] - x[1])[0],
   };
 }
 

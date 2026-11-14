@@ -23,6 +23,7 @@ const {
 } = require('./db');
 const { getConfiguredPrimaryAgency } = require('./primary-agency');
 const { PredictionEngine } = require('./predict.js');
+const { PredictionEngineV3 } = require('./predict_v3');
 
 // PredictionEngine is a module-level singleton shared by every request on this instance, and
 // texts are handled concurrently. Per-request data (stops library, network graph) goes on a
@@ -564,6 +565,19 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
 /**
  * Handle ending a trip
  */
+/**
+ * Whether the route typed with END fits the open trip: the same route in any case, or the base
+ * route of a branch ("END 510" ends a 510A or 510B trip). A branch never ends a different branch
+ * or the plain route ("END 510A" does not end a 510B or 510 trip).
+ */
+function endRouteMatches(activeRoute, typedRoute) {
+  const active = String(activeRoute ?? '').trim().toLowerCase();
+  const typed = String(typedRoute ?? '').trim().toLowerCase();
+  if (!active || !typed) return false;
+  if (active === typed) return true;
+  return /^\d+$/.test(typed) && PredictionEngineV3._baseRoute(active) === typed;
+}
+
 async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification = null, notes = null, traceId = null) {
   const activeTrip = await getActiveTrip(user.userId);
   const unconfirmed = !isPhoneConfirmed(user);
@@ -581,9 +595,7 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
   }
 
   if (routeVerification) {
-    const activeRoute = activeTrip.route.toString().toLowerCase();
-    const verifyRoute = routeVerification.toString().toLowerCase();
-    if (activeRoute !== verifyRoute) {
+    if (!endRouteMatches(activeTrip.route, routeVerification)) {
       await sendSmsReply(
         phoneNumber,
         text.routeMismatch(getRouteDisplay(activeTrip.route, activeTrip.direction), routeVerification),
@@ -781,6 +793,7 @@ async function recomputeAndUpdatePrimaryAgency(userId, dbClient = null) {
 
 module.exports = {
   determineStaleness,
+  endRouteMatches,
   handleTripLog,
   handleConfirmStart,
   handleEndTrip,

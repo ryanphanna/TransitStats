@@ -10,6 +10,9 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ### Texting
 
+- **"END 510" now ends an open 510A or 510B trip.** It used to reply that the routes didn't match. A branch still never ends a different branch.
+- **Route counts treat "510a" and "510A" as one route** on the dashboard, in ASK and in the STATS reply, instead of listing the same route twice. Branches (510A, 510B) and labels like "510 Shuttle" still count separately.
+- **Every new trip saves its direction in the app's standard form**, whichever way the text was read: "SOUTH", "North" or "WB" are stored as Southbound, Northbound and Westbound instead of as typed, so the same direction no longer splits into several. Destination-style directions like "Downtown" are still kept as typed.
 - **Trip texts, ASK answers and time-zone lookups now run on Claude** instead of Gemini, the pick from a side-by-side test on real messages. Stop-sign photos still use Gemini.
 - **ASK replies stay plain text and never say "I"**, including when the message isn't really a question.
 - **ASK can answer questions about transit agencies**, such as how many you have ridden or which you ride most. It used to guess from stop names.
