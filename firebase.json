@@ -164,6 +164,10 @@
           "destination": "/route-heatmap.html"
         },
         {
+          "source": "/trip-times",
+          "destination": "/trip-times.html"
+        },
+        {
           "source": "**",
           "destination": "/index.html"
         }

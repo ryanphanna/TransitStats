@@ -287,7 +287,7 @@ async function init() {
         user = auth.user;
         setStatus('Loading your trips…');
         await Profile.load(user);
-        initHeader({ currentPage: 'recap', showRecap: true });
+        initHeader({ currentPage: 'recap', showRecap: true, showTripTimes: true });
     }
 
     fitToViewport();

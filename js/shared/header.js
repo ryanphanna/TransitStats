@@ -6,11 +6,11 @@ import { refreshIcons } from './icons.js';
  * Shared Header Component
  * Injects navigation into the page.
  */
-export function initHeader({ currentPage = '', profileHref = '', shareAction = false, showRecap = false } = {}) {
-    _render(currentPage, profileHref, shareAction, showRecap);
+export function initHeader({ currentPage = '', profileHref = '', shareAction = false, showRecap = false, showTripTimes = false } = {}) {
+    _render(currentPage, profileHref, shareAction, showRecap, showTripTimes);
 }
 
-function _render(currentPage, profileHref, shareAction, showRecap) {
+function _render(currentPage, profileHref, shareAction, showRecap, showTripTimes) {
     const root = document.getElementById('app-root');
     if (!root) return;
 
@@ -32,6 +32,10 @@ function _render(currentPage, profileHref, shareAction, showRecap) {
                     ${showRecap ? `
                         <a href="/recap" class="header-action-link ${currentPage === 'recap' ? 'active' : ''}" title="Recap">
                             <span>Recap</span>
+                        </a>` : ''}
+                    ${showTripTimes ? `
+                        <a href="/trip-times" class="header-action-link ${currentPage === 'trip-times' ? 'active' : ''}" title="Trip times">
+                            <span>Trip times</span>
                         </a>` : ''}
                     ${profileHref ? `
                         <a href="${profileHref}" class="header-action-link ${currentPage === 'profile' ? 'active' : ''}" title="Profile">

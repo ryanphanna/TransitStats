@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Google Analytics 4: anonymous product-usage measurement only. Skipped for internal sessions
+         (localhost, ?ts_internal=1, or the ts.internal-test flag). Keep identical across pages (tests/ga-internal.test.js). -->
+    <script>
+        (function () {
+            var ID = 'G-Z8L60LPC8G', internal = false, flagged = false;
+            try {
+                var h = location.hostname, q = new URLSearchParams(location.search);
+                flagged = q.get('ts_internal') === '1';
+                if (flagged) localStorage.setItem('ts.internal-test', '1');
+                internal = h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1' || flagged || localStorage.getItem('ts.internal-test') === '1';
+                if (q.has('ts_internal')) {
+                    q.delete('ts_internal');
+                    var s = q.toString();
+                    history.replaceState(history.state, '', location.pathname + (s ? '?' + s : '') + location.hash);
+                }
+            } catch (e) { internal = internal || flagged; }
+            if (internal) { window['ga-disable-' + ID] = true; return; }
+            window.dataLayer = window.dataLayer || [];
+            window.gtag = function () { dataLayer.push(arguments); };
+            gtag('js', new Date());
+            gtag('config', ID);
+            var el = document.createElement('script');
+            el.async = true;
+            el.src = 'https://www.googletagmanager.com/gtag/js?id=' + ID;
+            document.head.appendChild(el);
+        })();
+    </script>
+    <title>TransitStats — Trip Times</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="stylesheet" href="styles/pages/trip-times.css">
+</head>
+<body class="trip-times-surface">
+    <main id="app-root">
+        <section class="trip-times-view" aria-labelledby="trip-times-title">
+            <div class="trip-times-card">
+                <p class="eyebrow">Your TransitStats</p>
+                <h1 id="trip-times-title">Trip times</h1>
+                <p class="trip-times-lede">How long your trips take between the same two stops, and how that changes through the day.</p>
+
+                <div class="trip-times-picker">
+                    <label>
+                        <span>Route</span>
+                        <select id="trip-times-route" disabled></select>
+                    </label>
+                    <label>
+                        <span>From</span>
+                        <select id="trip-times-start" disabled></select>
+                    </label>
+                    <label>
+                        <span>To</span>
+                        <select id="trip-times-end" disabled></select>
+                    </label>
+                </div>
+
+                <p id="trip-times-status" class="trip-times-status" role="status" aria-live="polite">Loading your trips…</p>
+
+                <div id="trip-times-results" hidden>
+                    <div class="trip-times-headline">
+                        <div class="atlas-hero-count"><strong id="trip-times-median">–</strong><span>minutes, typical</span></div>
+                        <p id="trip-times-count" class="trip-times-count"></p>
+                    </div>
+                    <div class="atlas-period-grid trip-times-facts">
+                        <div class="atlas-fact atlas-fact-week"><strong id="trip-times-middle">–</strong><span>middle half, minutes</span></div>
+                        <div class="atlas-fact atlas-fact-month"><strong id="trip-times-fastest">–</strong><span>fastest, minutes</span></div>
+                        <div class="atlas-fact atlas-fact-countries"><strong id="trip-times-slowest">–</strong><span>slowest, minutes</span></div>
+                    </div>
+
+                    <div class="trip-times-section">
+                        <h2>By time of day</h2>
+                        <ul id="trip-times-buckets" class="trip-times-buckets"></ul>
+                        <p id="trip-times-buckets-empty" class="trip-times-note" hidden>Not enough trips yet at any one time of day. Each time of day needs at least 3 trips.</p>
+                    </div>
+                    <p id="trip-times-note" class="trip-times-note"></p>
+                </div>
+            </div>
+        </section>
+    </main>
+    <script type="module" src="js/pages/trip-times.js"></script>
+</body>
+</html>

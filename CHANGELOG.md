@@ -19,6 +19,10 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **The STATS reply counts trips the same way as the dashboard and ASK.** It used to count only trips with an exit stop and skip imported PRESTO rides, so its 7-day and 30-day numbers could come out lower.
 - **The dashboard, public profile and ASK now give the same totals.** They used to count with separate code, so the same question could get different numbers. ASK now includes imported PRESTO rides the same way the dashboard does.
 
+### Map and dashboard
+
+- **New Trip times page** shows how long your trips take on one route between the same two stops: the typical time, the middle half, the fastest and slowest, and the typical time by time of day. Platform stops count as their station, and route variants like 510A ride with 510.
+
 ### Fixes
 
 - **GO Transit shows up once** in the agency list, and imported PRESTO rides use the same name as texted trips.

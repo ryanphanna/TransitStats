@@ -157,27 +157,8 @@ function getStopCandidateKey(candidate) {
   return `${nameKey}|${direction.toLowerCase()}`;
 }
 
-// "X Station - Northbound Platform", "X Station (Platform 2)", "X Station Platform 1": a platform
-// belongs to its parent station. Only an explicit "platform" suffix counts, so ordinary stop names
-// (and genuinely different stops) are never shortened.
-const PLATFORM_SUFFIX = /\s*[-\u2013\u2014,(]?\s*(?:(?:north|south|east|west)bound\s+)?platform(?:\s+[a-z0-9]+)?\)?\s*$/i;
-
-/** The station a platform record belongs to ("College Station - Northbound Platform" -> "College Station"). */
-function stationBaseName(label) {
-  const text = (label || '').toString().trim();
-  const base = text.replace(PLATFORM_SUFFIX, '').trim();
-  return base && base !== text ? base : text;
-}
-
-function isPlatformRecord(label) {
-  const text = (label || '').toString().trim();
-  return PLATFORM_SUFFIX.test(text) && stationBaseName(text) !== text;
-}
-
-/** Punctuation/spacing/case-insensitive identity of a stop's station name. */
-function stopNameKey(label) {
-  return stationBaseName(label).toLowerCase().replace(/[^a-z0-9]/g, '');
-}
+// Station names (platform records belong to their parent station) are shared with the web app.
+const { stationBaseName, isPlatformRecord, stopNameKey } = require('./station-names');
 
 /**
  * Collapse duplicate stop records of the same station: punctuation-only twins, and platform

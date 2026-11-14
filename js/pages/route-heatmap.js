@@ -103,7 +103,7 @@ async function init() {
     const { user, isAdmin } = await requireAuth();
     // Exit guesses for trips with no exit recorded are admin-only.
     MapEngine.setShowEstimatedExits(isAdmin === true);
-    initHeader({ currentPage: 'route-heatmap', showRecap: true });
+    initHeader({ currentPage: 'route-heatmap', showRecap: true, showTripTimes: true });
 
     TripController.listen(user.uid, trips => {
         MapEngine.updateTrips(trips);
