@@ -16,8 +16,9 @@
  *   node Tools/repair-trip-directions.js --apply              # writes undo file, then applies
  * Options: --key <service-account.json>  --user <uid>  --undo-dir <dir>  --verbose
  *
- * Key default: ~/Developer/Credentials/Firebase for TransitStats.json. Without it, a dry run falls back
- * to the gcloud application-default login (read-only use). --apply requires the key.
+ * Key default: ~/Developer/Credentials/Firebase for TransitStats.json. Without it, the script uses the
+ * gcloud application-default login (`gcloud auth application-default login`) through firebase-admin,
+ * for both the dry run and --apply; writes then need that login to have write access.
  */
 const fs = require('fs');
 const os = require('os');
@@ -57,14 +58,13 @@ async function main() {
   const { initializeApp, cert, applicationDefault } = fromFunctions('firebase-admin/app');
   const { getFirestore } = fromFunctions('firebase-admin/firestore');
   const haveKey = fs.existsSync(KEY_PATH);
-  if (APPLY && !haveKey) throw new Error(`--apply needs the admin key at ${KEY_PATH} (or pass --key).`);
   initializeApp(haveKey
     ? { credential: cert(JSON.parse(fs.readFileSync(KEY_PATH, 'utf8'))) }
     : { credential: applicationDefault(), projectId: PROJECT_ID });
   const db = getFirestore();
 
   console.log(APPLY ? '[APPLY]' : '[DRY RUN] No writes will be made.');
-  if (!haveKey) console.log('(No admin key found; reading with the gcloud login.)');
+  if (!haveKey) console.log('(No admin key found; using the gcloud application-default login.)');
 
   const query = ONLY_USER ? db.collection('trips').where('userId', '==', ONLY_USER) : db.collection('trips');
   const snap = await query.get();

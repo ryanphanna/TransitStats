@@ -1987,3 +1987,43 @@ test('handleTripLog: two texts handled at once each predict with their own stops
     assert.equal(s.graph, graphFor.uB);
   }
 });
+
+test('endRouteMatches: a base route ends its branches, a branch never ends another branch', () => {
+  const { endRouteMatches } = require('./lib/handlers-trip');
+  assert.equal(endRouteMatches('510A', '510'), true);
+  assert.equal(endRouteMatches('510b', '510'), true);
+  assert.equal(endRouteMatches('510a', '510A'), true);
+  assert.equal(endRouteMatches('510', '510'), true);
+  assert.equal(endRouteMatches('Line 1', 'line 1'), true);
+  assert.equal(endRouteMatches('510B', '510A'), false);
+  assert.equal(endRouteMatches('510', '510A'), false);
+  assert.equal(endRouteMatches('5100', '510'), false);
+  assert.equal(endRouteMatches('504', '510'), false);
+});
+
+test('handleEndTrip: END 510 closes an open 510A trip; END 510B does not', async () => {
+  const trip = habitActiveTrip({ route: '510A' });
+  const run = async (route) => {
+    const looked = [];
+    const { handlers, calls, restore } = loadHandlers({
+      dbModule: {
+        getActiveTrip: async () => trip,
+        lookupStop: async (_code, stopName) => { looked.push(stopName); return null; },
+        findMatchingStops: async (name) => { looked.push(name); return []; },
+      },
+    });
+    try {
+      await handlers.handleEndTrip('+14165550032', { userId: 'u32' }, 'Spadina Station', route);
+    } finally {
+      restore();
+    }
+    return { looked, calls };
+  };
+  const base = await run('510');
+  assert.ok(base.looked.includes('Spadina Station'), 'END 510 goes on to end the 510A trip');
+  assert.ok(base.calls.docUpdates.some(u => u.endTime), 'trip gets an end time');
+  const other = await run('510B');
+  assert.deepEqual(other.looked, []);
+  assert.ok(!other.calls.docUpdates.some(u => u.endTime));
+  assert.match(other.calls.sendSmsReply[0].message, /510B/);
+});

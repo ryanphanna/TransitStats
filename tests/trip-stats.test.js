@@ -71,7 +71,8 @@ describe('dashboard and public profile give the same totals', () => {
             totalHours: 2,
             // TTC, ttc and " TTC " are one agency; GO and MiWay are the others.
             agencies: 3,
-            routes: 4,
+            // "501" and "501 " are one route.
+            routes: 3,
             countries: 1,
         });
     });
