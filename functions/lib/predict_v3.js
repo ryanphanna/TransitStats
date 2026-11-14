@@ -19,9 +19,10 @@ let _topology = null;
 try { _topology = require('./topology.json'); } catch (e) { /* topology filter disabled */ }
 
 const { NetworkEngine } = require('./network');
+const { canonicalAgency } = require('./agency-aliases');
 const TopologyConstraints = require('./topology-constraints');
 
-// Normalized stop name -> canonical name, keyed by stops-library array.
+// Normalized stop name -> [{ canonical, agencies }] in library order, keyed by stops-library array.
 const _stopIndexByLibrary = new WeakMap();
 const _EMPTY_LIBRARY = [];
 
@@ -76,7 +77,7 @@ const PredictionEngineV3 = {
     const stopName = context.stopName ? context.stopName.trim().toLowerCase() : null;
 
     let candidates = stopName
-      ? history.filter(t => this._isValidTrip(t) && this._stopMatch(t.startStopName, stopName))
+      ? history.filter(t => this._isValidTrip(t) && this._stopMatch(t.startStopName, stopName, t.agency, context.agency))
       : history.filter(t => this._isValidTrip(t));
 
     if (context.agency) {
@@ -92,9 +93,10 @@ const PredictionEngineV3 = {
     }
 
     // Determine sequence context
-    const atTransferPoint = context.lastEndStopName 
-      ? this._stopMatch(context.lastEndStopName, stopName)
-      : (this._getLastRecentTrip(history, now) && this._stopMatch(this._getLastRecentTrip(history, now).endStopName, stopName));
+    const lastRecentTrip = context.lastEndStopName ? null : this._getLastRecentTrip(history, now);
+    const atTransferPoint = context.lastEndStopName
+      ? this._stopMatch(context.lastEndStopName, stopName, context.agency)
+      : (lastRecentTrip && this._stopMatch(lastRecentTrip.endStopName, stopName, lastRecentTrip.agency, context.agency));
 
     const ridesAfterMap = this._computeRidesAfter(history);
 
@@ -184,7 +186,7 @@ const PredictionEngineV3 = {
       return true;
     });
 
-    const sameStart = t => this._stopMatch(t.startStopName, startStopName);
+    const sameStart = t => this._stopMatch(t.startStopName, startStopName, t.agency, context.agency);
     const sameFamily = t => this._baseRoute(t.route) === routeFamily;
     const preferDirection = list => {
       if (!normDir) return list;
@@ -194,7 +196,7 @@ const PredictionEngineV3 = {
       });
       return withDir.length > 0 ? withDir : list;
     };
-    const notBoardingStop = t => !this._stopMatch(t.endStopName, startStopName);
+    const notBoardingStop = t => !this._stopMatch(t.endStopName, startStopName, t.agency, context.agency);
 
     // Tier 1 (exact, the only tier before 3.5.0): same route family from the same boarding stop.
     // Backoff tiers fill in only when an earlier tier has no topology-legal candidates, so
@@ -215,15 +217,15 @@ const PredictionEngineV3 = {
       let candidates = select();
       if (candidates.length === 0) continue;
       // Pre-filter: remove trips that ended at a physically impossible stop.
-      candidates = this._preFilterCandidatesByTopology(candidates, context.route, startStopName, context.direction);
+      candidates = this._preFilterCandidatesByTopology(candidates, context.route, startStopName, context.direction, context.agency);
       if (candidates.length === 0) continue;
 
       if (atTransferPoint === null) {
         // Determine sequence context
         const lastRecent = context.lastEndStopName ? null : this._getLastRecentTrip(history, now);
         atTransferPoint = context.lastEndStopName
-          ? this._stopMatch(context.lastEndStopName, startStopName)
-          : !!(lastRecent && this._stopMatch(lastRecent.endStopName, startStopName));
+          ? this._stopMatch(context.lastEndStopName, startStopName, context.agency)
+          : !!(lastRecent && this._stopMatch(lastRecent.endStopName, startStopName, lastRecent.agency, context.agency));
         ridesAfterMap = this._computeRidesAfter(history);
       }
 
@@ -269,7 +271,7 @@ const PredictionEngineV3 = {
         (context.duration && trip.duration ? this._durationSimilarity(context.duration, trip.duration) : 1.0) *
         (atTransferPoint ? this.CONFIG.SEQUENCE_BOOST : 1.0);
 
-      const key = this._canonicalizeStop(trip.endStopName);
+      const key = this._canonicalizeStop(trip.endStopName, trip.agency || context.agency);
       if (!votes[key]) votes[key] = { stop: trip.endStopName, weight: 0 };
       votes[key].weight += weight;
       totalWeight += weight;
@@ -334,9 +336,10 @@ const PredictionEngineV3 = {
   },
 
   /**
-   * Normalized name/alias -> canonical name for the current stops library. Rebuilt whenever
-   * stopsLibrary is replaced; the first library entry that lists a name wins, as a linear
-   * find() over the library would.
+   * Normalized name/alias -> every library entry that lists it, in library order, as
+   * [{ canonical, agencies }]. Rebuilt whenever stopsLibrary is replaced. The same name can
+   * belong to stops at different agencies (TTC and LA Metro both have a "Union Station"), so
+   * lookups pick by agency in _lookupStop rather than taking the first entry.
    */
   _stopIndex: function () {
     // Cached per library array (not on the engine), so per-request engines built with
@@ -347,11 +350,18 @@ const PredictionEngineV3 = {
       index = new Map();
       for (const s of library) {
         if (!s || !s.name) continue;
-        const canonical = this._normStopName(s.name);
+        const entry = {
+          canonical: this._normStopName(s.name),
+          agencies: new Set([s.agency, ...(s.agencies || [])].filter(Boolean).map(a => this._agencyKey(a))),
+        };
+        const seen = new Set();
         for (const c of [s.name, ...(s.aliases || [])]) {
           if (!c) continue;
           const key = this._normStopName(c);
-          if (!index.has(key)) index.set(key, canonical);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          if (!index.has(key)) index.set(key, []);
+          index.get(key).push(entry);
         }
       }
       _stopIndexByLibrary.set(library, index);
@@ -367,19 +377,43 @@ const PredictionEngineV3 = {
     return this._stopIndex().has(this._normStopName(name.toString()));
   },
 
-  /**
-   * Resolve a stop name to its canonical form using the stops library.
-   */
-  _canonicalizeStop: function (name) {
-    if (!name) return null;
-    const lower = this._normStopName(name);
-    const index = this._stopIndex();
-    return index.has(lower) ? index.get(lower) : lower;
+  _agencyKey: function (agency) {
+    return canonicalAgency(agency.toString()).toLowerCase();
   },
 
-  _stopMatch: function (a, b) {
+  /**
+   * Library entry for a normalized name: the first one at the given agency, or, when that agency
+   * has no stop by this name (or the agency is unknown), the first entry at any agency.
+   */
+  _lookupStop: function (key, agency) {
+    const entries = this._stopIndex().get(key);
+    if (!entries) return null;
+    if (agency) {
+      const want = this._agencyKey(agency);
+      const own = entries.find(e => e.agencies.has(want));
+      if (own) return own;
+    }
+    return entries[0];
+  },
+
+  /**
+   * Resolve a stop name to its canonical form using the stops library, preferring a stop at
+   * the trip's agency so a name shared across agencies (e.g. "Union Station") stays local.
+   */
+  _canonicalizeStop: function (name, agency) {
+    if (!name) return null;
+    const lower = this._normStopName(name);
+    const entry = this._lookupStop(lower, agency);
+    return entry ? entry.canonical : lower;
+  },
+
+  /**
+   * Same stop after canonicalization. agencyA/agencyB are the agencies of the trips each name
+   * came from; agencyB defaults to agencyA.
+   */
+  _stopMatch: function (a, b, agencyA, agencyB) {
     if (!a || !b) return false;
-    return this._canonicalizeStop(a) === this._canonicalizeStop(b);
+    return this._canonicalizeStop(a, agencyA) === this._canonicalizeStop(b, agencyB ?? agencyA);
   },
 
   _sameAgency: function (a, b) {
@@ -452,15 +486,16 @@ const PredictionEngineV3 = {
    * @param {string} route
    * @param {string} boardingStop
    * @param {string} direction
+   * @param {string} [agency] - the trip's agency, for stop-name canonicalization
    * @returns {Array}
    */
-  _preFilterCandidatesByTopology: function (candidates, route, boardingStop, direction) {
+  _preFilterCandidatesByTopology: function (candidates, route, boardingStop, direction, agency) {
     if (!boardingStop || !direction) return candidates;
 
-    const constraint = this.getEndStopConstraint({ route, startStopName: boardingStop, direction });
+    const constraint = this.getEndStopConstraint({ route, startStopName: boardingStop, direction, agency });
     if (constraint.source === 'topology' || constraint.source === 'topology+network') {
       candidates = TopologyConstraints.filterCandidatesByConstraint(candidates, constraint, {
-        canonicalizeStop: this._canonicalizeStop.bind(this),
+        canonicalizeStop: name => this._canonicalizeStop(name, agency),
         getStopName: t => t.endStopName,
       });
     }
@@ -488,11 +523,11 @@ const PredictionEngineV3 = {
    * @param {string} direction
    * @returns {Array}
    */
-  _applyTopologyFilter: function (candidates, route, boardingStop, direction) {
-    const constraint = this.getEndStopConstraint({ route, startStopName: boardingStop, direction });
+  _applyTopologyFilter: function (candidates, route, boardingStop, direction, agency) {
+    const constraint = this.getEndStopConstraint({ route, startStopName: boardingStop, direction, agency });
     if (constraint.source !== 'topology' || !constraint.legalStops) return candidates;
     return TopologyConstraints.filterCandidatesByConstraint(candidates, constraint, {
-      canonicalizeStop: this._canonicalizeStop.bind(this),
+      canonicalizeStop: name => this._canonicalizeStop(name, agency),
       getStopName: c => c.stop,
     });
   },
@@ -502,7 +537,7 @@ const PredictionEngineV3 = {
    * Returns the source that would constrain predictions and the legal downstream
    * stop set when that source is authoritative.
    *
-   * @param {Object} context - { route, startStopName, direction }
+   * @param {Object} context - { route, startStopName, direction, agency? }
    * @returns {{source: string, legalStops: Set<string>|null, routeCovered?: boolean}}
    */
   getEndStopConstraint: function (context) {
@@ -516,7 +551,7 @@ const PredictionEngineV3 = {
 
     const topologyConstraint = TopologyConstraints.getConstraint(_topology, { route, startStopName: boardingStop, direction }, {
       baseRoute: this._baseRoute.bind(this),
-      canonicalizeStop: this._canonicalizeStop.bind(this),
+      canonicalizeStop: name => this._canonicalizeStop(name, context.agency),
     });
 
     if (this.networkGraph) {

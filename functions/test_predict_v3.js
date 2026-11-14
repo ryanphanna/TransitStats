@@ -113,6 +113,48 @@ test('stop canonicalization follows the current stops library', () => {
   assert.equal(V3._canonicalizeStop('Union Stn'), 'union stn');
 });
 
+// #405: a name shared across agencies resolves to the trip's own agency's stop.
+const SHARED_NAME_LIBRARY = [
+  { name: 'Union Station Patsaouras Bus Plaza', aliases: ['Union Station'], agency: 'LA Metro' },
+  { name: 'Union Station', aliases: ['Union'], agency: 'TTC', agencies: ['GO Transit'] },
+  { name: 'Kipling Station', aliases: ['Kipling'], agency: 'TTC' },
+];
+
+test('#405: a TTC or GO Union Station trip resolves to the TTC stop, not LA Metro', () => {
+  V3.stopsLibrary = SHARED_NAME_LIBRARY;
+  assert.equal(V3._canonicalizeStop('Union Station', 'TTC'), 'union station');
+  assert.equal(V3._canonicalizeStop('Union Station', 'ttc'), 'union station', 'agency case does not matter');
+  assert.equal(V3._canonicalizeStop('Union Station', 'Toronto Transit Commission'), 'union station', 'agency aliases resolve');
+  assert.equal(V3._canonicalizeStop('Union Station', 'GO Transit'), 'union station', 'secondary agencies count');
+  assert.equal(V3._stopMatch('Union', 'Union Station', 'TTC'), true);
+});
+
+test('#405: an LA Metro Union Station trip still resolves to the LA stop', () => {
+  V3.stopsLibrary = SHARED_NAME_LIBRARY;
+  assert.equal(V3._canonicalizeStop('Union Station', 'LA Metro'), 'union station patsaouras bus plaza');
+  assert.equal(V3._stopMatch('Union Station', 'Union Station Patsaouras Bus Plaza', 'LA Metro'), true);
+  assert.equal(V3._stopMatch('Union Station', 'Union Station', 'LA Metro', 'TTC'), false);
+});
+
+test('#405: unknown agency, or no stop at the trip agency, falls back to the first library entry', () => {
+  V3.stopsLibrary = SHARED_NAME_LIBRARY;
+  assert.equal(V3._canonicalizeStop('Union Station'), 'union station patsaouras bus plaza');
+  assert.equal(V3._canonicalizeStop('Union Station', null), 'union station patsaouras bus plaza');
+  assert.equal(V3._canonicalizeStop('Kipling', 'MiWay'), 'kipling station', 'other agencies fill in when the trip agency has no match');
+  assert.equal(V3._canonicalizeStop('Nowhere Rd', 'TTC'), 'nowhere rd');
+});
+
+test('#405: TTC end-stop votes for Union and Union Station pool under the TTC stop', () => {
+  V3.stopsLibrary = SHARED_NAME_LIBRARY;
+  const history = [
+    trip('1', 'Kipling', 'Union', { daysAgo: 1 }),
+    trip('1', 'Kipling', 'Union Station', { daysAgo: 2 }),
+    trip('1', 'Kipling', 'Bloor', { daysAgo: 3 }),
+  ];
+  const top = V3.guessTopEndStops(history, at('1', 'Kipling'), 3);
+  assert.equal(top.length, 2, 'Union and Union Station are one TTC stop');
+});
+
 test('3.6.0: one past trip is not certainty; confidence grows with matching trips', () => {
   const conf = n => V3.guessTopEndStops(
     Array.from({ length: n }, (_, i) => trip('99', 'Oak St', 'Elm St', { daysAgo: i + 1 })),

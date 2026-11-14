@@ -53,9 +53,10 @@ function main() {
   // call; memoize it so replay finishes in seconds. Behaviour is unchanged.
   const canon = PredictionEngineV3._canonicalizeStop.bind(PredictionEngineV3);
   const canonCache = new Map();
-  PredictionEngineV3._canonicalizeStop = name => {
-    if (!canonCache.has(name)) canonCache.set(name, canon(name));
-    return canonCache.get(name);
+  PredictionEngineV3._canonicalizeStop = (name, agency) => {
+    const key = `${agency || ''}\u0000${name}`;
+    if (!canonCache.has(key)) canonCache.set(key, canon(name, agency));
+    return canonCache.get(key);
   };
 
   // Completed trips ordered by endTime desc, as the Firestore query returns them.

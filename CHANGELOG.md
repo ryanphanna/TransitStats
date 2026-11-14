@@ -24,6 +24,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **GO Transit shows up once** in the agency list, and imported PRESTO rides use the same name as texted trips.
 - **The agency count merges spelling variants of one agency**, such as NFTA and NFTA Metro, on the dashboard and public profile as ASK already did. The default-agency list in settings shows each agency once too.
 - **Vehicle numbers in loosely worded trip texts are saved.** A text like "on the 510 at Spadina, car 4412" started the trip but dropped the vehicle number.
+- **Stops that share a name with another agency's stop stay with the trip's own agency.** A TTC or GO trip to Union Station was being matched to LA Metro's Union Station bus plaza (and Kipling, Finch and VMC had the same problem), which could split or mix end-stop guesses and their grading. Names now resolve to the trip's agency first, on the map too.
 - **Texts the app couldn't read no longer count as trips.** They have no route, stop or time, and were inflating trip totals on the dashboard, public profile and in ASK.
 
 ### Security

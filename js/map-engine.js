@@ -308,21 +308,23 @@ export const MapEngine = {
             if (!stop.lat || (!stop.lng && !stop.lon)) return;
             const loc = { lat: stop.lat, lng: stop.lng || stop.lon };
             
-            // Index by canonical name
-            const canon = PredictionEngine._canonicalizeStop(stop.name);
+            // Index by canonical name, resolved within the stop's own agency so stops that
+            // share a name across agencies (e.g. Union Station) keep separate keys.
+            const agency = stop.agency || (stop.agencies || [])[0] || null;
+            const canon = PredictionEngine._canonicalizeStop(stop.name, agency);
             if (canon) this._stopLookup.set(canon, loc);
             
             // Index by aliases
             if (stop.aliases) {
                 stop.aliases.forEach(alias => {
-                    const cAlias = PredictionEngine._canonicalizeStop(alias);
+                    const cAlias = PredictionEngine._canonicalizeStop(alias, agency);
                     if (cAlias) this._stopLookup.set(cAlias, loc);
                 });
             }
 
             // Index by code
             if (stop.code) {
-                const cCode = PredictionEngine._canonicalizeStop(stop.code);
+                const cCode = PredictionEngine._canonicalizeStop(stop.code, agency);
                 if (cCode) this._stopLookup.set(cCode, loc);
             }
         });
@@ -332,11 +334,12 @@ export const MapEngine = {
         console.log(`MapEngine: Reindex complete in ${Math.round(performance.now() - start)}ms`);
     },
 
-    _getStopLocation(stopName) {
+    _getStopLocation(stopName, agency = null) {
         if (!stopName) return null;
-        
+        const skipKey = `${agency || ''}\u0000${stopName}`;
+
         // Fast skip for known unresolvable stops
-        if (this._skipLookup.has(stopName)) return null;
+        if (this._skipLookup.has(skipKey)) return null;
 
         // Ensure index is ready
         const currentLibSize = PredictionEngine.stopsLibrary?.length || 0;
@@ -344,11 +347,11 @@ export const MapEngine = {
             this._rebuildStopIndex();
         }
 
-        const canon = PredictionEngine._canonicalizeStop(stopName);
+        const canon = PredictionEngine._canonicalizeStop(stopName, agency);
         const loc = this._stopLookup.get(canon);
         
         if (!loc) {
-            this._skipLookup.add(stopName);
+            this._skipLookup.add(skipKey);
             return null;
         }
         return loc;
@@ -378,7 +381,7 @@ export const MapEngine = {
         const stopName = side === 'boarding'
             ? (trip.startStopName || trip.startStop)
             : (trip.endStopName || trip.endStop);
-        const location = this._getStopLocation(stopName);
+        const location = this._getStopLocation(stopName, trip.agency || null);
         return { location, source: location ? 'firestore' : 'unresolved' };
     },
 

@@ -68,3 +68,32 @@ describe('PredictionEngine stops library replacement', () => {
     expect(PredictionEngine._canonicalizeStop('Union St')).toBe('union stn');
   });
 });
+
+// ---------------------------------------------------------------------------
+// #405: names shared across agencies resolve within the trip's agency
+// ---------------------------------------------------------------------------
+
+describe('PredictionEngine._canonicalizeStop agency preference (#405)', () => {
+  const library = [
+    { name: 'Union Station', aliases: ['Union'], agency: 'TTC', agencies: ['GO Transit'] },
+    { name: 'Union Station Patsaouras Bus Plaza', aliases: ['Union Station'], agency: 'LA Metro' },
+  ];
+
+  test('a TTC or GO trip resolves Union Station to the TTC stop', () => {
+    PredictionEngine.stopsLibrary = library;
+    expect(PredictionEngine._canonicalizeStop('Union Station', 'TTC')).toBe('union station');
+    expect(PredictionEngine._canonicalizeStop('Union Station', 'Toronto Transit Commission')).toBe('union station');
+    expect(PredictionEngine._canonicalizeStop('Union Station', 'GO Transit')).toBe('union station');
+  });
+
+  test('an LA Metro trip still resolves to the LA stop', () => {
+    PredictionEngine.stopsLibrary = library;
+    expect(PredictionEngine._canonicalizeStop('Union Station', 'LA Metro')).toBe('union station patsaouras bus plaza');
+  });
+
+  test('unknown agency, or no stop at that agency, falls back to the library order', () => {
+    PredictionEngine.stopsLibrary = library;
+    expect(PredictionEngine._canonicalizeStop('Union Station')).toBe('union station patsaouras bus plaza');
+    expect(PredictionEngine._canonicalizeStop('Union', 'MiWay')).toBe('union station');
+  });
+});

@@ -36,7 +36,7 @@ async function gradeAllPredictions(activeTrip, user, endStopData, duration) {
     // end stops are graded (V3/V4/V5/Habit). Route guesses already stored on older trips are left ungraded.
     const es = async (pred, version) => {
       if (!pred) return;
-      const hit = engine._stopMatch(pred.stop, actualEndStop);
+      const hit = engine._stopMatch(pred.stop, actualEndStop, activeTrip.agency);
       await db.collection('predictionStats').add({
         tripId: activeTrip.id, userId: user.userId, endStopPredicted: pred.stop, endStopActual: actualEndStop,
         endStopHit: hit, endStopConfidence: pred.confidence, version, route: activeTrip.route, agency: activeTrip.agency, source: 'sms', timestamp: FieldValue.serverTimestamp()

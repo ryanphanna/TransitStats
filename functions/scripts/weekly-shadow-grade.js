@@ -91,7 +91,7 @@ async function gradeWindow({
   const v3 = Object.create(engines.v3);
   v3.stopsLibrary = stopsLibrary;
   v3.networkGraph = null;
-  const stopMatch = (predicted, actual) => !!predicted && v3._stopMatch(predicted, actual);
+  const stopMatch = (predicted, actual, agency) => !!predicted && v3._stopMatch(predicted, actual, agency);
 
   const result = {
     window: { start: start.toISOString(), end: end.toISOString() },
@@ -151,7 +151,7 @@ async function gradeWindow({
     for (const engine of ENGINES) {
       const prediction = predictions[engine];
       if (!prediction?.stop) continue;
-      hits[engine] = stopMatch(prediction.stop, trip.endStopName);
+      hits[engine] = stopMatch(prediction.stop, trip.endStopName, trip.agency);
       result.engines[engine].answered += 1;
       if (hits[engine]) result.engines[engine].hits += 1;
     }
