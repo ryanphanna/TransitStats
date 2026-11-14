@@ -42,10 +42,10 @@ const TS = require('../functions/lib/trip-stats');
 const { stopNameKey, stationBaseName } = require('../functions/lib/utils');
 
 const TIME_OF_DAY = [
-  { key: 'morning', label: 'morning peak (6 to 10 am)', from: 6, to: 10 },
-  { key: 'midday', label: 'midday (10 am to 3 pm)', from: 10, to: 15 },
-  { key: 'afternoon', label: 'afternoon peak (3 to 7 pm)', from: 15, to: 19 },
-  { key: 'evening', label: 'evening and night (7 pm to 6 am)', from: 19, to: 6 },
+  { key: 'morning', name: 'morning peak', short: 'Morning peak', from: 6, to: 10 },
+  { key: 'midday', name: 'midday', short: 'Midday', from: 10, to: 15 },
+  { key: 'afternoon', name: 'afternoon peak', short: 'Afternoon peak', from: 15, to: 19 },
+  { key: 'evening', name: 'evening and night', short: 'Evening and night', from: 19, to: 6 },
 ];
 
 // ---- Small helpers ----
@@ -54,7 +54,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const fmtInt = n => Number(n).toLocaleString('en-CA');
 const mins = m => `${Math.round(m)} min`;
 const pct = (a, b) => `${Math.round((a / b) * 100)}%`;
-const plural = (n, word) => `${fmtInt(n)} ${word}${n === 1 ? '' : 's'}`;
+const plural = (n, word) => `${fmtInt(n)} ${n === 1 ? word : word.endsWith('cy') ? `${word.slice(0, -1)}ies` : `${word}s`}`;
 
 function percentile(sorted, p) {
   if (!sorted.length) return null;
@@ -99,7 +99,7 @@ function sparkline(values, { height = 64, width = 240, scaleMax, ref = null, for
     const tip = titles[i] ? `<title>${esc(titles[i])}</title>` : '';
     return `<rect x="${x.toFixed(1)}" y="${(top + height - h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="var(--accent)" opacity="0.9">${tip}</rect>`;
   }).join('');
-  const refLine = ref != null ? `<line x1="0" x2="${w}" y1="${y(ref).toFixed(1)}" y2="${y(ref).toFixed(1)}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>` : '';
+  const refLine = ref != null ? `<line x1="0" x2="${w}" y1="${y(ref).toFixed(1)}" y2="${y(ref).toFixed(1)}" stroke="var(--text-dim)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>` : '';
   const anchorOf = i => (i < 2 ? ['start', i * col] : i > n - 3 ? ['end', (i + 1) * col - 1] : ['middle', i * col + (col - 1) / 2]);
   const peakText = peak >= 0 ? (([a, x]) => `<text x="${x.toFixed(1)}" y="${(y(values[peak]) - 3).toFixed(1)}" text-anchor="${a}" class="spark-peak">${esc(format(values[peak]))}</text>`)(anchorOf(peak)) : '';
   const under = labels ? `<text x="0" y="${top + height + 14}" text-anchor="start" class="spark-label">${esc(labels[0])}</text>${n > 1 && labels[1] ? `<text x="${w - 1}" y="${top + height + 14}" text-anchor="end" class="spark-label">${esc(labels[1])}</text>` : ''}` : '';
@@ -327,7 +327,7 @@ function analyze(allTrips, resolver) {
   }).sort((a, b) => b.n - a.n);
 
   return {
-    all: allTrips.length, counted: counted.length, timed: timed.length, hours, homeZone,
+    all: allTrips.length, counted: counted.length, timed: timed.length, hours, homeZone, timedMedian: stats(timed.map(t => t._min)).median,
     first: dated[0], last: dated[dated.length - 1], daysRidden: byDate.daysRidden,
     agencies, routes, topRoutes, topStops, countries, best, busiestDay, busiestMonth, weekdays, hourCounts, peakHour,
     agencyFirsts, regular, steadiest, leastSteady, timeOfDay, routeLengths, awayRows,
@@ -339,117 +339,282 @@ function analyze(allTrips, resolver) {
 function render(r) {
   const routeName = p => `${esc(p.agency)} ${esc(p.route)}`;
   const pairName = p => `${routeName(p)}, ${esc(p.from)} to ${esc(p.to)}`;
-  const section = (title, body, note = '') => `<section><h2>${title}</h2>${note ? `<p class="note">${note}</p>` : ''}${body}</section>`;
-  const list = items => (items.length ? `<ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>` : '<p class="note">Nothing meets the threshold yet.</p>');
+  const empty = '<p class="note">Nothing meets the threshold yet.</p>';
   const table = (head, rows) => (rows.length
-    ? `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`
-    : '<p class="note">Nothing meets the threshold yet.</p>');
+    ? `<div class="scroll"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+    : empty);
   const range = s => `${mins(s.p25)} to ${mins(s.p75)}`;
-  const hourLabel = h => new Date(Date.UTC(2000, 0, 1, h)).toLocaleTimeString('en-US', { timeZone: 'UTC', hour: 'numeric' });
+  const hourLabel = h => new Date(Date.UTC(2000, 0, 1, h)).toLocaleTimeString('en-US', { timeZone: 'UTC', hour: 'numeric' }).toLowerCase();
+  const monthName = (k, style = 'short') => new Date(`${k.slice(0, 7)}-15T12:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', month: style, year: 'numeric' });
+  const span = (from, to) => (!from ? '' : monthName(from) === monthName(to) ? monthName(from) : `${monthName(from)} to ${monthName(to)}`);
+  const spanOf = trips => { const ds = trips.filter(t => t._day).map(t => t._day.dayKey).sort(); return span(ds[0], ds[ds.length - 1]); };
+  const firstDay = r.first?._day?.dayKey; const lastDay = r.last?._day?.dayKey;
+  const allSpan = span(firstDay, lastDay);
+  const foot = (...parts) => parts.filter(Boolean).join(' · ');
+  const CHART_W = 268;
 
-  const totals = list([
-    `<b>${fmtInt(r.counted)}</b> trips logged, from ${esc(localDateTime(r.first))} to ${esc(localDateTime(r.last))}, on ${plural(r.daysRidden, 'day')}.`,
-    `<b>${Math.round(r.hours).toLocaleString('en-CA')} hours</b> on transit, counting the ${fmtInt(r.timed)} trips with a usable time (the rest have no end time, ended early, or ran over ${MAX_TRIP_MINUTES / 60} hours).`,
-    `<b>${r.routes.length}</b> routes, <b>${r.agencies.length}</b> agencies, <b>${Object.keys(r.countries).length}</b> countries (${Object.entries(r.countries).sort((a, b) => b[1] - a[1]).map(([c, n]) => `${esc(c)} ${fmtInt(n)}`).join(', ')}).`,
-    `Most trips start around <b>${hourLabel(r.peakHour)}</b> (${fmtInt(r.hourCounts[r.peakHour])} trips start in that hour). Busiest weekday: <b>${esc(r.weekdays[0][0])}</b> (${fmtInt(r.weekdays[0][1])}); quietest: ${esc(r.weekdays[6][0])} (${fmtInt(r.weekdays[6][1])}).`,
-  ]);
-  const topRoutes = table(['Route', 'Trips'], r.topRoutes.map(([n, c]) => [esc(n), fmtInt(c)]));
-  const topStops = table(['Stop or station', 'Times boarded or left'], r.topStops.map(([n, c]) => [esc(n), fmtInt(c)]));
-  const topAgencies = table(['Agency', 'Trips', 'Share'], r.agencies.slice(0, 12).map(([a, n]) => [esc(a), fmtInt(n), pct(n, r.counted)]));
+  // One finding per card: eyebrow (what it's about), heading (the finding), big numbers, one chart, sample line.
+  const stat = (value, label) => ({ value, label });
+  const card = ({ eyebrow = '', heading, stats: nums = [], chart = '', note }) => `<article class="card">
+    ${eyebrow ? `<div class="eyebrow">${eyebrow}</div>` : ''}
+    <h3>${heading}</h3>
+    ${nums.length ? `<div class="stats">${nums.map(s => `<div class="stat"><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`).join('')}</div>` : ''}
+    ${chart ? `<div class="chart">${chart}</div>` : '<div class="chart"></div>'}
+    <div class="card-note">${note}</div>
+  </article>`;
+  const group = (title, cards) => (cards.filter(Boolean).length ? `<section><h2>${title}</h2><div class="grid">${cards.filter(Boolean).join('')}</div></section>` : '');
 
-  const streaks = list([
-    `Longest run of days in a row with at least one trip: <b>${plural(r.best.len, 'day')}</b>, ${esc(prettyDay(r.best.from))} to ${esc(prettyDay(r.best.to))} (${fmtInt(r.best.trips)} trips).`,
-    `Most trips in one day: <b>${fmtInt(r.busiestDay[1])}</b> on ${esc(prettyDay(r.busiestDay[0]))}.`,
-    `Busiest month: <b>${esc(new Date(`${r.busiestMonth[0]}-15T12:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', month: 'long', year: 'numeric' }))}</b>, ${fmtInt(r.busiestMonth[1])} trips.`,
-  ]);
+  /** Simple bar comparison in the sparkline's bar style: one row per item, longest bar = largest value. */
+  const bars = (rows, { format = fmtInt, mark = -1 } = {}) => {
+    const max = Math.max(...rows.map(x => x.value), 0) || 1;
+    return `<div class="bars${mark >= 0 ? ' has-mark' : ''}">${rows.map((x, i) => `<div class="bar-row${i === mark ? ' is-mark' : ''}"><span class="bar-label" title="${esc(x.label)}">${esc(x.label)}</span><span class="bar-track"><span class="bar" style="width:${Math.max(1, (x.value / max) * 100).toFixed(1)}%"></span></span><span class="bar-value">${esc(format(x.value))}</span></div>`).join('')}</div>`;
+  };
+  const tripSpark = (p, height = 56) => {
+    const inOrder = [...p.trips].sort((a, b) => toDate(a.startTime) - toDate(b.startTime));
+    return sparkline(inOrder.map(t => t._min), {
+      height, width: CHART_W, ref: p.s.median, format: mins,
+      labels: [inOrder[0], inOrder[inOrder.length - 1]].map(t => (t._day ? shortDay(t._day.dayKey) : '')),
+      titles: inOrder.map(t => `${localDateTime(t)}: ${mins(t._min)}`),
+      ariaLabel: `Trip times for ${p.agency} ${p.route}, ${p.from} to ${p.to}, oldest first; dashed line is the typical time`,
+    });
+  };
 
-  const firsts = table(['Agency', 'First trip', 'Route', 'Trips since'], r.agencyFirsts.map(x => [esc(x.agency), esc(localDateTime(x.first)), esc(x.first.route || ''), fmtInt(x.n)]));
-
-  const steady = list(r.steadiest.map(p => `${pairName(p)}: usually <b>${mins(p.s.median)}</b>, and the middle half of trips fall within ${range(p.s)} (a ${Math.round(p.spread)}-minute window). ${p.s.n} trips.`));
-  const unsteady = list(r.leastSteady.map(p => `${pairName(p)}: usually <b>${mins(p.s.median)}</b>, but the middle half ranges ${range(p.s)} (a ${Math.round(p.spread)}-minute window). Fastest ${mins(p.s.min)}, slowest ${mins(p.s.max)}. ${p.s.n} trips.`));
-
-  const tod = list(r.timeOfDay.map(p => `${pairName(p)}: <b>${mins(p.slow.median)}</b> in the ${esc(p.slow.label)} (${p.slow.n} trips) vs <b>${mins(p.fast.median)}</b> in the ${esc(p.fast.label)} (${p.fast.n} trips), a ${Math.round(p.diff)}-minute difference (typical times). ${p.s.n} trips in all.`));
-
-  const extremes = table(['Trip', 'Trips', 'Typical', 'Fastest', 'Slowest'], r.regular.slice(0, 15).map(p => [
-    pairName(p), fmtInt(p.s.n), mins(p.s.median),
-    `${mins(p.fastest._min)}<br><span class="note">${esc(localDateTime(p.fastest))}</span>`,
-    `${mins(p.slowest._min)}<br><span class="note">${esc(localDateTime(p.slowest))}</span>`,
-  ]));
-
-  const routeLens = table(['Route', 'Timed trips', 'Typical ride', 'Middle half'], r.routeLengths.slice(0, 15).map(x => [routeName(x), fmtInt(x.s.n), mins(x.s.median), range(x.s)]));
-
-  const monthName = (k, style = 'short') => new Date(`${k}-15T12:00:00Z`).toLocaleDateString('en-CA', { timeZone: 'UTC', month: style, year: 'numeric' });
   const monthEdges = r.months.length ? [monthName(r.months[0]), monthName(r.months[r.months.length - 1])] : null;
   const monthSpark = (byMonth, opts) => sparkline(r.months.map(k => byMonth[k] || null), {
     format: fmtInt, labels: monthEdges, titles: r.months.map(k => `${monthName(k, 'long')}: ${plural(byMonth[k] || 0, 'trip')}`), ...opts,
   });
-  const monthsOverall = monthSpark(r.byMonth, { height: 64, width: 560, ariaLabel: 'Trips per month, all routes' });
-  const routeScale = Math.max(0, ...r.routeMonths.flatMap(x => Object.values(x.byMonth)));
-  const monthsByRoute = table(['Route', 'Trips', 'Trips per month'], r.routeMonths.map(x => [
-    routeName(x), fmtInt(x.n), monthSpark(x.byMonth, { height: 38, width: 240, scaleMax: routeScale, ariaLabel: `Trips per month on ${x.agency} ${x.route}` }),
-  ]));
 
-  const timesOverTime = table(['Trip', 'Typical', 'Each trip, oldest first'], r.regular.map(p => {
-    const inOrder = [...p.trips].sort((a, b) => toDate(a.startTime) - toDate(b.startTime));
-    return [pairName(p), `${mins(p.s.median)}<br><span class="note">${p.s.n} trips</span>`, sparkline(inOrder.map(t => t._min), {
-      height: 38, width: 240, ref: p.s.median, format: mins,
-      labels: [inOrder[0], inOrder[inOrder.length - 1]].map(t => (t._day ? shortDay(t._day.dayKey) : '')),
-      titles: inOrder.map(t => `${localDateTime(t)}: ${mins(t._min)}`),
-      ariaLabel: `Trip times for ${p.agency} ${p.route}, ${p.from} to ${p.to}, oldest first; dashed line is the typical time`,
-    })];
+  // ---- Overall ----
+  const weekOrder = [...TS.DAY_NAMES.slice(1), TS.DAY_NAMES[0]];
+  const weekdayCounts = Object.fromEntries(r.weekdays);
+  const busiestDayName = r.weekdays[0][0];
+  const countries = Object.entries(r.countries).sort((a, b) => b[1] - a[1]);
+  const overall = [
+    card({
+      heading: `${fmtInt(r.counted)} trips on ${plural(r.daysRidden, 'day')}`,
+      stats: [stat(fmtInt(r.counted), 'trips'), stat(fmtInt(r.daysRidden), 'days with a trip')],
+      chart: monthSpark(r.byMonth, { height: 56, width: CHART_W, ariaLabel: 'Trips per month' }),
+      note: foot('Trips per month', allSpan),
+    }),
+    card({
+      heading: `${fmtInt(Math.round(r.hours))} hours on transit`,
+      stats: [stat(fmtInt(Math.round(r.hours)), 'hours'), stat(mins(r.timedMedian), 'typical trip')],
+      note: foot(`${fmtInt(r.timed)} trips with a usable time`, allSpan),
+    }),
+    card({
+      heading: `${r.routes.length} routes, ${r.agencies.length} agencies, ${countries.length} ${countries.length === 1 ? 'country' : 'countries'}`,
+      stats: [stat(fmtInt(r.routes.length), 'routes'), stat(fmtInt(r.agencies.length), 'agencies'), stat(fmtInt(countries.length), countries.length === 1 ? 'country' : 'countries')],
+      chart: countries.length > 1 ? bars(countries.slice(0, 5).map(([c, n]) => ({ label: c, value: n }))) : '',
+      note: foot(`${fmtInt(r.counted)} trips`, countries.length > 1 ? 'trips by country' : '', allSpan),
+    }),
+    card({
+      heading: `Most trips start in the ${hourLabel(r.peakHour)} hour`,
+      stats: [stat(fmtInt(r.hourCounts[r.peakHour]), `trips start ${hourLabel(r.peakHour)} to ${hourLabel((r.peakHour + 1) % 24)}`)],
+      chart: sparkline(r.hourCounts.map(n => n || null), { height: 56, width: CHART_W, format: fmtInt, labels: ['12 am', '11 pm'], titles: r.hourCounts.map((n, h) => `${hourLabel(h)}: ${plural(n, 'trip')}`), ariaLabel: 'Trips by starting hour' }),
+      note: foot(`${fmtInt(r.hourCounts.reduce((a, b) => a + b, 0))} trips by starting hour`, allSpan),
+    }),
+    card({
+      heading: `${busiestDayName} is the busiest day of the week`,
+      stats: [stat(fmtInt(r.weekdays[0][1]), `trips on ${busiestDayName}s`), stat(fmtInt(r.weekdays[6][1]), `on ${r.weekdays[6][0]}s`)],
+      chart: bars(weekOrder.map(d => ({ label: d, value: weekdayCounts[d] || 0 })), { mark: weekOrder.indexOf(busiestDayName) }),
+      note: foot(`${fmtInt(r.counted)} trips`, allSpan),
+    }),
+    r.best.len > 1 && card({
+      heading: `Longest streak: ${plural(r.best.len, 'day')} in a row with a trip`,
+      stats: [stat(fmtInt(r.best.len), 'days in a row'), stat(fmtInt(r.best.trips), 'trips')],
+      note: `${esc(prettyDay(r.best.from))} to ${esc(prettyDay(r.best.to))}`,
+    }),
+    r.busiestDay && card({
+      heading: `Most trips in one day: ${fmtInt(r.busiestDay[1])}`,
+      stats: [stat(fmtInt(r.busiestDay[1]), 'trips')],
+      note: esc(prettyDay(r.busiestDay[0])),
+    }),
+    r.busiestMonth && card({
+      heading: `Busiest month: ${monthName(r.busiestMonth[0], 'long')}`,
+      stats: [stat(fmtInt(r.busiestMonth[1]), 'trips'), stat(fmtInt(Math.round(r.counted / Math.max(1, r.months.length))), 'average month')],
+      note: foot(`${plural(r.months.length, 'month')} with data`, allSpan),
+    }),
+  ];
+
+  // ---- Where ----
+  const where = [
+    r.topRoutes.length && card({
+      heading: `Most-ridden route: ${esc(r.topRoutes[0][0])}`,
+      stats: [stat(fmtInt(r.topRoutes[0][1]), 'trips'), stat(pct(r.topRoutes[0][1], r.counted), 'of all trips')],
+      chart: bars(r.topRoutes.slice(0, 5).map(([label, value]) => ({ label, value })), { mark: 0 }),
+      note: foot(`${fmtInt(r.counted)} trips`, allSpan),
+    }),
+    r.topStops.length && card({
+      heading: `Most-used stop: ${esc(r.topStops[0][0])}`,
+      stats: [stat(fmtInt(r.topStops[0][1]), 'times boarded or left')],
+      chart: bars(r.topStops.slice(0, 5).map(([label, value]) => ({ label, value })), { mark: 0 }),
+      note: foot(`${fmtInt(r.counted)} trips`, allSpan),
+    }),
+    r.agencies.length > 1 && card({
+      heading: `${esc(r.agencies[0][0])} carries ${pct(r.agencies[0][1], r.counted)} of trips`,
+      stats: [stat(fmtInt(r.agencies[0][1]), 'trips'), stat(pct(r.agencies[0][1], r.counted), 'share')],
+      chart: bars(r.agencies.slice(0, 5).map(([label, value]) => ({ label, value })), { mark: 0 }),
+      note: foot(`${fmtInt(r.counted)} trips`, allSpan),
+    }),
+    r.routeLengths.length && card({
+      heading: `Longest typical ride: ${mins(r.routeLengths[0].s.median)} on ${routeName(r.routeLengths[0])}`,
+      stats: [stat(mins(r.routeLengths[0].s.median), 'typical ride')],
+      chart: bars(r.routeLengths.slice(0, 5).map(x => ({ label: `${x.agency} ${x.route}`, value: x.s.median })), { format: mins, mark: 0 }),
+      note: foot(`Routes with ${MIN_ROUTE_TRIPS}+ timed trips`, `${fmtInt(r.routeLengths[0].s.n)} trips on the top route`, spanOf(r.routeLengths[0].trips)),
+    }),
+  ];
+
+  // ---- Regular trips ----
+  const regularCard = (p, kind) => card({
+    eyebrow: pairName(p),
+    heading: kind === 'most'
+      ? `Most-repeated trip: ${plural(p.s.n, 'timed trip')}`
+      : kind === 'steady'
+        ? `Steady: usually ${mins(p.s.median)}, half of trips within a ${Math.round(p.spread)}-minute window`
+        : `Varies most: usually ${mins(p.s.median)}, half of trips take ${range(p.s)}`,
+    stats: kind === 'most'
+      ? [stat(fmtInt(p.s.n), 'trips'), stat(mins(p.s.median), 'typical')]
+      : [stat(mins(p.s.median), 'typical'), stat(mins(p.s.min), 'fastest'), stat(mins(p.s.max), 'slowest')],
+    chart: tripSpark(p),
+    note: foot(`${plural(p.s.n, 'trip')}, oldest first; dashed line is typical`, spanOf(p.trips)),
+  });
+  const shown = new Set();
+  const pick = (list, n) => list.filter(p => !shown.has(p)).slice(0, n).map(p => (shown.add(p), p));
+  const regular = [
+    ...pick(r.regular, 1).map(p => regularCard(p, 'most')),
+    ...pick(r.steadiest, 2).map(p => regularCard(p, 'steady')),
+    ...pick(r.leastSteady, 1).map(p => regularCard(p, 'unsteady')),
+  ];
+
+  // ---- Time of day ----
+  const timeOfDay = r.timeOfDay.slice(0, 6).map(p => card({
+    eyebrow: pairName(p),
+    heading: `${Math.round(p.diff)} min slower ${p.slow.key === 'midday' ? 'at' : 'in the'} ${esc(p.slow.name)} than ${p.fast.key === 'midday' ? 'at' : 'in the'} ${esc(p.fast.name)}`,
+    stats: [stat(mins(p.slow.median), esc(p.slow.name)), stat(mins(p.fast.median), esc(p.fast.name))],
+    chart: bars(TIME_OF_DAY.map(b => p.buckets.find(x => x.key === b.key)).filter(Boolean).map(b => ({ label: `${b.short} (${b.n})`, value: b.median })), { format: mins }),
+    note: foot(`Typical time by time of day, ${MIN_BUCKET_TRIPS}+ trips each`, `${plural(p.s.n, 'trip')}`, spanOf(p.trips)),
   }));
 
-  const away = table(['Agency', 'Country or time zone', 'Trips', 'Days', 'Routes', 'When', 'Typical ride'], r.awayRows.map(x => [
-    esc(x.agency), esc(x.country || x.zone), fmtInt(x.n), fmtInt(x.days), fmtInt(x.routes),
-    x.from === x.to ? esc(prettyDay(x.from)) : `${esc(prettyDay(x.from))} to ${esc(prettyDay(x.to))}`,
-    x.s ? `${mins(x.s.median)} <span class="note">(${x.s.n} timed)</span>` : '<span class="note">too few timed trips</span>',
-  ]));
+  // ---- Travel ----
+  const awayTotal = r.awayRows.reduce((s, x) => s + x.n, 0);
+  const travel = [
+    r.awayRows.length > 1 && card({
+      heading: `${fmtInt(awayTotal)} trips with ${plural(r.awayRows.length, 'agency')} away from home`,
+      stats: [stat(fmtInt(awayTotal), 'trips'), stat(fmtInt(r.awayRows.length), 'agencies')],
+      chart: bars(r.awayRows.slice(0, 5).map(x => ({ label: x.agency, value: x.n }))),
+      note: foot(`Agencies with ${MIN_FINDING_TRIPS}+ trips outside ${esc(r.homeZone)}`, span(r.awayRows.map(x => x.from).sort()[0], r.awayRows.map(x => x.to).sort().pop())),
+    }),
+    ...r.awayRows.slice(0, 4).map(x => card({
+      eyebrow: esc(x.country || x.zone),
+      heading: `${plural(x.n, 'trip')} with ${esc(x.agency)} over ${plural(x.days, 'day')}`,
+      stats: [stat(fmtInt(x.n), 'trips'), stat(fmtInt(x.routes), x.routes === 1 ? 'route' : 'routes'), ...(x.s ? [stat(mins(x.s.median), 'typical ride')] : [])],
+      note: foot(x.s ? `${fmtInt(x.timed)} timed trips` : '', x.from === x.to ? esc(prettyDay(x.from)) : `${esc(prettyDay(x.from))} to ${esc(prettyDay(x.to))}`),
+    })),
+    r.agencyFirsts.length > 1 && card({
+      heading: `Rode ${plural(r.agencyFirsts.length, 'agency')} at least ${MIN_FINDING_TRIPS} times`,
+      stats: [stat(fmtInt(r.agencyFirsts.length), 'agencies')],
+      chart: bars(r.agencyFirsts.slice(-5).reverse().map(x => ({ label: x.first._day ? `${x.agency}, since ${monthName(x.first._day.dayKey)}` : x.agency, value: x.n }))),
+      note: foot('Five newest, with trips since the first one', allSpan),
+    }),
+  ];
+
+  // ---- Full tables (collapsed) ----
+  const routeScale = Math.max(0, ...r.routeMonths.flatMap(x => Object.values(x.byMonth)));
+  const details = [
+    ['Most-ridden routes', 'Branches like 510A and 510B are listed separately here.', table(['Route', 'Trips'], r.topRoutes.map(([n, c]) => [esc(n), fmtInt(c)]))],
+    ['Most-used stops and stations', '', table(['Stop or station', 'Times boarded or left'], r.topStops.map(([n, c]) => [esc(n), fmtInt(c)]))],
+    ['Agencies', '', table(['Agency', 'Trips', 'Share'], r.agencies.slice(0, 12).map(([a, n]) => [esc(a), fmtInt(n), pct(n, r.counted)]))],
+    ['Trips per month by route', `Each route with at least ${MIN_ROUTE_TRIPS} timed trips, on one shared scale.`, table(['Route', 'Trips', 'Trips per month'], r.routeMonths.map(x => [routeName(x), fmtInt(x.n), monthSpark(x.byMonth, { height: 38, width: 240, scaleMax: routeScale, ariaLabel: `Trips per month on ${x.agency} ${x.route}` })]))],
+    ['Firsts with each agency', `Agencies with at least ${MIN_FINDING_TRIPS} trips, oldest first.`, table(['Agency', 'First trip', 'Route', 'Trips since'], r.agencyFirsts.map(x => [esc(x.agency), esc(localDateTime(x.first)), esc(x.first.route || ''), fmtInt(x.n)]))],
+    ['Fastest and slowest on regular trips', 'The 15 most-repeated trips between two stops.', table(['Trip', 'Trips', 'Typical', 'Fastest', 'Slowest'], r.regular.slice(0, 15).map(p => [
+      pairName(p), fmtInt(p.s.n), mins(p.s.median),
+      `${mins(p.fastest._min)}<br><span class="note">${esc(localDateTime(p.fastest))}</span>`,
+      `${mins(p.slowest._min)}<br><span class="note">${esc(localDateTime(p.slowest))}</span>`,
+    ]))],
+    ['Trip times over time', `Every regular trip between two stops, one bar per trip in date order. The dashed line is the typical time.`, table(['Trip', 'Typical', 'Each trip, oldest first'], r.regular.map(p => [pairName(p), `${mins(p.s.median)}<br><span class="note">${p.s.n} trips</span>`, tripSpark(p, 38)]))],
+    ['Time-of-day differences', 'Every regular trip with two or more time groups.', table(['Trip', 'Slower', 'Faster', 'Difference'], r.timeOfDay.map(p => [pairName(p), `${mins(p.slow.median)} ${esc(p.slow.name)} (${p.slow.n})`, `${mins(p.fast.median)} ${esc(p.fast.name)} (${p.fast.n})`, mins(p.diff)]))],
+    ['Typical rides by route', 'Any start and end stop on that route.', table(['Route', 'Timed trips', 'Typical ride', 'Middle half'], r.routeLengths.slice(0, 15).map(x => [routeName(x), fmtInt(x.s.n), mins(x.s.median), range(x.s)]))],
+    ['Trips away from home', `Trips logged in a time zone other than ${esc(r.homeZone)}, by agency. The app doesn't store a city, so agency and country stand in for it.`, table(['Agency', 'Country or time zone', 'Trips', 'Days', 'Routes', 'When', 'Typical ride'], r.awayRows.map(x => [
+      esc(x.agency), esc(x.country || x.zone), fmtInt(x.n), fmtInt(x.days), fmtInt(x.routes),
+      x.from === x.to ? esc(prettyDay(x.from)) : `${esc(prettyDay(x.from))} to ${esc(prettyDay(x.to))}`,
+      x.s ? `${mins(x.s.median)} <span class="note">(${x.s.n} timed)</span>` : '<span class="note">too few timed trips</span>',
+    ]))],
+  ].map(([title, note, body]) => `<h3 class="table-title">${title}</h3>${note ? `<p class="note">${note}</p>` : ''}${body}`).join('');
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Trip insights</title>
 <style>
-  :root { color-scheme: light dark; --bg: #fafaf8; --fg: #1d1d1f; --muted: #6b6b70; --line: #e3e3e0; --accent: #1f6feb; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #161618; --fg: #ececee; --muted: #9a9aa0; --line: #2c2c30; --accent: #6ea8ff; } }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
-  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
-  h1 { font-size: 28px; margin: 0 0 4px; }
-  h2 { font-size: 20px; margin: 36px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); }
-  .note { color: var(--muted); font-size: 14px; }
-  ul { padding-left: 20px; } li { margin: 6px 0; }
-  b { color: var(--accent); font-weight: 600; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; }
+  /* Type, colours and spacing copied from Atlas (src/styles/index.css, src/styles.ts, Interval/cardUi.tsx, pageStyles.ts TILE). */
+  :root { color-scheme: light; --bg-app: #f0f0f0; --bg-panel: rgba(255, 255, 255, 0.9); --border-primary: rgba(0, 0, 0, 0.1);
+    --text-primary: #111827; --text-secondary: #374151; --text-muted: #5b6270; --text-dim: #5f5f5f; --bg-btn: rgba(0, 0, 0, 0.05); --accent: #3f3f46; }
+  * { box-sizing: border-box; }
+  html { font-size: 14px; font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { margin: 0; background: var(--bg-app); color: var(--text-primary); line-height: 1.5; }
+  main { max-width: 1200px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 24px; font-weight: 900; letter-spacing: -0.025em; margin: 0; }
+  .summary { font-size: 12px; font-weight: 500; color: var(--text-dim); margin: 4px 0 0; }
+  .rules { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+  .rules li { font-size: 12px; font-weight: 700; color: var(--text-secondary); background: var(--bg-btn); border: 1px solid var(--border-primary); border-radius: 9999px; padding: 3px 10px; }
+  h2 { font-size: 20px; font-weight: 900; letter-spacing: -0.025em; margin: 36px 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); grid-auto-rows: 1fr; gap: 16px; }
+  .card { min-width: 0; min-height: 320px; display: flex; flex-direction: column; border-radius: 16px; padding: 16px; background: var(--bg-panel); border: 1px solid var(--border-primary); }
+  .eyebrow { font-size: 12px; font-weight: 700; color: var(--text-muted); line-height: 1.25; margin-bottom: 2px; overflow-wrap: anywhere; }
+  .card h3 { font-size: 16px; font-weight: 900; line-height: 1.3; letter-spacing: -0.01em; margin: 0; overflow-wrap: anywhere; }
+  .stats { display: flex; flex-wrap: wrap; gap: 4px 24px; margin-top: 12px; }
+  .stat { min-width: 0; }
+  @media (max-width: 420px) { .stats { gap: 4px 16px; } .stat-value { font-size: 26px; } }
+  .stat-value { font-size: 30px; font-weight: 900; letter-spacing: -0.025em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .stat-label { font-size: 12px; font-weight: 700; color: var(--text-muted); margin-top: 2px; }
+  .chart { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; margin-top: 16px; min-width: 0; }
+  .card-note { font-size: 12px; font-weight: 700; color: var(--text-dim); margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border-primary); }
+  .spark { display: block; overflow: visible; max-width: 100%; height: auto; }
+  .spark-peak { font-size: 12px; font-weight: 700; fill: var(--text-secondary); }
+  .spark-label { font-size: 12px; fill: var(--text-dim); }
+  .bars { display: grid; gap: 6px; }
+  .bar-row { display: grid; grid-template-columns: minmax(0, 42%) minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 12px; }
+  .bar-label { color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-track { height: 10px; }
+  .bar { display: block; height: 100%; min-width: 2px; border-radius: 2px; background: var(--accent); opacity: 0.9; }
+  .has-mark .bar { opacity: 0.35; }
+  .has-mark .is-mark .bar { opacity: 0.9; }
+  .bar-value { font-weight: 700; color: var(--text-secondary); font-variant-numeric: tabular-nums; text-align: right; }
+  .is-mark .bar-label { color: var(--text-primary); font-weight: 700; }
+  details { margin-top: 40px; border-radius: 16px; padding: 16px; background: var(--bg-panel); border: 1px solid var(--border-primary); }
+  summary { cursor: pointer; font-size: 16px; font-weight: 900; }
+  .table-title { font-size: 14px; font-weight: 900; margin: 24px 0 2px; }
+  .note { color: var(--text-dim); font-size: 12px; margin: 0; }
   .scroll { overflow-x: auto; }
-  .spark { display: block; overflow: visible; }
-  .spark-peak { font-size: 12px; font-weight: 700; fill: var(--fg); opacity: 0.8; }
-  .spark-label { font-size: 12px; fill: var(--muted); }
-  td .spark { margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border-primary); vertical-align: top; }
+  th { font-size: 12px; color: var(--text-muted); font-weight: 700; }
+  td .spark { margin-top: 2px; max-width: none; }
+  .rules-full { font-size: 13px; color: var(--text-secondary); padding-left: 20px; }
 </style></head><body><main>
 <h1>Trip insights</h1>
-<p class="note">Generated ${esc(new Date().toLocaleString('en-CA', { timeZone: r.homeZone, dateStyle: 'long', timeStyle: 'short' }))} from ${fmtInt(r.counted)} logged trips. Private: personal trip data, not for sharing as is.</p>
-<section><h2>Rules for this report</h2><ul>
-  <li>A route, or a route between two stops, is only reported with at least <b>${MIN_ROUTE_TRIPS}</b> timed trips.</li>
-  <li>A time-of-day comparison only uses time groups with at least <b>${MIN_BUCKET_TRIPS}</b> trips each.</li>
-  <li>Other findings (agencies, trips away from home) need at least <b>${MIN_FINDING_TRIPS}</b> trips. Totals count everything.</li>
+<p class="summary">${fmtInt(r.counted)} logged trips, ${esc(allSpan)} · generated ${esc(new Date().toLocaleString('en-CA', { timeZone: r.homeZone, dateStyle: 'long', timeStyle: 'short' }))} · private trip data</p>
+<ul class="rules">
+  <li>Routes and stop-to-stop trips: ${MIN_ROUTE_TRIPS}+ timed trips</li>
+  <li>Time-of-day groups: ${MIN_BUCKET_TRIPS}+ trips each</li>
+  <li>Agencies and places: ${MIN_FINDING_TRIPS}+ trips</li>
+  <li>Trip times skip trips over ${MAX_TRIP_MINUTES / 60} hours</li>
+  <li>Typical = median</li>
+</ul>
+${group('Overall', overall)}
+${group('Routes, stops and agencies', where)}
+${group('Regular trips', regular)}
+${group('Time of day', timeOfDay)}
+${group('Travel', travel)}
+<details><summary>Full tables and rules</summary>
+<h3 class="table-title">Rules for this report</h3><ul class="rules-full">
+  <li>A route, or a route between two stops, is only reported with at least ${MIN_ROUTE_TRIPS} timed trips.</li>
+  <li>A time-of-day comparison only uses time groups with at least ${MIN_BUCKET_TRIPS} trips each.</li>
+  <li>Other findings (agencies, trips away from home) need at least ${MIN_FINDING_TRIPS} trips. Totals count everything.</li>
   <li>Trip times skip trips marked FORGOT or incomplete, discarded trips, zero-length trips and trips over ${MAX_TRIP_MINUTES / 60} hours.</li>
   <li>"Typical" is the median. "Middle half" is the range the middle 50% of trips fall in. Route variants ride together (510A and 510B count as 510), and platforms count as their station. A trip between two stops counts one direction only.</li>
-</ul></section>
-${section('Totals', totals)}
-<div class="scroll">${section('Most-ridden routes', topRoutes, 'Branches like 510A and 510B are listed separately here.')}</div>
-<div class="scroll">${section('Most-used stops and stations', topStops)}</div>
-<div class="scroll">${section('Agencies', topAgencies)}</div>
-<div class="scroll">${section('Trips per month', `${monthsOverall}${monthsByRoute}`, `All trips, then each route with at least ${MIN_ROUTE_TRIPS} timed trips. The route charts share one scale so their bars compare; the number over each chart is its busiest month. Hover a bar for the month.`)}</div>
-${section('Streaks and busy stretches', streaks)}
-<div class="scroll">${section('Firsts with each agency', firsts, `Agencies with at least ${MIN_FINDING_TRIPS} trips, oldest first.`)}</div>
-${section('Steadiest regular trips', steady, 'Trips whose time barely changes, compared by how wide the middle half is next to the typical time.')}
-${section('Least predictable regular trips', unsteady)}
-${section('Biggest time-of-day differences on the same trip', tod)}
-<div class="scroll">${section('Fastest and slowest on regular trips', extremes, 'The 15 most-repeated trips between two stops.')}</div>
-<div class="scroll">${section('Trip times over time', timesOverTime, `Every regular trip between two stops (${MIN_ROUTE_TRIPS}+ timed trips), one bar per trip in date order. The dashed line is the typical time; the number over each chart is the slowest trip. Hover a bar for its date.`)}</div>
-<div class="scroll">${section('Longest typical rides by route', routeLens, 'Any start and end stop on that route.')}</div>
-<div class="scroll">${section('Trips away from home', away, `Trips logged in a time zone other than ${esc(r.homeZone)}, by agency. The app doesn't store a city, so agency and country stand in for it.`)}</div>
+</ul>
+${details}
+</details>
 </main></body></html>
 `;
 }
