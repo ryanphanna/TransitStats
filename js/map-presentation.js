@@ -197,8 +197,9 @@ export function formatStopPopup(value, point = {}) {
     if (point.type === 'exiting' && point.estimated) {
         return `Estimated exit (no exit recorded): ${Utils.hide(String(value ?? ''))}`;
     }
-    const context = point.type === 'exiting' ? 'Exit' : 'Boarding';
-    return `${context}: ${Utils.hide(String(value ?? ''))}`;
+    // Just the stop name: the map's boarding/exiting filter already says
+    // which way the stop was used, and a stop can be both (#406).
+    return Utils.hide(String(value ?? ''));
 }
 
 export function addMapPointMarkers({

@@ -129,19 +129,29 @@ describe('addZoomGatedPopup', () => {
         };
         const map = { getZoom: () => 14 };
 
-        addZoomGatedPopup(marker, map, 'Boarding: Union Station');
+        addZoomGatedPopup(marker, map, 'Union Station');
         events.click();
 
-        expect(marker.bindPopup).toHaveBeenCalledWith('Boarding: Union Station');
+        expect(marker.bindPopup).toHaveBeenCalledWith('Union Station');
         expect(marker.openPopup).toHaveBeenCalled();
     });
 });
 
-it('formats stop names with boarding or exit context and escapes HTML', () => {
+it('shows just the escaped stop name, with no boarding or exit prefix (#406)', () => {
     expect(formatStopPopup('Union <Station>', { type: 'boarding' }))
-        .toBe('Boarding: Union &lt;Station&gt;');
+        .toBe('Union &lt;Station&gt;');
     expect(formatStopPopup('Spadina & Bloor', { type: 'exiting' }))
-        .toBe('Exit: Spadina &amp; Bloor');
+        .toBe('Spadina &amp; Bloor');
+});
+
+it('gives a stop used both ways the same popup on each of its markers (#406)', () => {
+    const grouped = groupMapPoints([
+        { lat: 42.94, lng: -78.85, type: 'boarding', key: 'nfta:hertel-main', label: 'Hertel Avenue & Main Street' },
+        { lat: 42.94, lng: -78.85, type: 'exiting', key: 'nfta:hertel-main', label: 'Hertel Avenue & Main Street' },
+    ], point => point.label);
+
+    const popups = grouped.map(point => [...point.labels].map(label => formatStopPopup(label, point)).join('<br>'));
+    expect(new Set(popups)).toEqual(new Set(['Hertel Avenue &amp; Main Street']));
 });
 
 describe('estimated exits', () => {

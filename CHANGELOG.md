@@ -22,6 +22,10 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **The STATS reply counts trips the same way as the dashboard and ASK.** It used to count only trips with an exit stop and skip imported PRESTO rides, so its 7-day and 30-day numbers could come out lower.
 - **The dashboard, public profile and ASK now give the same totals.** They used to count with separate code, so the same question could get different numbers. ASK now includes imported PRESTO rides the same way the dashboard does.
 
+### Map and dashboard
+
+- **Map pin popups show just the stop name.** A stop you both board and exit at used to say only "Boarding"; the boarding/exiting filter already shows which way a stop was used. Guessed exits still say no exit was recorded.
+
 ### Fixes
 
 - **GO Transit shows up once** in the agency list, and imported PRESTO rides use the same name as texted trips.
