@@ -39,6 +39,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from route_normalization import load_policies, normalize_route_for_ml, scoped_route_key  # noqa: E402
+from stop_canon import StopIndex, ml_norm, v3_norm  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Eval definition v1 (versioned: change => bump EVAL_VERSION)
@@ -141,50 +142,25 @@ def is_clean(t):
 # grades with PredictionEngine._stopMatch); ML features use ml_utils.canonicalizeStop.
 # ---------------------------------------------------------------------------
 class Canon:
+    """Both resolve a name within the trip's agency first (GitHub #405), falling back to the first
+    library entry at any agency, as V3 and ml_utils do since a528877 / CIV-1460."""
+
     def __init__(self, stops):
-        self.v3_index = {}
-        self.ml_index = {}
-        for s in stops:
-            name = s.get("name")
-            if not name:
-                continue
-            for c in [name] + list(s.get("aliases") or []):
-                if not c:
-                    continue
-                self.v3_index.setdefault(self._v3norm(c), self._v3norm(name))
-                self.ml_index.setdefault(self._mlnorm(c), self._mlnorm(name))
-        self._cache = {}
+        self.v3_index = StopIndex(stops, v3_norm)
+        self.ml_index = StopIndex(stops, ml_norm)
 
-    @staticmethod
-    def _v3norm(s):
-        s = str(s).strip().lower()
-        s = re.sub(r"\s*[/&@]\s*", "/", s)
-        return re.sub(r"\s+at\s+", "/", s)
+    _v3norm = staticmethod(v3_norm)
+    _mlnorm = staticmethod(ml_norm)
 
-    @staticmethod
-    def _mlnorm(s):
-        s = str(s).strip().lower()
-        s = re.sub(r"\s+and\s+", "/", s)
-        s = re.sub(r"\s*[/&@]\s*", "/", s)
-        return re.sub(r"\s+at\s+", "/", s)
-
-    def v3(self, name):
+    def v3(self, name, agency=None):
         if not name:
             return None
-        key = ("v3", name)
-        if key not in self._cache:
-            n = self._v3norm(name)
-            self._cache[key] = self.v3_index.get(n, n)
-        return self._cache[key]
+        return self.v3_index.canon(name, agency)
 
-    def ml(self, name):
+    def ml(self, name, agency=None):
         if not name:
             return "unknown"
-        key = ("ml", name)
-        if key not in self._cache:
-            n = self._mlnorm(name)
-            self._cache[key] = self.ml_index.get(n, n)
-        return self._cache[key]
+        return self.ml_index.canon(name, agency)
 
 
 def sanitize(s):
@@ -304,9 +280,9 @@ def feature_dict(data, trip, ctx, kind, time_mode, primary_scope):
         "hour_sin": math.sin(2 * math.pi * hour / 24), "hour_cos": math.cos(2 * math.pi * hour / 24),
         "day_sin": math.sin(2 * math.pi * day / 7), "day_cos": math.cos(2 * math.pi * day / 7),
         f"agency_{sanitize(agency or 'unknown')}": 1.0,
-        f"stop_{sanitize(data.canon.ml(start_stop_of(trip)))}": 1.0,
+        f"stop_{sanitize(data.canon.ml(start_stop_of(trip), agency))}": 1.0,
     }
-    last_stop = sanitize(data.canon.ml(ctx["last_end_stop"])) if ctx["last_end_stop"] else "none"
+    last_stop = sanitize(data.canon.ml(ctx["last_end_stop"], agency)) if ctx["last_end_stop"] else "none"
     f[f"last_stop_{last_stop}"] = 1.0
     # Serving scopes the previous route with the CURRENT trip's agency (predict_v4/5.js).
     prev = scoped_route_key(ctx["last_route"], agency, primary) if ctx["last_route"] else None
@@ -328,7 +304,7 @@ def route_label(data, trip):
 
 def end_label(data, trip, primary_scope):
     from route_normalization import agency_id
-    return f"{agency_id(trip.get('agency'))}::{data.canon.ml(end_stop_of(trip))}"
+    return f"{agency_id(trip.get('agency'))}::{data.canon.ml(end_stop_of(trip), trip.get('agency'))}"
 
 
 def build_training_rows(data, cutoff, kind, time_mode, skew_fixed):
@@ -376,11 +352,11 @@ def filter_training_rows(data, rows, kind, skew_fixed):
     combo = Counter()
     for t, _, _ in rows:
         rk = scoped_route_key(t.get("route"), t.get("agency"), data.primary_agency if skew_fixed else None)
-        combo[(rk, data.canon.ml(start_stop_of(t)))] += 1
+        combo[(rk, data.canon.ml(start_stop_of(t), t.get("agency")))] += 1
     keep = []
     for t, x, y in rows:
         rk = scoped_route_key(t.get("route"), t.get("agency"), data.primary_agency if skew_fixed else None)
-        if combo[(rk, data.canon.ml(start_stop_of(t)))] >= 5:
+        if combo[(rk, data.canon.ml(start_stop_of(t), t.get("agency")))] >= 5:
             keep.append((t, x, y))
     ends = Counter(y for _, _, y in keep)
     return [r for r in keep if ends[r[2]] >= 10]
@@ -455,7 +431,7 @@ def baseline_predict(data, trip, kind, time_mode, hist):
     def rank(trips, weights=None):
         c = defaultdict(float)
         for i, t in enumerate(trips):
-            key = route_base_for_grading(label(t)) if kind == "route" else data.canon.v3(label(t))
+            key = route_base_for_grading(label(t)) if kind == "route" else data.canon.v3(label(t), t.get("agency"))
             c[(key, label(t))] += weights[i] if weights is not None else 1.0
         best = {}
         for (key, disp), v in c.items():
@@ -466,13 +442,13 @@ def baseline_predict(data, trip, kind, time_mode, hist):
         total = sum(v[0] for _, v in ranked) or 1.0
         return [(v[1].most_common(1)[0][0], round(100 * v[0] / total)) for _, v in ranked]
 
-    start = data.canon.v3(start_stop_of(trip))
+    start = data.canon.v3(start_stop_of(trip), trip.get("agency"))
     out["B1 most-frequent"] = rank(pool)
     if kind == "route":
-        same = [t for t in pool if data.canon.v3(start_stop_of(t)) == start]
+        same = [t for t in pool if data.canon.v3(start_stop_of(t), t.get("agency")) == start]
     else:
         rb = route_base_for_grading(trip.get("route"))
-        same = [t for t in pool if data.canon.v3(start_stop_of(t)) == start and route_base_for_grading(t.get("route")) == rb]
+        same = [t for t in pool if data.canon.v3(start_stop_of(t), t.get("agency")) == start and route_base_for_grading(t.get("route")) == rb]
     out["B2 per-stop"] = rank(same) if same else []
     # B3: stop x 3h local bucket with ride-count recency decay, backing off to B2 then B1.
     now = local_time(trip["_start"], trip, time_mode)
@@ -650,8 +626,9 @@ def _ml_rows(env, fm, kind, label, x_mode):
             disp = [fm.classes[i].split("::", 1)[1] for i in range(len(fm.classes))]
             out.append(Pred(kind, name, [(disp[i], round(100 * p[i])) for i in order[:3]]))
             if legal is not None:
-                legal_c = {data.canon.v3(s) for s in legal}
-                q = np.array([p[i] if data.canon.v3(disp[i]) in legal_c else 0.0 for i in range(len(p))])
+                ag = t.get("agency")
+                legal_c = {data.canon.v3(s, ag) for s in legal}
+                q = np.array([p[i] if data.canon.v3(disp[i], ag) in legal_c else 0.0 for i in range(len(p))])
                 q = q / q.sum() if q.sum() > 0 else q
                 out.append(Pred(kind, alt, [(disp[i], round(100 * q[i])) for i in np.argsort(-q) if q[i] > 0][:3]))
             else:
@@ -787,8 +764,8 @@ def main():
         if task == "route":
             hits = [grade_route(p, actual, t.get("agency")) for p, _ in pred.ranked]
         else:
-            ca = data.canon.v3(actual)
-            hits = [data.canon.v3(p) == ca for p, _ in pred.ranked]
+            ca = data.canon.v3(actual, t.get("agency"))
+            hits = [data.canon.v3(p, t.get("agency")) == ca for p, _ in pred.ranked]
         ok = not pred.abstain
         return {"id": t["_id"], "covered": bool(pred.ranked) and ok, "top1": bool(hits[:1] and hits[0]) and ok,
                 "top3": any(hits[:3]) and ok, "conf": pred.ranked[0][1] if pred.ranked else None}

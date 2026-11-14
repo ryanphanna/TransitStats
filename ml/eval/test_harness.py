@@ -70,6 +70,19 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(canon.v3("spadina stn"), canon.v3("Spadina Station"))
         self.assertEqual(canon.ml("King and Bathurst"), "king/bathurst")
 
+    def test_canonicalization_prefers_the_trip_agency(self):
+        canon = harness.Canon([
+            {"name": "Union Station Patsaouras Bus Plaza", "agency": "LA Metro", "aliases": ["Union Station"]},
+            {"name": "Union Station", "agency": "TTC", "agencies": ["GO Transit"]},
+        ])
+        for f in (canon.v3, canon.ml):
+            self.assertEqual(f("Union Station", "TTC"), "union station")
+            self.assertEqual(f("Union Station", "Toronto Transit Commission"), "union station")
+            self.assertEqual(f("Union Station", "GO Transit"), "union station")
+            self.assertEqual(f("Union Station", "LA Metro"), "union station patsaouras bus plaza")
+            self.assertEqual(f("Union Station"), "union station patsaouras bus plaza")
+            self.assertEqual(f("Union Station", "MiWay"), "union station patsaouras bus plaza")
+
     def test_local_time_handles_dst(self):
         t = {"timezone": "America/Toronto"}
         summer = harness.local_time(datetime(2026, 7, 1, 12, tzinfo=timezone.utc), t, "local")

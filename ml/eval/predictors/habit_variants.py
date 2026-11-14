@@ -10,7 +10,8 @@ def _variants(env):
     h = rp["habit"]
     v3 = [(p["stop"], p["confidence"]) for p in rp["v3EndTop"]]
     hs = (h["endStop"], 100) if h and h.get("endStop") else None
-    canon = env["data"].canon.v3
+    ag = env["trip"].get("agency")
+    canon = lambda name: env["data"].canon.v3(name, ag)  # noqa: E731
     only_gap = v3 if v3 else ([hs] if hs else [])
     if hs:
         alongside = [hs] + [p for p in v3 if canon(p[0]) != canon(hs[0])]

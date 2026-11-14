@@ -11,6 +11,7 @@ const {
   normalizeDirectionForMl,
   getGapFeatures,
   configureFromDict,
+  buildEndStopFeatures,
 } = require('./lib/ml_utils');
 
 // Establish the same policy configuration the training pipeline uses
@@ -113,4 +114,34 @@ test('PRIMARY policy is applied when primaryAgency matches the trip agency', () 
   // When it does not match the primary, normal/DEFAULT behavior applies
   assert.equal(normalizeRouteForMl('510A', 'TTC', 'MiWay'), '510A');
   assert.equal(normalizeRouteForMl('Red', 'BART', 'TTC'), 'Red');
+});
+
+test('canonicalizeStop resolves a shared name within the trip agency first (#405)', () => {
+  const lib = [
+    { name: 'Union Station Patsaouras Bus Plaza', agency: 'LA Metro', aliases: ['Union Station'] },
+    { name: 'Union Station', agency: 'TTC', agencies: ['GO Transit'], aliases: ['Union Stn'] },
+    { name: 'Kipling Station', agency: 'TTC', aliases: ['Kipling'] },
+  ];
+  assert.equal(canonicalizeStop('Union Station', lib, 'TTC'), 'union station');
+  assert.equal(canonicalizeStop('Union Station', lib, 'Toronto Transit Commission'), 'union station', 'agency aliases resolve');
+  assert.equal(canonicalizeStop('Union Station', lib, 'go'), 'union station', 'secondary agencies count');
+  assert.equal(canonicalizeStop('Union Station', lib, 'LA Metro'), 'union station patsaouras bus plaza');
+  // Unknown agency, or no stop by that name at the agency: first library entry, as before.
+  assert.equal(canonicalizeStop('Union Station', lib), 'union station patsaouras bus plaza');
+  assert.equal(canonicalizeStop('Kipling', lib, 'MiWay'), 'kipling station');
+  assert.equal(canonicalizeStop('Nowhere Rd', lib, 'TTC'), 'nowhere rd');
+  assert.equal(getStopFeature('Union Station', lib, 'TTC'), 'stop_union_station');
+});
+
+test('end-stop features resolve the start and last end stop within the trip agency', () => {
+  const lib = [
+    { name: 'Union Station Patsaouras Bus Plaza', agency: 'LA Metro', aliases: ['Union Station'] },
+    { name: 'Union Station', agency: 'TTC' },
+  ];
+  const f = buildEndStopFeatures({
+    route: '1', startStopName: 'Union Station', lastEndStopName: 'Union Station', direction: 'N',
+    time: new Date('2026-10-01T12:00:00Z'), agency: 'TTC', stopsLibrary: lib,
+  }, 'local');
+  assert.equal(f.stop_union_station, 1.0);
+  assert.equal(f.last_stop_union_station, 1.0);
 });
