@@ -55,6 +55,8 @@ Keep reusable scripts here. Do not create a second top-level scripts folder unle
 
 ## Standalone Utility
 
+- `trip-insights.js` — private, read-only report of trip patterns (steady trips, time-of-day gaps, totals, streaks, trips away) written to `_reports/trip-insights.html` (git-excluded; never commit it)
+
 
 ## Placement Rule
 
