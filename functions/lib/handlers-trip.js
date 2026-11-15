@@ -1,7 +1,6 @@
 /**
  * Trip lifecycle handlers.
  */
-const { randomUUID } = require('crypto');
 const {
   sendSmsReply,
 } = require('./twilio');
@@ -23,23 +22,12 @@ const {
   Timestamp,
 } = require('./db');
 const { getConfiguredPrimaryAgency } = require('./primary-agency');
-const { PredictionEngine } = require('./predict.js');
 const { PredictionEngineV3 } = require('./predict_v3');
-
-// PredictionEngine is a module-level singleton shared by every request on this instance, and
-// texts are handled concurrently. Per-request data (stops library, network graph) goes on a
-// fresh object that inherits the engine's methods, so one text never sees another's data.
-function requestEngine(stopsLibrary, networkGraph) {
-  const engine = Object.create(PredictionEngine);
-  engine.stopsLibrary = stopsLibrary;
-  engine.networkGraph = networkGraph || null;
-  return engine;
-}
-const { TransferEngine } = require('./transfer.js');
 const { NetworkEngine } = require('./network.js');
 const { HabitEngine } = require('./habit');
 const { isPhoneConfirmed, phoneTag, tripStartedByPhone } = require('./phone-confirmation');
 const text = require('./sms-text');
+const { incompleteTripUpdate, teachStopRoute, tripDetailFields } = require('./trip-updates');
 const logger = require('./logger');
 const finalization = require('./finalization');
 const { checkMlTasks } = require('./ml-tasks');
@@ -55,18 +43,22 @@ const {
   lookupAgencyTimezone,
 } = require('./claude');
 const { parseStopInput } = require('./parsing');
-const { getEligibility, artifactSupportsAgency } = require('./intelligence-eligibility');
 
 // V3 votes over a longer window (3.5.0): the eval showed the 100-trip window was V3's main
 // coverage gap. V4/V5 eligibility keeps its original 100-trip window.
-const { PREDICTION_HISTORY_LIMIT, ELIGIBILITY_HISTORY_LIMIT, ML_ENDSTOP_LIVE } = require('./constants');
+const { PREDICTION_HISTORY_LIMIT } = require('./constants');
 const { buildEndStopContext } = require('./endstop-context');
 const { suggestRouteCorrection } = require('./route-typo');
-// V4/V5 only load when they run live (ML_ENDSTOP_LIVE, constants.js). Off, the sms function never
-// downloads the model files or loads the ONNX runtime; the models are graded weekly instead.
-const { PredictionEngineV4 } = ML_ENDSTOP_LIVE ? require('./predict_v4.js') : {};
-const { PredictionEngineV5 } = ML_ENDSTOP_LIVE ? require('./predict_v5.js') : {};
-const ModelStore = ML_ENDSTOP_LIVE ? require('./model-store') : null;
+const {
+  requestEngine,
+  replyDefaultAgency,
+  getMlReadiness,
+  guessMlEndStops,
+  getLoggedEndStopConstraint,
+  detectLoggedTransfer,
+  guessV3EndStops,
+  predictionTripFields,
+} = require('./trip-predictions');
 const {
   agencySuffix,
   isStopMatched,
@@ -108,31 +100,13 @@ async function determineStaleness(db, userId, activeTrip) {
   return { stale: false, elapsedMin };
 }
 
-async function detectProvisionalTransfer(userId, nextTrip, agency, boardingStop, stopsLibrary = []) {
-  try {
-    const history = await getRecentCompletedTrips(userId, 100);
-    const networkConnections = (agency && boardingStop)
-      ? await NetworkEngine.getConnectionsAtStop(db, agency, boardingStop)
-      : null;
 
-    let best = null;
-    for (const trip of history) {
-      if (!trip.endTime || !trip.endStopName) continue;
-      const confidence = TransferEngine.score(trip, nextTrip, history, networkConnections, stopsLibrary);
-      if (confidence < TransferEngine.CONFIDENCE_THRESHOLD) continue;
-      if (!best || confidence > best.confidence) best = { trip, confidence };
-    }
 
-    if (!best) return null;
-    return {
-      prevTripId: best.trip.id,
-      confidence: best.confidence,
-      prevRoute: best.trip.route || null,
-    };
-  } catch (err) {
-    console.error('Error detecting provisional transfer:', err);
-    return null;
-  }
+/** The trip-started reply. The trip is saved either way, so a failed send is only logged. */
+function replyAfterTripCreated(phoneNumber, body, options) {
+  return sendSmsReply(phoneNumber, body, options).catch(err => {
+    console.error('sendSmsReply failed after createTrip — trip created but user not notified', err.message);
+  });
 }
 
 /**
@@ -190,18 +164,12 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
 
   const stopData = await lookupStop(parsedStop.stopCode, parsedStop.stopName, resolvedAgency, route, direction);
   const stopMatched = stopData !== null;
+  const startStopCode = stopData ? stopData.stopCode : parsedStop.stopCode;
+  const startStopName = stopData ? stopData.stopName : parsedStop.stopName;
 
   // Background: teach this stop which routes serve it, and promote gtfs→verified on first real trip.
   // Held back while the route-typo question is open, so a typo isn't learned as a route here.
-  const teachStop = () => {
-    if (stopData?.id && route) {
-      const stopUpdate = { routes: FieldValue.arrayUnion(route) };
-      if (stopData.source === 'gtfs') stopUpdate.source = 'verified';
-      db.collection('stops').doc(stopData.id).update({
-        ...stopUpdate,
-      }).catch(() => {});
-    }
-  };
+  const teachStop = () => teachStopRoute(db, FieldValue, stopData?.id, stopData?.source, route);
 
   if (activeTrip) {
     teachStop();
@@ -222,16 +190,13 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
         agency: activeTrip.agency || null,
       },
       newTrip: {
-        stopCode: stopData ? stopData.stopCode : parsedStop.stopCode,
-        stopName: stopData ? stopData.stopName : parsedStop.stopName,
+        stopCode: startStopCode,
+        stopName: startStopName,
         route,
         direction,
         agency,
         stopMatched,
-        sentiment: options.sentiment || null,
-        tags: options.tags || [],
-        parsed_by: options.parsed_by || 'manual',
-        vehicle: options.vehicle || null,
+        ...tripDetailFields(options),
       },
     });
 
@@ -246,13 +211,7 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
 
   // No active trip - generate predictions before creating trip
   let habitPrediction = null;
-  let endStopPrediction = null;
-  let endStopPredictions = null;
-  let endStopPredictionV4 = null;
-  let endStopPredictionV5 = null;
-  let endStopConstraintSource = 'none';
-  let provisionalTransfer = null;
-  const startStopName = stopData ? stopData.stopName : parsedStop.stopName;
+  const predictions = { endStopConstraintSource: 'none' };
   let isAdmin = false;
   let defaultAgency = null;
   let routeSuggestion = null;
@@ -269,20 +228,11 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
     ]);
     const engine = requestEngine(stopsLibrary, networkGraph);
     isAdmin = adminStatus;
-    defaultAgency = getConfiguredPrimaryAgency(profile)
-      || history.find(trip => trip.agency)?.agency
-      || resolvedAgency
-      || null;
-    // Models are private and only trained on allowlisted users; everyone else gets rule-based predictions.
-    // With ML_ENDSTOP_LIVE off nothing is loaded and V4/V5 don't run.
-    const mlModels = ML_ENDSTOP_LIVE && ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
-    const { endStopV4Meta, endStopV5Meta } = mlModels || {};
+    defaultAgency = replyDefaultAgency(profile, history, resolvedAgency);
+    const { eligibility, mlEndStopReady, mlReady } = await getMlReadiness(
+      user, history, resolvedAgency, experimentalIntelligence
+    );
     const now = new Date();
-    const eligibility = getEligibility(history.slice(0, ELIGIBILITY_HISTORY_LIMIT), resolvedAgency);
-    const mlEndStopReady = ML_ENDSTOP_LIVE && eligibility.endStopEligible &&
-      artifactSupportsAgency(endStopV4Meta, resolvedAgency, 'agency::end_stop') &&
-      artifactSupportsAgency(endStopV5Meta, resolvedAgency, 'agency::end_stop');
-    const mlReady = experimentalIntelligence && mlEndStopReady;
     logger.info('Prediction eligibility', {
       agency: resolvedAgency,
       cleanTripCount: eligibility.cleanTripCount,
@@ -313,57 +263,31 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
       stopsLibrary,
       networkGraph,
     });
-    const endStopConstraint = engine.getEndStopConstraint(endStopContext);
-    endStopConstraintSource = endStopConstraint.source;
-    logger.info('Trip-start end-stop constraint', {
-      route,
-      startStopName,
-      direction,
-      constraintSource: endStopConstraint.source,
-      legalStopCount: endStopConstraint.legalStops ? endStopConstraint.legalStops.size : null,
-      traceId,
-    }, traceId);
-    provisionalTransfer = await detectProvisionalTransfer(user.userId, {
-      route,
-      startStopName,
-      startStop: startStopName,
-      startTime: now,
-    }, resolvedAgency, startStopName, stopsLibrary);
-    if (provisionalTransfer) {
-      logger.info('Trip-start provisional transfer detected', {
-        route,
-        startStopName,
-        prevTripId: provisionalTransfer.prevTripId,
-        prevRoute: provisionalTransfer.prevRoute,
-        confidence: provisionalTransfer.confidence,
-        traceId,
-      }, traceId);
-    }
+    predictions.endStopConstraintSource = getLoggedEndStopConstraint(
+      engine, endStopContext, 'Trip-start', traceId
+    ).source;
+    predictions.provisionalTransfer = await detectLoggedTransfer('Trip-start', {
+      userId: user.userId, route, startStopName, agency: resolvedAgency, stopsLibrary, now, traceId,
+    });
 
     // V3 end-stop guesses always run and are stored, even when a habit fires, so live
     // predictionStats stay complete and comparable. Only the SMS reply changes.
     // Route guesses are not made: the route arrives in the texted message.
     // V4/V5 only run when ML_ENDSTOP_LIVE is on, after the clean-history and artifact coverage checks.
     if (mlReady) {
-      const [topEndV4, topEndV5] = await Promise.all([
-        PredictionEngineV4.guessTopEndStops(endStopContext, 1),
-        PredictionEngineV5.guessTopEndStops(endStopContext, 1),
-      ]);
-      if (topEndV4.length > 0) endStopPredictionV4 = topEndV4[0];
-      if (topEndV5.length > 0) endStopPredictionV5 = topEndV5[0];
+      const { v4, v5 } = await guessMlEndStops(endStopContext);
+      predictions.endStopPredictionV4 = v4;
+      predictions.endStopPredictionV5 = v5;
     }
-    endStopPrediction = engine.guessEndStop(history, endStopContext);
-    if (isAdmin) {
-      const top = engine.guessTopEndStops(history, endStopContext, 3);
-      if (top.length > 0) endStopPredictions = top;
-    }
+    const v3 = guessV3EndStops(engine, history, endStopContext, isAdmin);
+    predictions.endStopPrediction = v3.prediction;
+    predictions.endStopPredictions = v3.predictions;
     // Route typo check (RYN-42): admin-only for now, like end-stop suggestions. GTFS routes
     // at the stop are read only when the rider's history already points at a likely typo.
     if (isAdmin && isValidRoute(route)) {
       const typoArgs = { engine, history, startStopName, agency: resolvedAgency, route, now };
       if (suggestRouteCorrection(typoArgs)) {
-        const stopCode = stopData ? stopData.stopCode : parsedStop.stopCode;
-        const routesAtStop = stopCode ? await getRoutesAtStop(stopCode, resolvedAgency) : null;
+        const routesAtStop = startStopCode ? await getRoutesAtStop(startStopCode, resolvedAgency) : null;
         routeSuggestion = suggestRouteCorrection({ ...typoArgs, routesAtStop });
       }
     }
@@ -378,27 +302,17 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
       userId: user.userId,
       route,
       direction: direction || null,
-      startStopCode: stopData ? stopData.stopCode : parsedStop.stopCode,
+      startStopCode,
       startStopName,
       stop_matched: stopMatched,
       sourcePhone: phoneTag(phoneNumber),
       agency: resolvedAgency,
-      sentiment: options.sentiment || null,
-      tags: options.tags || [],
-      parsed_by: options.parsed_by || 'manual',
-      vehicle: options.vehicle || null,
+      ...tripDetailFields(options),
       startTime: options.startTime || null,
       source: options.source || null,
       timing_reliability: options.timing_reliability || null,
       habitPrediction: habitPrediction || null,
-      endStopPrediction: endStopPrediction || null,
-      endStopPredictions: endStopPredictions || null,
-      endStopPredictionV4: endStopPredictionV4 || null,
-      endStopPredictionV5: endStopPredictionV5 || null,
-      endStopConstraintSource,
-      provisionalTransfer: !!provisionalTransfer,
-      provisionalPrevTripId: provisionalTransfer?.prevTripId || null,
-      provisionalJourneyConfidence: provisionalTransfer?.confidence || null,
+      ...predictionTripFields(predictions),
       needs_review: !isValidRoute(route) || null,
       // The route-typo question replaced the end-stop list, so END 1/2/3 must not pick from it.
       ...(routeSuggestion ? { routeTypoQuestion: true } : {}),
@@ -410,10 +324,7 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
   }
 
   const routeDisplay = getRouteDisplay(route, direction);
-  const finalStopDisplay = getStopDisplay(
-    stopData ? stopData.stopCode : parsedStop.stopCode,
-    stopData ? stopData.stopName : parsedStop.stopName,
-  );
+  const finalStopDisplay = getStopDisplay(startStopCode, startStopName);
 
   // Warm agency timezone cache in background — never blocks trip confirmation
   if (resolvedAgency) lookupAgencyTimezone(resolvedAgency, traceId).catch(() => {});
@@ -436,9 +347,7 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
       routeDisplay, finalStopDisplay, agencySuffix(resolvedAgency, defaultAgency), routeOptions
     );
     typoReply += await getAchievementNote(user.userId);
-    await sendSmsReply(phoneNumber, typoReply).catch(err => {
-      console.error('sendSmsReply failed after createTrip — trip created but user not notified', err.message);
-    });
+    await replyAfterTripCreated(phoneNumber, typoReply);
     return;
   }
 
@@ -446,7 +355,7 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
   // End-stop suggestions are admin-only; non-admins always get the plain END/FORGOT prompt.
   // On a habit trip the usual end stop leads the list; END n in handleEndTrip uses the same list.
   // The same list sets the RCS END n buttons (switched off unless config/rcsButtons enables it).
-  const shownChoices = isAdmin ? getShownEndStopChoices(endStopPredictions, habitPrediction) : [];
+  const shownChoices = isAdmin ? getShownEndStopChoices(predictions.endStopPredictions, habitPrediction) : [];
   replyBody += isAdmin
     ? formatPredictionPrompt(shownChoices)
     : getPredictionPrompt(null);
@@ -455,9 +364,7 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
   if (!unconfirmed) replyBody += await getAchievementNote(user.userId);
 
   const startReplyOptions = shownChoices?.length ? { endButtons: shownChoices.length } : undefined;
-  await sendSmsReply(phoneNumber, replyBody, startReplyOptions).catch(err => {
-    console.error('sendSmsReply failed after createTrip — trip created but user not notified', err.message);
-  });
+  await replyAfterTripCreated(phoneNumber, replyBody, startReplyOptions);
 }
 
 /**
@@ -475,13 +382,8 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
   const oldTripRouteDisplay = getRouteDisplay(activeTrip.route, activeTrip.direction);
 
   let confirmDefaultAgency = 'TTC';
-  let confirmEndStopPrediction = null;
-  let confirmEndStopPredictions = null;
-  let confirmEndStopPredictionV4 = null;
-  let confirmEndStopPredictionV5 = null;
-  let confirmEndStopConstraintSource = 'none';
+  const predictions = { endStopConstraintSource: 'none' };
   let confirmIsAdmin = false;
-  let confirmProvisionalTransfer = null;
   let newStopData = null;
   try {
     const [history, stopsLibrary, confirmProfile, confirmNetworkGraph, confirmAdminStatus, experimentalIntelligence] = await Promise.all([
@@ -494,75 +396,41 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
     ]);
     const engine = requestEngine(stopsLibrary, confirmNetworkGraph);
     confirmIsAdmin = confirmAdminStatus;
-    confirmDefaultAgency = getConfiguredPrimaryAgency(confirmProfile)
-      || history.find(trip => trip.agency)?.agency
-      || newTrip.agency
-      || null;
-    // Models are private and only trained on allowlisted users; everyone else gets rule-based predictions.
-    const mlModels = ML_ENDSTOP_LIVE && ModelStore.isUserAllowed(user.userId) ? await ModelStore.ensure() : null;
-    const { endStopV4Meta, endStopV5Meta } = mlModels || {};
+    confirmDefaultAgency = replyDefaultAgency(confirmProfile, history, newTrip.agency);
+    const { mlReady } = await getMlReadiness(user, history, newTrip.agency, experimentalIntelligence);
     const now = new Date();
-    const confirmEligibility = getEligibility(history.slice(0, ELIGIBILITY_HISTORY_LIMIT), newTrip.agency);
-    const confirmMlEndStopReady = ML_ENDSTOP_LIVE && confirmEligibility.endStopEligible &&
-      artifactSupportsAgency(endStopV4Meta, newTrip.agency, 'agency::end_stop') &&
-      artifactSupportsAgency(endStopV5Meta, newTrip.agency, 'agency::end_stop');
-    const confirmMlReady = experimentalIntelligence && confirmMlEndStopReady;
     const lastTrip = history.length > 0 ? history[0] : null;
     const lastEndStopName = lastTrip?.endStopName || lastTrip?.endStop || null;
-    
+
     // Resolve hubId for the new trip
     newStopData = await lookupStop(newTrip.stopCode, newTrip.stopName, newTrip.agency, newTrip.route, newTrip.direction);
-    
+
     const confirmEndStopContext = { route: newTrip.route, startStopName: newTrip.stopName, direction: newTrip.direction, time: now, lastEndStopName, agency: newTrip.agency, stopsLibrary, networkGraph: confirmNetworkGraph || null };
-    const confirmEndStopConstraint = engine.getEndStopConstraint(confirmEndStopContext);
-    confirmEndStopConstraintSource = confirmEndStopConstraint.source;
-    logger.info('Confirm-start end-stop constraint', {
+    predictions.endStopConstraintSource = getLoggedEndStopConstraint(
+      engine, confirmEndStopContext, 'Confirm-start', traceId
+    ).source;
+    predictions.provisionalTransfer = await detectLoggedTransfer('Confirm-start', {
+      userId: user.userId,
       route: newTrip.route,
       startStopName: newTrip.stopName,
-      direction: newTrip.direction,
-      constraintSource: confirmEndStopConstraint.source,
-      legalStopCount: confirmEndStopConstraint.legalStops ? confirmEndStopConstraint.legalStops.size : null,
+      agency: newTrip.agency,
+      stopsLibrary,
+      now,
       traceId,
-    }, traceId);
-    confirmProvisionalTransfer = await detectProvisionalTransfer(user.userId, {
-      route: newTrip.route,
-      startStopName: newTrip.stopName,
-      startStop: newTrip.stopName,
-      startTime: now,
-    }, newTrip.agency, newTrip.stopName, stopsLibrary);
-    if (confirmProvisionalTransfer) {
-      logger.info('Confirm-start provisional transfer detected', {
-        route: newTrip.route,
-        startStopName: newTrip.stopName,
-        prevTripId: confirmProvisionalTransfer.prevTripId,
-        prevRoute: confirmProvisionalTransfer.prevRoute,
-        confidence: confirmProvisionalTransfer.confidence,
-        traceId,
-      });
+    });
+    if (mlReady) {
+      const { v4, v5 } = await guessMlEndStops(confirmEndStopContext);
+      predictions.endStopPredictionV4 = v4;
+      predictions.endStopPredictionV5 = v5;
     }
-    if (confirmMlReady) {
-      const [confirmTopV4, confirmTopV5] = await Promise.all([
-        PredictionEngineV4.guessTopEndStops(confirmEndStopContext, 1),
-        PredictionEngineV5.guessTopEndStops(confirmEndStopContext, 1),
-      ]);
-      if (confirmTopV4.length > 0) confirmEndStopPredictionV4 = confirmTopV4[0];
-      if (confirmTopV5.length > 0) confirmEndStopPredictionV5 = confirmTopV5[0];
-    }
-    confirmEndStopPrediction = engine.guessEndStop(history, confirmEndStopContext);
-    if (confirmIsAdmin) {
-      const top = engine.guessTopEndStops(history, confirmEndStopContext, 3);
-      if (top.length > 0) confirmEndStopPredictions = top;
-    }
+    const v3 = guessV3EndStops(engine, history, confirmEndStopContext, confirmIsAdmin);
+    predictions.endStopPrediction = v3.prediction;
+    predictions.endStopPredictions = v3.predictions;
   } catch (err) {
     console.error('Error generating prediction at confirm start:', err);
   }
 
-  await db.collection('trips').doc(activeTrip.id).update({
-    incomplete: true,
-    endTime: activeTrip.startTime,
-    exitLocation: null,
-    duration: null,
-  });
+  await db.collection('trips').doc(activeTrip.id).update(incompleteTripUpdate(activeTrip));
 
   await createTrip({
     sourcePhone: phoneTag(phoneNumber),
@@ -575,18 +443,8 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
     stop_matched: newTrip.stopMatched || false,
     agency: newTrip.agency,
     timing_reliability: determineReliability(state.expiresAt),
-    sentiment: newTrip.sentiment || null,
-    tags: newTrip.tags || [],
-    parsed_by: newTrip.parsed_by || 'manual',
-    vehicle: newTrip.vehicle || null,
-    endStopPrediction: confirmEndStopPrediction || null,
-    endStopPredictions: confirmEndStopPredictions || null,
-    endStopPredictionV4: confirmEndStopPredictionV4 || null,
-    endStopPredictionV5: confirmEndStopPredictionV5 || null,
-    endStopConstraintSource: confirmEndStopConstraintSource,
-    provisionalTransfer: !!confirmProvisionalTransfer,
-    provisionalPrevTripId: confirmProvisionalTransfer?.prevTripId || null,
-    provisionalJourneyConfidence: confirmProvisionalTransfer?.confidence || null,
+    ...tripDetailFields(newTrip),
+    ...predictionTripFields(predictions),
   });
   await clearPendingState(phoneNumber);
 
@@ -596,7 +454,7 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
   let confirmReplyBody = text.startedAfterIncomplete(
     oldTripRouteDisplay, newRouteDisplay, newStopDisplay, agencySuffix(newTrip.agency, confirmDefaultAgency)
   );
-  const confirmShown = confirmIsAdmin ? getShownEndStopPredictions(confirmEndStopPredictions) : [];
+  const confirmShown = confirmIsAdmin ? getShownEndStopPredictions(predictions.endStopPredictions) : [];
   confirmReplyBody += formatPredictionPrompt(confirmShown);
 
   // Add achievement note if applicable
@@ -639,14 +497,11 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
     return;
   }
 
-  if (routeVerification) {
-    if (!endRouteMatches(activeTrip.route, routeVerification)) {
-      await sendSmsReply(
-        phoneNumber,
-        text.routeMismatch(getRouteDisplay(activeTrip.route, activeTrip.direction), routeVerification),
-      );
-      return;
-    }
+  const routeDisplay = getRouteDisplay(activeTrip.route, activeTrip.direction);
+
+  if (routeVerification && !endRouteMatches(activeTrip.route, routeVerification)) {
+    await sendSmsReply(phoneNumber, text.routeMismatch(routeDisplay, routeVerification));
+    return;
   }
 
   const [endProfile, endIsAdmin] = await Promise.all([
@@ -701,15 +556,12 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
     endStopData = await lookupStop(parsedEndStop.stopCode, parsedEndStop.stopName, agency, tripRoute, null);
   }
 
-  const endStopDisplay = getStopDisplay(
-    endStopData ? endStopData.stopCode : parsedEndStop.stopCode,
-    endStopData ? endStopData.stopName : parsedEndStop.stopName,
-  );
-
+  const endStopCodeFinal = endStopData ? endStopData.stopCode : parsedEndStop.stopCode;
   const endStopNameFinal = endStopData ? endStopData.stopName : parsedEndStop.stopName;
+  const endStopDisplay = getStopDisplay(endStopCodeFinal, endStopNameFinal);
 
   await db.collection('trips').doc(activeTrip.id).update({
-    endStopCode: endStopData ? endStopData.stopCode : parsedEndStop.stopCode,
+    endStopCode: endStopCodeFinal,
     endStopName: endStopNameFinal,
     endHubId: endStopData?.hubId || null,
     endTime: endTime,
@@ -721,10 +573,7 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
   if (unconfirmed) {
     // Just the facts of the trip this number started: no journey, anomaly or
     // suggestion notes (they draw on the owner's history), no profile updates.
-    await sendSmsReply(
-      phoneNumber,
-      text.tripEndedBasic(getRouteDisplay(activeTrip.route, activeTrip.direction), endStopDisplay, duration)
-    );
+    await sendSmsReply(phoneNumber, text.tripEndedBasic(routeDisplay, endStopDisplay, duration));
     return;
   }
 
@@ -736,8 +585,6 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
   } catch (err) {
     console.error('Error detecting journey link for reply note:', err);
   }
-
-  const routeDisplay = getRouteDisplay(activeTrip.route, activeTrip.direction);
 
   // === Post-end architecture note ===
   // All heavy side effects (grading, network learning, habit rebuild, journey write)

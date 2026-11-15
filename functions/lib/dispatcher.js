@@ -41,6 +41,7 @@ const { createInviteHandlers } = require('./sms-invite');
 const { getAuth } = require('firebase-admin/auth');
 const { isPhoneConfirmed } = require('./phone-confirmation');
 const text = require('./sms-text');
+const { createPendingHandlers } = require('./dispatcher-pending');
 
 let inviteHandlers = null;
 function getInviteHandlers() {
@@ -52,6 +53,12 @@ function getInviteHandlers() {
   }
   return inviteHandlers;
 }
+
+// Replies to an open question (agency / stop / route choice, photo follow-ups, etc.).
+const { handlePendingState } = createPendingHandlers({
+  handlers, db, FieldValue, sendSmsReply, clearPendingState, setPendingState,
+  getRouteDisplay, getStopDisplay, logger, generateTraceId: generateTraceIdLocal,
+});
 
 // The opt-out / opt-in keywords configured in the Twilio console (Advanced
 // Opt-Out). END is deliberately not one of them: it finishes a trip. YES is
@@ -100,9 +107,6 @@ async function promptUnlock(phoneNumber, link) {
   await getInviteHandlers().startPhoneConfirmation(phoneNumber, link.email);
   await sendSmsReply(phoneNumber, text.UNLOCK_PROMPT_TEXT);
 }
-
-/** Commands that are allowed to fall through pending-state handlers to normal dispatch. */
-const PENDING_PASSTHROUGH = new Set(['STATUS', 'STATS', 'FORGOT', 'INFO', 'COMMANDS', 'HELP', '?']);
 
 /**
  * Main dispatch logic for an SMS message
@@ -264,329 +268,6 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
 }
 
 /**
- * Handles states like verification codes or start-trip confirmations
- */
-async function handleConfirmAgencyState(phoneNumber, body, upperBody, state, traceId = null, user = null) {
-  const trace = traceId || generateTraceIdLocal();
-  if (/^[12]$/.test(body.trim())) {
-    if (user) {
-      const chosenAgency = state.agencyOptions[parseInt(body.trim(), 10) - 1];
-      await clearPendingState(phoneNumber);
-      await handlers.handleTripLog(
-        phoneNumber, user, state.stopInput, state.route, state.direction,
-        chosenAgency, { ...state.options, agencyExplicit: true }, trace
-      );
-    }
-    return true;
-  }
-
-  if (upperBody === 'DISCARD') {
-    await clearPendingState(phoneNumber);
-    await sendSmsReply(phoneNumber, text.TRIP_CANCELLED);
-    return true;
-  }
-
-  if (upperBody === 'SKIP') {
-    if (user) {
-      // SKIP uses the default agency (index 1 in agencyOptions)
-      const skippedAgency = state.agencyOptions[1] || state.agencyOptions[0];
-      await clearPendingState(phoneNumber);
-      await handlers.handleTripLog(
-        phoneNumber, user, state.stopInput, state.route, state.direction,
-        skippedAgency, { ...state.options, agencyExplicit: true }, trace
-      );
-    }
-    return true;
-  }
-
-  if (PENDING_PASSTHROUGH.has(upperBody) || upperBody.startsWith('ASK ')) return false;
-
-  await sendSmsReply(phoneNumber, text.AGENCY_CHOICE_REMINDER);
-  return true;
-}
-
-async function handleConfirmStopState(phoneNumber, body, upperBody, state, traceId = null, user = null) {
-  const trace = traceId || generateTraceIdLocal();
-  const num = parseInt(body.trim(), 10);
-  if (!isNaN(num) && num >= 1 && num <= state.stopCandidates.length) {
-    if (user) {
-      const chosen = state.stopCandidates[num - 1];
-      await clearPendingState(phoneNumber);
-      if (state.tripId) {
-        // Trip already started — update the stop fields now that we know which stop
-        await db.collection('trips').doc(state.tripId).update({
-          startStopCode: chosen.stopCode,
-          startStopName: chosen.stopName,
-          startStop: chosen.stopName,
-          stop_matched: true,
-        });
-        // Run V4/V5 predictions now that the stop is known — fire-and-forget
-        if (isPhoneConfirmed(user)) {
-          handlers.fillPredictions(
-            user, state.tripId, chosen.stopName, state.route, state.direction, state.agency, trace
-          ).catch(() => {});
-        }
-        await sendSmsReply(phoneNumber, text.stopSet(chosen.stopName));
-      } else {
-        // No trip started yet (active-trip conflict path) — pass stop code so lookupStop resolves unambiguously
-        await handlers.handleTripLog(
-          phoneNumber, user, chosen.stopCode, state.route, state.direction,
-          state.agency, { ...state.options, agencyExplicit: true }, trace
-        );
-      }
-    }
-    return true;
-  }
-
-  if (upperBody === 'DISCARD') {
-    await clearPendingState(phoneNumber);
-    if (state.tripId) {
-      await db.collection('trips').doc(state.tripId).delete();
-    }
-    await sendSmsReply(phoneNumber, text.TRIP_CANCELLED);
-    return true;
-  }
-
-  // SKIP dismisses the stop clarification without touching the trip —
-  // DISCARD is too destructive when the rider just doesn't care which
-  // physical stop it was.
-  if (upperBody === 'SKIP') {
-    await clearPendingState(phoneNumber);
-    if (state.tripId) {
-      await sendSmsReply(phoneNumber, text.STOP_SKIPPED);
-    } else {
-      if (user) {
-        await handlers.handleTripLog(
-          phoneNumber, user, state.stopInput, state.route, state.direction,
-          state.agency, { ...state.options, skipDisambiguation: true }, trace
-        );
-      }
-    }
-    return true;
-  }
-
-  // Stop clarification is optional. If the rider sends another command or
-  // starts another trip instead, discard the old prompt and process the new
-  // message normally.
-  if (PENDING_PASSTHROUGH.has(upperBody) || upperBody === 'NOTES' || upperBody.startsWith('NOTES ') || upperBody.startsWith('ASK ')) {
-    await clearPendingState(phoneNumber);
-    return false;
-  }
-
-  // END/STOP must work mid-disambiguation — the trip already exists and the
-  // rider may reach their destination before ever picking a start stop.
-  if (/^(END|STOP)(\s|$)/i.test(body)) {
-    await clearPendingState(phoneNumber);
-    return false;
-  }
-
-  await clearPendingState(phoneNumber);
-  return false;
-}
-
-// Teaches the boarding stop the route the trip ends up with (held back by handleTripLog while
-// the route-typo question is open, so a typo isn't learned as a route at that stop).
-function teachStopRoute(state, route) {
-  if (!state.stopId || !route) return;
-  const stopUpdate = { routes: FieldValue.arrayUnion(route) };
-  if (state.stopSource === 'gtfs') stopUpdate.source = 'verified';
-  db.collection('stops').doc(state.stopId).update(stopUpdate).catch(() => {});
-}
-
-/**
- * Route typo question (RYN-42). The trip already started with the texted route; a number
- * sets the route, and anything else leaves the trip as texted and is handled normally.
- */
-async function handleConfirmRouteState(phoneNumber, body, upperBody, state, traceId = null, user = null) {
-  const options = state.routeOptions || [];
-  const reply = body.trim();
-  const num = parseInt(reply, 10);
-  if (/^\d+$/.test(reply) && num >= 1 && num <= options.length) {
-    if (user) {
-      const chosen = options[num - 1];
-      await clearPendingState(phoneNumber);
-      if (chosen !== state.textedRoute && state.tripId) {
-        await db.collection('trips').doc(state.tripId).update({
-          route: chosen,
-          routeTypoFrom: state.textedRoute,
-        });
-      }
-      teachStopRoute(state, chosen);
-      await sendSmsReply(phoneNumber, text.routeSet(getRouteDisplay(chosen, state.direction)));
-    }
-    return true;
-  }
-
-  if (upperBody === 'DISCARD') {
-    await clearPendingState(phoneNumber);
-    if (state.tripId) {
-      await db.collection('trips').doc(state.tripId).delete();
-    }
-    await sendSmsReply(phoneNumber, text.TRIP_CANCELLED);
-    return true;
-  }
-
-  // The question is optional: END, another trip, or any other command keeps the texted
-  // route and is processed normally.
-  teachStopRoute(state, state.textedRoute);
-  await clearPendingState(phoneNumber);
-  return false;
-}
-
-async function handleMmsStopNeededState(phoneNumber, body, upperBody, state, traceId = null, user = null) {
-  const trace = traceId || generateTraceIdLocal();
-  if (upperBody === 'DISCARD') {
-    await clearPendingState(phoneNumber);
-    await sendSmsReply(phoneNumber, text.TRIP_CANCELLED);
-    return true;
-  }
-  if (user && body.trim()) {
-    await clearPendingState(phoneNumber);
-    const stopReply = body.trim();
-    const mmsOptions = {
-      parsed_by: 'mms',
-      startTime: state.receivedAt,
-      source: 'mms',
-      timing_reliability: 'approximate',
-    };
-    if (state.routeCandidates.length === 1) {
-      const chosen = state.routeCandidates[0];
-      await handlers.handleTripLog(
-        phoneNumber, user, stopReply, chosen.route, null, chosen.agency, mmsOptions, trace
-      );
-    } else {
-      await setPendingState(phoneNumber, {
-        type: 'confirm_mms_route',
-        routeCandidates: state.routeCandidates,
-        stopInput: stopReply,
-        defaultAgency: state.defaultAgency,
-        receivedAt: state.receivedAt,
-      });
-      await sendSmsReply(phoneNumber, text.mmsWhichRoute(state.routeCandidates.map(r => r.route)));
-    }
-  }
-  return true;
-}
-
-async function handleConfirmMmsRouteState(phoneNumber, body, upperBody, state, traceId = null, user = null) {
-  const trace = traceId || generateTraceIdLocal();
-  const num = parseInt(body.trim(), 10);
-  if (!isNaN(num) && num >= 1 && num <= state.routeCandidates.length) {
-    if (user) {
-      const chosen = state.routeCandidates[num - 1];
-      await clearPendingState(phoneNumber);
-      await handlers.handleTripLog(
-        phoneNumber, user, state.stopInput, chosen.route, null,
-        chosen.agency || state.defaultAgency,
-        {
-          parsed_by: 'mms',
-          startTime: state.receivedAt,
-          source: 'mms',
-          timing_reliability: 'approximate',
-        },
-        trace
-      );
-    }
-    return true;
-  }
-
-  if (upperBody === 'DISCARD') {
-    await clearPendingState(phoneNumber);
-    await sendSmsReply(phoneNumber, text.TRIP_CANCELLED);
-    return true;
-  }
-
-  if (PENDING_PASSTHROUGH.has(upperBody) || upperBody === 'NOTES' || upperBody.startsWith('NOTES ') || upperBody.startsWith('ASK ')) return false;
-
-  const count = (state.routeCandidates || []).length;
-  await sendSmsReply(phoneNumber, text.mmsRouteReminder(count));
-  return true;
-}
-
-async function handleConfirmStartState(phoneNumber, upperBody, state, traceId = null, user = null) {
-  const trace = traceId || generateTraceIdLocal();
-  if (upperBody === 'START') {
-    if (user) await handlers.handleConfirmStart(phoneNumber, user, state, trace);
-    return true;
-  }
-
-  if (upperBody === 'DISCARD') {
-    // Cancel the new trip attempt — old trip stays active
-    const activeRouteDisplay = getRouteDisplay(state.activeTrip.route, state.activeTrip.direction);
-    const activeStopDisplay = getStopDisplay(
-      state.activeTrip.startStopCode, state.activeTrip.startStopName, state.activeTrip.startStop
-    );
-    await clearPendingState(phoneNumber);
-    await sendSmsReply(phoneNumber, text.newTripCancelled(activeRouteDisplay, activeStopDisplay));
-    return true;
-  }
-
-  if (upperBody === 'FORGOT') {
-    // Mark old trip incomplete and cancel the new trip attempt
-    await db.collection('trips').doc(state.activeTrip.id).update({
-      incomplete: true,
-      endTime: state.activeTrip.startTime,
-      exitLocation: null,
-      duration: null,
-    });
-    const activeRouteDisplay = getRouteDisplay(state.activeTrip.route, state.activeTrip.direction);
-    const activeStopDisplay = getStopDisplay(
-      state.activeTrip.startStopCode, state.activeTrip.startStopName, state.activeTrip.startStop
-    );
-    await clearPendingState(phoneNumber);
-    await sendSmsReply(phoneNumber, text.activeSavedNewCancelled(activeRouteDisplay, activeStopDisplay));
-    return true;
-  }
-
-  // STATUS/STATS/ASK/INFO fall through so their normal handlers can respond.
-  if (PENDING_PASSTHROUGH.has(upperBody) || upperBody.startsWith('ASK ')) return false;
-
-  // Anything else (e.g. "1", another trip attempt) gets a reminder instead of
-  // falling through to "Could not understand."
-  const newTripDisplay = getRouteDisplay(state.newTrip?.route, state.newTrip?.direction);
-  await sendSmsReply(phoneNumber, text.confirmStartReminder(newTripDisplay));
-  return true;
-}
-
-async function handlePendingState(phoneNumber, body, upperBody, state, traceId = null, { locked = false, user = null } = {}) {
-  const trace = traceId || generateTraceIdLocal();
-
-  if (state.type === 'awaiting_verification' && /^\d{4,6}$/.test(body)) {
-    await handlers.handleVerificationCode(phoneNumber, body, trace);
-    return true;
-  }
-
-  if (state.type === 'awaiting_email') {
-    // Let HELP/STATUS/etc. and an explicit "REGISTER [email]" retry fall through to their
-    // normal handlers instead of being swallowed as a (malformed) email attempt — this is
-    // the only pending state that used to lack this bypass.
-    if (PENDING_PASSTHROUGH.has(upperBody) || upperBody.startsWith('ASK ') || upperBody.startsWith('REGISTER ')) return false;
-    await handlers.handleRegister(phoneNumber, body.trim(), trace);
-    return true;
-  }
-
-  const stateHandlers = {
-    confirm_agency: () => handleConfirmAgencyState(phoneNumber, body, upperBody, state, trace, user),
-    confirm_stop: () => handleConfirmStopState(phoneNumber, body, upperBody, state, trace, user),
-    confirm_route: () => handleConfirmRouteState(phoneNumber, body, upperBody, state, trace, user),
-    mms_stop_needed: () => handleMmsStopNeededState(phoneNumber, body, upperBody, state, trace, user),
-    confirm_mms_route: () => handleConfirmMmsRouteState(phoneNumber, body, upperBody, state, trace, user),
-    confirm_start: () => handleConfirmStartState(phoneNumber, upperBody, state, trace, user),
-  };
-
-  if (stateHandlers[state.type]) {
-    // An unconfirmed number may only answer a trip prompt with a choice. DISCARD,
-    // FORGOT, START (which would end the owner's trip) and the rest are left to
-    // the main gate, and a prompt about the owner's active trip is never honoured.
-    if (locked && (state.type === 'confirm_start' || !/^(\d+|SKIP)$/.test(upperBody.trim()))) return false;
-    return stateHandlers[state.type]();
-  }
-
-  logger.warn('handlePendingState: unknown state type, falling through', { type: state.type, traceId: trace }, trace);
-  return false;
-}
-
-/**
  * Commands accessible to everyone (HELP, REGISTER)
  */
 async function handlePublicCommands(phoneNumber, upperBody, rawBody, traceId = null) {
@@ -653,6 +334,12 @@ async function handlePrivateCommands(phoneNumber, user, upperBody, rawBody, trac
   return false;
 }
 
+/** The agency a texted trip defaults to: the profile's primary agency, else the last trip's. */
+async function getDefaultAgency(userId) {
+  const configuredAgency = getConfiguredPrimaryAgency(await getUserProfile(userId));
+  return configuredAgency || (getLastTripAgency ? await getLastTripAgency(userId) : null);
+}
+
 /**
  * Handles explicit stop/start formats
  */
@@ -676,10 +363,7 @@ async function handleTripFlow(phoneNumber, user, body, receivedAt = Date.now(), 
 
   // Start Trip check (Multi-line or single-line with direction)
   // An unconfirmed number gets no default agency from the owner's profile or history.
-  const unconfirmed = !isPhoneConfirmed(user);
-  const userProfile = unconfirmed ? undefined : await getUserProfile(user.userId);
-  const configuredAgency = getConfiguredPrimaryAgency(userProfile);
-  const defaultAgency = unconfirmed ? null : (configuredAgency || (getLastTripAgency ? await getLastTripAgency(user.userId) : null));
+  const defaultAgency = isPhoneConfirmed(user) ? await getDefaultAgency(user.userId) : null;
   const multiLineTrip = parseMultiLineTripFormat(body, defaultAgency);
   const singleLineTrip = !multiLineTrip ? parseSingleLineTripFormat(body, defaultAgency) : null;
   const casualTrip = !multiLineTrip && !singleLineTrip ? parseCasualTripFormat(body, defaultAgency) : null;
@@ -721,9 +405,7 @@ async function handleAIIntent(phoneNumber, user, body, receivedAt = Date.now(), 
     return false;
   }
 
-  const userProfile = await getUserProfile(user.userId);
-  const configuredAgency = getConfiguredPrimaryAgency(userProfile);
-  const defaultAgency = configuredAgency || (getLastTripAgency ? await getLastTripAgency(user.userId) : null);
+  const defaultAgency = await getDefaultAgency(user.userId);
 
   switch (aiResult.intent) {
   case 'START_TRIP': {

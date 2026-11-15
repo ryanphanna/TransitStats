@@ -15,15 +15,15 @@ const {
 const { getConfiguredPrimaryAgency } = require('./primary-agency');
 const { NetworkEngine } = require('./network.js');
 const { ML_ENDSTOP_LIVE } = require('./constants');
-// V4/V5 only load when they run live (ML_ENDSTOP_LIVE, constants.js).
-const { PredictionEngineV4 } = ML_ENDSTOP_LIVE ? require('./predict_v4.js') : {};
-const { PredictionEngineV5 } = ML_ENDSTOP_LIVE ? require('./predict_v5.js') : {};
+// The model store only loads when V4/V5 run live (ML_ENDSTOP_LIVE, constants.js).
 const ModelStore = ML_ENDSTOP_LIVE ? require('./model-store') : null;
 const {
   parseStopSignImage,
 } = require('./gemini');
 const logger = require('./logger');
 const text = require('./sms-text');
+const { mmsTripOptions } = require('./trip-updates');
+const { guessMlEndStops } = require('./trip-predictions');
 const { handleTripLog } = require('./handlers-trip');
 const { isModelReady } = require('./intelligence-eligibility');
 
@@ -72,14 +72,11 @@ async function fillPredictions(user, tripId, stopName, route, direction, agency,
       networkGraph,
     };
 
-    const [topV4, topV5] = await Promise.all([
-      PredictionEngineV4.guessTopEndStops(endStopContext, 1),
-      PredictionEngineV5.guessTopEndStops(endStopContext, 1),
-    ]);
+    const { v4, v5 } = await guessMlEndStops(endStopContext);
 
     const update = {};
-    if (topV4.length > 0) update.endStopPredictionV4 = topV4[0];
-    if (topV5.length > 0) update.endStopPredictionV5 = topV5[0];
+    if (v4) update.endStopPredictionV4 = v4;
+    if (v5) update.endStopPredictionV5 = v5;
 
     if (Object.keys(update).length > 0) {
       await db.collection('trips').doc(tripId).update(update);
@@ -168,7 +165,7 @@ async function handleMmsTrip(phoneNumber, user, mediaUrl, receivedAt, traceId = 
   const userProfile = await getUserProfile(user.userId);
   const defaultAgency = getConfiguredPrimaryAgency(userProfile);
 
-  const tripOptions = { parsed_by: 'mms', startTime: receivedAt, source: 'mms', timing_reliability: 'approximate' };
+  const tripOptions = mmsTripOptions(receivedAt);
 
   if (parsed.routes.length === 1) {
     const { route, agency } = parsed.routes[0];

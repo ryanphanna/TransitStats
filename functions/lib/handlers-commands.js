@@ -30,6 +30,7 @@ const {
 const { getConfiguredPrimaryAgency } = require('./primary-agency');
 const { isPhoneConfirmed } = require('./phone-confirmation');
 const text = require('./sms-text');
+const { incompleteTripUpdate } = require('./trip-updates');
 const { KNOWN_AGENCIES } = require('./constants');
 const {
   lookupAgencyTimezone,
@@ -191,12 +192,7 @@ async function handleIncomplete(phoneNumber, user, traceId = null) {
 
   const routeDisplay = getRouteDisplay(activeTrip.route, activeTrip.direction);
 
-  await db.collection('trips').doc(activeTrip.id).update({
-    incomplete: true,
-    endTime: activeTrip.startTime,
-    exitLocation: null,
-    duration: null,
-  });
+  await db.collection('trips').doc(activeTrip.id).update(incompleteTripUpdate(activeTrip));
 
   await sendSmsReply(phoneNumber, text.tripSavedIncomplete(routeDisplay));
 }

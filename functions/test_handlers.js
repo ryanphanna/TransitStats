@@ -14,6 +14,7 @@ function loadHandlers(overrides = {}) {
     require.resolve('./lib/handlers-utils'),
     require.resolve('./lib/handlers-commands'),
     require.resolve('./lib/handlers-trip'),
+    require.resolve('./lib/trip-predictions'),
     require.resolve('./lib/handlers-query'),
     require.resolve('./lib/handlers-intelligence'),
     require.resolve('./lib/finalization'),
