@@ -1,5 +1,6 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { resolveAtlasAgency } = require('./atlas-agency');
+const { leanRouteShapes } = require('./lib/atlas-route-shapes');
 
 const ATLAS_R2_BASE = process.env.ATLAS_R2_BASE || 'https://data.transitatlas.fyi';
 const cache = new Map();
@@ -65,11 +66,7 @@ exports.atlasRoutes = onRequest({
       return;
     }
 
-    const features = (data.features || []).filter(feature => {
-      const properties = feature.properties || {};
-      return routeSet.has(String(properties.routeShortName || '').trim())
-        || routeSet.has(String(properties.routeId || '').trim());
-    });
+    const features = leanRouteShapes(data.features, routeSet);
 
     res.set('Cache-Control', 'public, max-age=3600');
     res.status(200).json({ type: 'FeatureCollection', features });
