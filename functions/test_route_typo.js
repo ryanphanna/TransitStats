@@ -98,6 +98,6 @@ test('uses the time-of-day bucket at the stop when it has rides', () => {
 test('the typo prompt copies the stop-choice layout, with no blank line before the reply line', () => {
   const msg = text.routeTypoPrompt('51', 'Spadina Station', '', ['510', '51']);
   assert.equal(msg, 'Started 51 from Spadina Station.\n\nDid you mean 510?\n' +
-    '1. Route 510\n2. Route 51\nReply with a number to set the route.');
+    '1. Route 510\n2. Route 51\nReply with a number to set the route, or ignore to keep 51.');
   assert.doesNotMatch(msg, /\bI\b/);
 });

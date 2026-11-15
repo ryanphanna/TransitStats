@@ -269,7 +269,7 @@ function stopSet(stopName) {
  */
 function routeTypoPrompt(routeDisplay, stopDisplay, agencySuffix, options) {
   const list = options.map((route, i) => `${i + 1}. Route ${route}`).join('\n');
-  return `${tripStarted(routeDisplay, stopDisplay, agencySuffix)}\n\nDid you mean ${options[0]}?\n${list}\nReply with a number to set the route.`;
+  return `${tripStarted(routeDisplay, stopDisplay, agencySuffix)}\n\nDid you mean ${options[0]}?\n${list}\nReply with a number to set the route, or ignore to keep ${options[options.length - 1]}.`;
 }
 
 function routeSet(routeDisplay) {

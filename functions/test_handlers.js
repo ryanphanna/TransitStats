@@ -1286,7 +1286,7 @@ test('handleTripLog: a likely route typo starts the trip as texted and asks "did
   assert.equal(state.stopId, 'stop_spadina');
   assert.equal(calls.createTrip[0].routeTypoQuestion, true);
   const reply = calls.sendSmsReply[0].message;
-  assert.match(reply, /^Started 51 from 14500\.\n\nDid you mean 510\?\n1\. Route 510\n2\. Route 51\nReply with a number to set the route\./);
+  assert.match(reply, /^Started 51 from 14500\.\n\nDid you mean 510\?\n1\. Route 510\n2\. Route 51\nReply with a number to set the route, or ignore to keep 51\./);
   assert.doesNotMatch(reply, /END 1/, 'end-stop numbers are left out so the numbers do not clash');
   assert.ok(!calls.docUpdates.some(u => u.routes), 'the typo is not taught to the stop while the question is open');
 });
