@@ -20,6 +20,7 @@ try { _topology = require('./topology.json'); } catch (e) { /* topology filter d
 
 const { NetworkEngine } = require('./network');
 const { canonicalAgency } = require('./agency-aliases');
+const { normalizeStopName } = require('./stop-names');
 const TopologyConstraints = require('./topology-constraints');
 
 // Normalized stop name -> [{ canonical, agencies }] in library order, keyed by stops-library array.
@@ -329,10 +330,10 @@ const PredictionEngineV3 = {
     return true;
   },
 
+  // The shared stop-name rule (js/shared/stop-names.js), the same one ML features and the weekly
+  // gate use, so live grading and the gate agree on which spellings are one stop (RYN-541).
   _normStopName: function (name) {
-    return name.trim().toLowerCase()
-      .replace(/\s*[/&@]\s*/g, '/')
-      .replace(/\s+at\s+/g, '/');
+    return normalizeStopName(name);
   },
 
   /**

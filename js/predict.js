@@ -4,6 +4,7 @@
  * needs the stops library and stop-name canonicalizing for the map.
  */
 import { canonicalAgency } from './shared/agency-aliases.js';
+import { normalizeStopName } from './shared/stop-names.js';
 
 const agencyKey = agency => canonicalAgency(String(agency)).toLowerCase();
 
@@ -36,9 +37,7 @@ export const PredictionEngine = {
         const cacheKey = `${agency ? agencyKey(agency) : ''}\u0000${name}`;
         if (this._normCache.has(cacheKey)) return this._normCache.get(cacheKey);
 
-        const norm = n => n.trim().toLowerCase()
-            .replace(/\s*[\/&@]\s*/g, '/')
-            .replace(/\s+at\s+/g, '/');
+        const norm = normalizeStopName;
 
         const lower = norm(name);
 

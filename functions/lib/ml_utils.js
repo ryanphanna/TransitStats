@@ -4,13 +4,7 @@
  */
 
 const { canonicalAgency } = require('./agency-aliases');
-
-function normalizeStopString(s) {
-  return s.trim().toLowerCase()
-    .replace(/\s+and\s+/g, '/')
-    .replace(/\s*[/&@]\s*/g, '/')
-    .replace(/\s+at\s+/g, '/');
-}
+const { normalizeStopName: normalizeStopString } = require('./stop-names');
 
 function agencyKey(agency) {
   return canonicalAgency(agency.toString()).toLowerCase();

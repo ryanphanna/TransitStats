@@ -44,7 +44,7 @@ from stop_canon import StopIndex, ml_norm, v3_norm  # noqa: E402
 # ---------------------------------------------------------------------------
 # Eval definition v1 (versioned: change => bump EVAL_VERSION)
 # ---------------------------------------------------------------------------
-EVAL_VERSION = "1"
+EVAL_VERSION = "2"  # 2: V3 grading collapses " and " like ml_norm (RYN-541)
 EVAL_START = datetime(2026, 5, 1, tzinfo=timezone.utc)
 EVAL_END = datetime(2026, 10, 15, tzinfo=timezone.utc)   # pinned: folds never move with new exports
 EVAL_SNAPSHOT = "78a4265b1519"                               # sha256[:12] of the trips export v1 was scored on

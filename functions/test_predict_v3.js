@@ -113,6 +113,22 @@ test('stop canonicalization follows the current stops library', () => {
   assert.equal(V3._canonicalizeStop('Union Stn'), 'union stn');
 });
 
+test('RYN-541: "and", "/" and "&" spellings of a corner are one stop, as the weekly gate grades', () => {
+  for (const library of [[], [{ name: 'Spadina and Nassau', agency: 'TTC' }]]) {
+    V3.stopsLibrary = library;
+    assert.equal(V3._stopMatch('Spadina and Nassau', 'Spadina/Nassau', 'TTC'), true);
+    assert.equal(V3._stopMatch('Spadina & Nassau', 'Spadina and Nassau', 'TTC'), true);
+    assert.equal(V3._stopMatch('Spadina AND Nassau', 'Spadina @ Nassau', 'TTC'), true);
+    assert.equal(V3._canonicalizeStop('Spadina and Nassau', 'TTC'), 'spadina/nassau');
+    assert.equal(V3._stopMatch('Spadina and Nassau', 'Spadina/College', 'TTC'), false);
+    assert.equal(V3._canonicalizeStop('Andrew Rd', 'TTC'), 'andrew rd', '"and" inside a word is kept');
+  }
+  const ml = require('./lib/ml_utils');
+  for (const name of ['Spadina and Nassau', 'Spadina & Nassau', 'Queen St at Spadina Ave', 'Union Station']) {
+    assert.equal(V3._canonicalizeStop(name), ml.canonicalizeStop(name), 'live grading and ML features clean names alike');
+  }
+});
+
 // #405: a name shared across agencies resolves to the trip's own agency's stop.
 const SHARED_NAME_LIBRARY = [
   { name: 'Union Station Patsaouras Bus Plaza', aliases: ['Union Station'], agency: 'LA Metro' },
