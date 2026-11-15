@@ -49,3 +49,33 @@
     font-size: 13px;
     font-weight: 600;
 }
+
+/* View switch: same look as the settings panel tabs. */
+.route-heatmap-views {
+    display: flex;
+    gap: 4px;
+    margin-top: 16px;
+}
+
+.route-heatmap-view-tab {
+    padding: 10px 14px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.route-heatmap-view-tab:hover {
+    background: var(--bg-muted);
+    color: var(--text-primary);
+}
+
+.route-heatmap-view-tab.active {
+    background: var(--accent);
+    color: white;
+}

@@ -47,7 +47,11 @@
             <div class="route-heatmap-panel">
                 <p class="eyebrow">Your TransitStats</p>
                 <h1 id="route-heatmap-title">Your trip map</h1>
-                <p>See where your trips took you. Repeated trips appear stronger.</p>
+                <p id="route-heatmap-intro">See where your trips took you. Repeated trips appear stronger.</p>
+                <div class="route-heatmap-views" role="group" aria-label="Map view">
+                    <button type="button" class="route-heatmap-view-tab active" data-route-heatmap-view="trips" aria-pressed="true">Trips</button>
+                    <button type="button" class="route-heatmap-view-tab" data-route-heatmap-view="ridden" aria-pressed="false">Ridden</button>
+                </div>
                 <p id="route-heatmap-status" class="route-heatmap-status">Loading your trips…</p>
             </div>
         </section>

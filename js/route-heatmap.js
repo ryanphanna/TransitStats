@@ -1,5 +1,6 @@
 import { validLocation } from './atlas-stop-resolver.js';
 import { Utils } from './utils.js';
+import { countedTrips, tripAgency } from './shared/trip-stats.js';
 
 export function aggregateTripCorridors(endpointTrips = []) {
     const corridors = new Map();
@@ -88,6 +89,39 @@ export function routeMatches(featureRoute, tripRoute) {
     const featureBase = feature.match(/^(\d+)/)?.[1] || feature;
     const tripBase = trip.match(/^(\d+)/)?.[1] || trip;
     return Boolean(feature && trip && (feature === trip || featureBase === tripBase));
+}
+
+/** The agency the Ridden view shows: the one with the most counted trips (ties alphabetical). */
+export function pickRiddenAgency(trips = []) {
+    const counts = new Map();
+    countedTrips(trips).forEach(trip => {
+        const agency = tripAgency(trip);
+        if (agency) counts.set(agency, (counts.get(agency) || 0) + 1);
+    });
+    return [...counts.entries()]
+        .sort((first, second) => second[1] - first[1] || first[0].localeCompare(second[0]))[0]?.[0] || null;
+}
+
+/**
+ * Which of an agency's routes the rider has been on. Only routes Atlas lists
+ * count, each at most once; a trip matches through routeMatches, so a branch
+ * like 510A counts toward 510.
+ */
+export function countRiddenRoutes(routes = [], trips = [], agency = null) {
+    const names = [...new Set(routes
+        .map(route => String(typeof route === 'string' ? route : route?.routeShortName || '').trim())
+        .filter(Boolean))];
+    const tripRoutes = [...new Set(countedTrips(trips)
+        .filter(trip => tripAgency(trip) === agency)
+        .map(trip => String(trip.route || '').trim())
+        .filter(Boolean))];
+    const ridden = new Set(names.filter(name => tripRoutes.some(route => routeMatches(name, route))));
+    return { ridden: ridden.size, total: names.length, riddenRoutes: ridden };
+}
+
+export function formatRiddenHeadline({ ridden = 0, total = 0, agency = '' } = {}) {
+    const noun = total === 1 ? 'route' : 'routes';
+    return `${ridden} of ${total} ${agency ? `${agency} ` : ''}${noun} ridden`;
 }
 
 function projectPoint(point, coordinates) {

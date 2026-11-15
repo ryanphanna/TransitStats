@@ -37,3 +37,20 @@ export async function loadAtlasRoutes(trips = []) {
         .filter(result => result.status === 'fulfilled')
         .flatMap(result => result.value);
 }
+
+/** Every route Atlas lists for one agency (names only, no shapes). */
+export async function loadAgencyRouteList(agency) {
+    const response = await fetch(`${ATLAS_ROUTES_PROXY}?agency=${encodeURIComponent(agency)}&all=true`);
+    if (!response.ok) throw new Error(`Atlas route list unavailable for ${agency}`);
+    const data = await response.json();
+    return Array.isArray(data.routes) ? data.routes : [];
+}
+
+/** Shapes for the given routes of one agency, tagged with that agency. */
+export async function loadAgencyRouteShapes(agency, routeNames = []) {
+    if (routeNames.length === 0) return [];
+    const response = await fetch(`${ATLAS_ROUTES_PROXY}?agency=${encodeURIComponent(agency)}&routes=${encodeURIComponent(routeNames.join(','))}`);
+    if (!response.ok) throw new Error(`Atlas route data unavailable for ${agency}`);
+    const data = await response.json();
+    return (data.features || []).map(feature => ({ ...feature, __agency: agency }));
+}
