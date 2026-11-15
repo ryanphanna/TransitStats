@@ -203,6 +203,37 @@ test('publicProfile includes uniquely matched PRESTO activity for beta pilots', 
   assert.deepEqual(res.body.points[0].names, ['Union Station Bus Terminal']);
 });
 
+test('publicProfile matches a GO PRESTO row to a stop tagged Metrolinx (CIV-1463)', async () => {
+  const handler = loadPublicProfile({
+    docs: { usernames: { 'train-taco-panda': { exists: true, data: () => ({ uid: 'u1' }) } } },
+    profile: { isPublic: true, displayName: 'Test', username: 'train-taco-panda' },
+    tripsSnap: { size: 0, forEach: () => {} },
+    prestoTransactionsSnap: {
+      size: 1,
+      docs: [{ data: () => ({
+        type: 'fare_payment',
+        agency: 'GO Transit',
+        locationLabel: 'Union Station Bus Terminal',
+        occurredAtSortKey: Date.UTC(2026, 0, 2),
+      }) }],
+    },
+    stopsSnap: {
+      size: 1,
+      docs: [{ data: () => ({
+        agencies: ['Metrolinx'],
+        name: 'Union Station Bus Terminal',
+        lat: 43.644,
+        lng: -79.377,
+      }) }],
+    },
+  });
+  const res = mockRes();
+  await handler({ method: 'GET', query: { user: 'train-taco-panda' } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.points.length, 1);
+  assert.deepEqual(res.body.points[0].names, ['Union Station Bus Terminal']);
+});
+
 test('publicProfile pairs GO tap-in/tap-out rows into one trip with boarding and exit points', async () => {
   const handler = loadPublicProfile({
     docs: { usernames: { 'train-taco-panda': { exists: true, data: () => ({ uid: 'u1' }) } } },

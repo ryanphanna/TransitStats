@@ -1,14 +1,14 @@
 // GENERATED from js/shared/presto-trips.js by scripts/sync-shared.mjs. Do not edit.
 // Turns imported PRESTO fare rows into trips. Single source of truth for the
 // app and the public profile function (functions/lib/presto-trips.js is
-// generated from this file by `npm run sync:shared`). Dependency-free.
+// generated from this file by `npm run sync:shared`). Depends only on agency-aliases.
+const { agencyKey } = require('./agency-aliases');
 
 // Longest plausible gap between a GO tap-on and its tap-off.
 const GO_MAX_TRIP_GAP_MS = 4 * 60 * 60 * 1000;
 
 function isGoTransitRecord(record) {
-    const agency = String(record?.agency || record?.agencySource || '').trim().toLowerCase();
-    return agency === 'go transit';
+    return agencyKey(record?.agency || record?.agencySource || '') === 'go transit';
 }
 
 // GO taps on (a charge, negative) and off (an adjustment, zero or positive).

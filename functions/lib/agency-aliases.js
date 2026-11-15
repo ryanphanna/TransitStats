@@ -101,4 +101,28 @@ function canonicalAgency(name) {
     return AGENCY_ALIASES[trimmed.toLowerCase()] || trimmed;
 }
 
-module.exports = { AGENCY_ALIASES, canonicalAgency };
+/** Lowercased canonical name, for comparing agency labels ("GO", "Metrolinx" -> "go transit"). Empty for no agency. */
+function agencyKey(name) {
+    if (name === null || name === undefined) return '';
+    return String(canonicalAgency(String(name)) || '').toLowerCase();
+}
+
+/** True when two agency labels name the same agency under the alias list. */
+function sameAgency(a, b) {
+    return agencyKey(a) === agencyKey(b);
+}
+
+/**
+ * Whether a stops-library entry serves the trip's agency, by canonical name (CIV-1463).
+ * A stop with no agency, or a trip with no agency, matches everything.
+ */
+function stopBelongsToAgency(stop, agency) {
+    const candidates = [...new Set(stop?.agencies || (stop?.agency ? [stop.agency] : []))]
+        .filter(Boolean)
+        .map(agencyKey);
+    const target = agencyKey(agency);
+    if (!target || candidates.length === 0) return true;
+    return candidates.includes(target);
+}
+
+module.exports = { AGENCY_ALIASES, canonicalAgency, agencyKey, sameAgency, stopBelongsToAgency };

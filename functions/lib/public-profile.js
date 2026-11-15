@@ -15,6 +15,7 @@ const { getMapStopMode } = require('./profile-fields');
 const { unmatchedImportedRides, projectPrestoTripsForStats } = require('./ride-merge');
 const { buildPrestoTrips } = require('./presto-trips');
 const { countedTrips, computeSummaryStats, storedTripTimeZone } = require('./trip-stats');
+const { stopBelongsToAgency } = require('./agency-aliases');
 
 function normalizeStopLabel(value) {
   return String(value || '')
@@ -23,14 +24,6 @@ function normalizeStopLabel(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '')
     .trim();
-}
-
-function stopBelongsToAgency(stop, agency) {
-  const candidates = [...new Set(stop?.agencies || (stop?.agency ? [stop.agency] : []))]
-    .map(value => String(value).trim().toLowerCase());
-  const target = String(agency || '').trim().toLowerCase();
-  if (!target || candidates.length === 0) return true;
-  return candidates.includes(target);
 }
 
 function validStopLocation(stop) {

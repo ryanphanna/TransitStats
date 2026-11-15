@@ -19,6 +19,14 @@ describe('buildPrestoTrips GO pairing', () => {
         expect(trip.endRecord.location).toBe('B');
     });
 
+    it('pairs rows labelled GO or Metrolinx too (CIV-1463)', () => {
+        const trips = buildPrestoTrips([
+            { ...tapOn(1, 'A'), agency: 'Metrolinx' }, { ...tapOff(2, 'B'), agency: 'GO' },
+        ]);
+        expect(trips).toHaveLength(1);
+        expect(trips[0].endRecord.location).toBe('B');
+    });
+
     it('one missed tap-off does not shift every later pair', () => {
         const trips = buildPrestoTrips([
             tapOn(1, 'A'), tapOff(2, 'B'),

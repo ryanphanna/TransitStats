@@ -20,6 +20,7 @@ const { sendSmsReply } = require('./twilio');
 const logger = require('./logger');
 const { isPhoneConfirmed } = require('./phone-confirmation');
 const { mlCheckIn } = require('./sms-text');
+const { sameAgency } = require('./agency-aliases');
 
 async function getPhoneForUser(userId) {
   // Only a confirmed number gets texts about the account's activity.
@@ -68,7 +69,7 @@ async function evaluateTask(taskDoc, userId, phoneNumber) {
 
   let trips = tripsSnap.docs.map(d => d.data());
   if (task.agency) {
-    trips = trips.filter(t => t.agency === task.agency);
+    trips = trips.filter(t => sameAgency(t.agency, task.agency));
   }
 
   const count = trips.length;
