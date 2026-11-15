@@ -38,6 +38,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **The V4/V5 end-stop models use the same agency-first stop matching**, in training, in the offline accuracy test and when they predict, so they no longer learn or score TTC/GO Union Station trips as LA Metro's bus plaza.
 - **The weekly retrain check now grades end stops within the trip's agency too**, matching live grading. Its first run compares against the minimum-accuracy floors instead of last week's models.
 - **Texts the app couldn't read no longer count as trips.** They have no route, stop or time, and were inflating trip totals on the dashboard, public profile and in ASK.
+- **Stop counts in the recap and ASK no longer count spelling variants as separate stops**, so "stops touched" and ASK's unique and top stops no longer run high.
 
 ### Security
 

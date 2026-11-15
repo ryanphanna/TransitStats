@@ -9,7 +9,7 @@
 // file by `npm run sync:shared` (a test fails if the copy drifts). Keep it to
 // plain `export const` / `export function`, importing only from other shared
 // modules.
-const { canonicalAgency } = require('./agency-aliases');
+const { agencyKey, canonicalAgency, stopBelongsToAgency } = require('./agency-aliases');
 const { summaryTrips } = require('./ride-merge');
 
 // A trip with no end time stays "active" (off the history) for this long.
@@ -346,20 +346,82 @@ function exitStop(trip) {
 }
 
 /**
- * Uses per stop, most first: as a boarding stop, as an exit stop, and either
- * way (`all`, one entry per distinct stop the rider has touched).
+ * How the app tells which stop a trip endpoint is, for tripsByStop. A stop code
+ * (in the code field, or typed as the name) picks the library stop with that
+ * code at the trip's agency; otherwise the name goes through the app's stop
+ * canonicalizer, which knows the library's names and aliases. Pass
+ * PredictionEngine._canonicalizeStop on the web and PredictionEngineV3's on the
+ * server (the same lookup the map and end-stop grading use). The agency is part
+ * of the stop's identity, so stops sharing a name at two agencies stay apart.
+ * The name shown is the library stop's own name when there is one.
+ * Returns (trip, side) => { key, name } | null, side being 'boarding' or 'exit'.
  */
-function tripsByStop(trips) {
-    const boarding = {};
-    const exit = {};
-    const all = {};
+function stopIdentityResolver(stopsLibrary, canonicalize) {
+    const byCode = new Map();
+    const names = new Map();
+    const identity = (agency, canonical) => `${agencyKey(agency)}\u0000${canonical}`;
+    (stopsLibrary || []).forEach(stop => {
+        if (!stop) return;
+        const code = stop.code == null ? '' : String(stop.code).trim();
+        if (code) {
+            if (!byCode.has(code)) byCode.set(code, []);
+            byCode.get(code).push(stop);
+        }
+        if (!stop.name) return;
+        [stop.agency, ...(stop.agencies || [])].filter(Boolean).forEach(agency => {
+            const key = identity(agency, canonicalize(stop.name, agency));
+            if (!names.has(key)) names.set(key, stop.name);
+        });
+    });
+    const stopWithCode = (value, agency) => {
+        const code = value == null ? '' : String(value).trim();
+        return code ? (byCode.get(code) || []).find(stop => stop.name && stopBelongsToAgency(stop, agency)) : null;
+    };
+    return (trip, side) => {
+        const label = side === 'boarding' ? boardingStop(trip) : exitStop(trip);
+        if (!label) return null;
+        const agency = trip.agency || null;
+        const coded = stopWithCode(side === 'boarding' ? trip.startStopCode : trip.endStopCode, agency)
+            || stopWithCode(label, agency);
+        const key = identity(agency, canonicalize(String(coded ? coded.name : label), agency));
+        return { key, name: names.get(key) || null };
+    };
+}
+
+/**
+ * Uses per stop, most first: as a boarding stop, as an exit stop, and either
+ * way (`all`, one entry per distinct stop the rider has touched). Entries are
+ * [name, count]. With a resolver from stopIdentityResolver, spellings of the
+ * same stop count as one, under the library name (or else the spelling used
+ * most); without one, stops are counted exactly as typed.
+ */
+function tripsByStop(trips, resolveStop = null) {
+    const groups = { boarding: new Map(), exit: new Map(), all: new Map() };
+    const add = (group, resolved, label) => {
+        const key = resolved ? resolved.key : label;
+        if (!group.has(key)) group.set(key, { name: resolved?.name || null, count: 0, spellings: new Map() });
+        const entry = group.get(key);
+        entry.count++;
+        entry.spellings.set(label, (entry.spellings.get(label) || 0) + 1);
+    };
     (trips || []).forEach(trip => {
         const start = boardingStop(trip);
         const end = exitStop(trip);
-        if (start) { tally(boarding, start); tally(all, start); }
-        if (end) { tally(exit, end); tally(all, end); }
+        if (start) {
+            const resolved = resolveStop ? resolveStop(trip, 'boarding') : null;
+            add(groups.boarding, resolved, start);
+            add(groups.all, resolved, start);
+        }
+        if (end) {
+            const resolved = resolveStop ? resolveStop(trip, 'exit') : null;
+            add(groups.exit, resolved, end);
+            add(groups.all, resolved, end);
+        }
     });
-    return { boarding: sortedCounts(boarding), exit: sortedCounts(exit), all: sortedCounts(all) };
+    const counts = group => [...group.values()]
+        .map(entry => [entry.name || [...entry.spellings].sort((a, b) => b[1] - a[1])[0][0], entry.count])
+        .sort((a, b) => b[1] - a[1]);
+    return { boarding: counts(groups.boarding), exit: counts(groups.exit), all: counts(groups.all) };
 }
 
 /** Durations of the finished trips, in minutes: the list, how many, average, shortest and longest. */
@@ -394,4 +456,4 @@ function computeSummaryStats(trips, options = {}) {
     };
 }
 
-module.exports = { ACTIVE_TRIP_WINDOW_MS, DEFAULT_TRIP_TIME_ZONE, AGENCY_COUNTRIES, agencyCountry, tripStartDate, isActiveTrip, isHistoryTrip, isUnreadableText, COUNT_UNREADABLE_TEXTS, isCountedTrip, countedTrips, countedRides, finishedTrips, storedTripTimeZone, tripDayKey, DAY_NAMES, weekStartKey, tripLocalDay, tripLocalHour, tripsBetweenDays, sortedCounts, tripsByDate, ridingStreaks, computePeriodCounts, tripAgency, tripsByAgency, countAgencies, countCountries, routeCounts, tripsByRoute, countRoutes, boardingStop, exitStop, tripsByStop, durationSummary, totalTripHours, computeSummaryStats };
+module.exports = { ACTIVE_TRIP_WINDOW_MS, DEFAULT_TRIP_TIME_ZONE, AGENCY_COUNTRIES, agencyCountry, tripStartDate, isActiveTrip, isHistoryTrip, isUnreadableText, COUNT_UNREADABLE_TEXTS, isCountedTrip, countedTrips, countedRides, finishedTrips, storedTripTimeZone, tripDayKey, DAY_NAMES, weekStartKey, tripLocalDay, tripLocalHour, tripsBetweenDays, sortedCounts, tripsByDate, ridingStreaks, computePeriodCounts, tripAgency, tripsByAgency, countAgencies, countCountries, routeCounts, tripsByRoute, countRoutes, boardingStop, exitStop, stopIdentityResolver, tripsByStop, durationSummary, totalTripHours, computeSummaryStats };

@@ -6,7 +6,7 @@ const RealAnthropic = require('@anthropic-ai/sdk');
 
 // Loads lib/claude.js with the Anthropic SDK, secrets and Firestore replaced by fakes.
 // No network: every "API reply" comes from the `replies` queue.
-function loadClaude({ apiKey = 'test-key', replies = [], tripDocs = [], cachedTimezone = null } = {}) {
+function loadClaude({ apiKey = 'test-key', replies = [], tripDocs = [], cachedTimezone = null, stopsLibrary = [] } = {}) {
   const requests = [];
   const requestOptions = [];
   const clientOptions = [];
@@ -83,6 +83,8 @@ function loadClaude({ apiKey = 'test-key', replies = [], tripDocs = [], cachedTi
       if (request === 'firebase-admin/firestore') {
         return { getFirestore: () => db, FieldValue: { serverTimestamp: () => 'server-timestamp' } };
       }
+      // The shared stops library, without Firestore.
+      if (request === './db') return { getStopsLibrary: async () => stopsLibrary };
       if (request === './logger') {
         return {
           info: (message, data) => logs.info.push({ message, data }),
@@ -1091,6 +1093,45 @@ test('ASK sends date and count questions to the tools, with no daily counts in t
     assert.match(prompt, /CALL a tool \(get_trips_for_date, get_trips_for_date_range or get_monthly_trip_counts\)/);
     const year = requests[0].tools.find((tool) => tool.name === 'get_day_of_week_stats_for_year').input_schema;
     assert.equal(year.properties.year.type, 'integer');
+  } finally {
+    restore();
+  }
+});
+
+test('ASK counts stops by the stop they resolve to, not by spelling', async () => {
+  const library = [
+    { agency: 'TTC', code: '14239', name: 'Spadina Station', aliases: ['Spadina Stn'] },
+    { agency: 'TTC', name: 'Union Station', aliases: [] },
+    { agency: 'GO Transit', name: 'Union Station', aliases: ['Union GO'] },
+  ];
+  const { claude, restore } = loadClaude({ stopsLibrary: library });
+  try {
+    const ride = (extra) => ({ userId: 'user-1', agency: 'TTC', route: '510',
+      startTime: toronto('2026-09-12T09:00:00'), endTime: toronto('2026-09-12T09:20:00'), duration: 20, ...extra });
+    const { db } = fakeTripsDb([
+      // Case and spelling variants, an alias and a stop code: one stop each side.
+      ride({ startStopName: 'Spadina Station', endStopName: 'union station' }),
+      ride({ startStopName: 'SPADINA STATION', endStopName: 'Union Station' }),
+      ride({ startStopName: 'Spadina Stn', endStopName: 'Union Station ' }),
+      ride({ startStopCode: '14239', endStopName: 'UNION STATION' }),
+      // Same name at another agency: a different stop.
+      ride({ agency: 'GO', startStopName: 'Union GO', endStopName: 'union station' }),
+      // A code belongs to its own agency only; unknown stops group by the canonical spelling.
+      ride({ agency: 'MiWay', startStopName: '14239', endStopName: 'Bathurst' }),
+      ride({ agency: 'MiWay', startStopName: 'bathurst' }),
+    ]);
+    // No stops library passed: the tools read the shared one (stubbed above).
+    const tools = claude.buildQueryToolExecutors(db, 'user-1', 'America/Toronto');
+    const all = await tools.get_all_time_stats();
+    const unique = await tools.get_unique_stops();
+    const top = await tools.get_all_time_stop_stats();
+    assert.equal(all.uniqueStops, 5);
+    assert.deepEqual(unique, {
+      unique_stop_count: 5,
+      stops: ['14239', 'Bathurst', 'Spadina Station', 'Union Station', 'Union Station'],
+    });
+    assert.deepEqual(top.topBoardingStops, [['Spadina Station', 4], ['Union Station', 1], ['14239', 1], ['bathurst', 1]]);
+    assert.deepEqual(top.topExitStops, [['Union Station', 4], ['Union Station', 1], ['Bathurst', 1]]);
   } finally {
     restore();
   }

@@ -8,10 +8,25 @@ import {
     tripsByDate,
     tripsByRoute,
     tripsByStop,
+    stopIdentityResolver,
     tripLocalDay,
     tripLocalHour,
     tripStartDate,
 } from './shared/trip-stats.js';
+import { PredictionEngine } from './predict.js';
+
+// Stops resolve the way the map resolves them: through the loaded stops
+// library (names, aliases, codes), so spellings of one stop count once.
+let appStopResolver = null;
+let appStopLibrary = null;
+function resolveAppStop(trip, side) {
+    const library = PredictionEngine.stopsLibrary || [];
+    if (library !== appStopLibrary || !appStopResolver) {
+        appStopLibrary = library;
+        appStopResolver = stopIdentityResolver(library, (name, agency) => PredictionEngine._canonicalizeStop(name, agency));
+    }
+    return appStopResolver(trip, side);
+}
 
 /**
  * TransitStats V2 Stats Module
@@ -52,7 +67,7 @@ export const Stats = {
         // Routes and stops are tallied by the shared counting module. "Stops"
         // is every distinct stop the rider has touched, boarding or exiting.
         const routes = tripsByRoute(trips).counts;
-        const stops = tripsByStop(trips).all;
+        const stops = tripsByStop(trips, resolveAppStop).all;
         const top = counts => counts.slice(0, 5).map(([name, count]) => ({ name, count }));
 
         return {
