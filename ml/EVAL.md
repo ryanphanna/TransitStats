@@ -314,7 +314,7 @@ V3 has 43% coverage at 66% precision.
 - Folds: fixed 14-day calendar anchored at 2026-05-01 (the harness anchor). A trip's fold never depends on the export date.
 - Window: the last 90 days before the export's newest trip.
 - Per fold: fit on rows that started before the fold, with count filters, ride-count weights, feature columns and classes from those training rows only. The fold's rows are reindexed to the training columns, as serving does.
-- Grading is owned by the gate: the exported end stop and the model's label (agency prefix dropped) both go through the stops library with `ml_utils` canonicalization, so a pipeline can't grade itself better by changing its own labels.
+- Grading is owned by the gate: the exported end stop and the model's label (agency prefix dropped) both go through the stops library with `ml_utils` canonicalization, so a pipeline can't grade itself better by changing its own labels. Since gate v2 (RYN-523) both sides resolve within the trip's agency, as live grading does (`stop_canon.py`, GitHub #405); gate v1 matched by name only. The bump means the first v2 run is checked against the floors, not paired with the published v1 rows; pairing resumes the week after.
 - An unseen class is a miss. Covered = the fold model fit and the trip's agency is in its training agencies. Top-1, top-3 and coverage are over all rows.
 - Baseline, same rows: most frequent end stop at (route, start stop) in the fold's training rows.
 - Known drift sources: retroactive trip corrections, and `compute_primary_agency_map`, which runs over the whole export.
