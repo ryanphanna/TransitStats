@@ -5,6 +5,10 @@
  * recognized only when its code, name, or alias matches within the trip's
  * agency, so the Admin inbox and maintenance audit agree.
  */
+import { canonicalAgency } from './shared/agency-aliases.js';
+
+// Agency names compare by canonical name, so GO, GO Transit and Metrolinx are one agency.
+const agencyKey = agency => String(canonicalAgency(String(agency)) || '').toLowerCase();
 
 export function normalizeStopLibraryLabel(value) {
     return String(value || '')
@@ -18,13 +22,13 @@ export function normalizeStopLibraryLabel(value) {
 function stopAgencies(stop) {
     return [...new Set(stop?.agencies || (stop?.agency ? [stop.agency] : []))]
         .filter(Boolean)
-        .map(agency => String(agency).trim().toLowerCase());
+        .map(agencyKey);
 }
 
 export function stopBelongsToAgency(stop, agency) {
     const candidateAgencies = stopAgencies(stop);
     if (!agency || candidateAgencies.length === 0) return true;
-    const target = String(agency).trim().toLowerCase();
+    const target = agencyKey(agency);
     return candidateAgencies.includes(target);
 }
 
