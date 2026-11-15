@@ -92,7 +92,7 @@ There is no SMS vs PRESTO split: this account has no PRESTO imports. The legacy 
    - **S2 end-stop route key:** training scopes it without the primary agency, so 510A/510B stay distinct, while serving collapses them to 510.
    - **S3 sequence features:** training takes the previous exported clean trip by start time; serving takes `history[0]` by end time from the last 100.
    - **S4 prev-route scoping:** end-stop training scopes with the previous trip's agency and no primary agency; serving uses the current agency and the primary agency.
-   - **S5 canonicalization:** V3 doesn't collapse "and"; ml_utils does.
+   - **S5 canonicalization:** V3 didn't collapse "and"; ml_utils did. Fixed in RYN-541: both use one rule (`js/shared/stop-names.js`), and the harness grades with it from `EVAL_VERSION` 2.
 5. **Local time shows no gain yet:** -0.8 points, within noise. No fold contains a DST switch (next one: 2026-11-01). Keep it as a correctness fix and re-measure after November, not as an accuracy claim.
 6. **Topology masking doesn't help V4/V5.** It cuts coverage 88% → 76%, because when the legal set holds none of the model's classes the model abstains, and top-1 is flat.
 7. **The habit engine never fires,** live or in replay, because of two independent blockers (fixed: see "Habit engine: fix and retune (v2)" below):
