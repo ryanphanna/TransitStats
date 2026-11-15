@@ -24,7 +24,6 @@ import importlib.util
 import json
 import math
 import os
-import re
 import sys
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -32,8 +31,10 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from stop_canon import StopIndex, ml_norm  # noqa: E402
 
-GATE_VERSION = 1
+GATE_VERSION = 2  # v2: stops matched within the trip's agency (RYN-523); v1 matched by name only
 FOLD_ANCHOR = datetime(2026, 5, 1, tzinfo=timezone.utc)  # same anchor as ml/eval/harness.py
 FOLD_DAYS = 14
 WINDOW_DAYS = 90
@@ -102,35 +103,24 @@ def row_key(salt, trip_id):
 # Grading (owned by the gate, so every pipeline is graded the same way)
 # ---------------------------------------------------------------------------
 
-def _norm_stop(s):
-    """ml_utils.canonicalizeStop's string steps, pinned here for gate v1."""
-    s = str(s).strip().lower()
-    s = re.sub(r"\s+and\s+", "/", s)
-    s = re.sub(r"\s*[/&@]\s*", "/", s)
-    s = re.sub(r"\s+at\s+", "/", s)
-    return s
-
-
 class Grader:
     """Truth = the exported end stop, prediction = the model's class label without its agency
     prefix; both go through the same stops-library canonicalization. A pipeline that changes its
-    own labels (or collapses them) cannot grade itself better."""
+    own labels (or collapses them) cannot grade itself better.
+
+    Gate v2: both sides resolve within the trip's agency, as live grading does (finalization.js
+    passes the trip's agency to V3's _stopMatch for the prediction and the actual end stop). The
+    rule is stop_canon.py's, shared with train_endstop.py and the harness; the string steps are
+    ml_utils.canonicalizeStop's, as in gate v1. Gate v1 matched by name only (GitHub #405, RYN-523)."""
 
     def __init__(self, lib):
-        self.alias = {}
-        for item in lib:
-            name = item.get("name")
-            if not name:
-                continue
-            for c in [name] + list(item.get("aliases") or []):
-                self.alias.setdefault(_norm_stop(c), _norm_stop(name))
+        self.index = StopIndex(lib, ml_norm)
 
-    def canon(self, stop):
-        n = _norm_stop(stop)
-        return self.alias.get(n, n)
+    def canon(self, stop, agency=None):
+        return self.index.canon(stop, agency)
 
-    def label(self, cls):
-        return self.canon(str(cls).split("::", 1)[-1])
+    def label(self, cls, agency=None):
+        return self.canon(str(cls).split("::", 1)[-1], agency)
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +166,7 @@ def walk_forward(P, raw, lib, salt, log=print):
         raise GateError("export is empty")
     grader = Grader(lib)
     raw = raw.copy()
-    raw["_truth"] = raw["end_stop"].map(grader.canon)
+    raw["_truth"] = [grader.canon(x, a) for x, a in zip(raw["end_stop"], raw["agency"])]
     df = P.clean(raw, lib, apply_filters=False).reset_index(drop=True)
     df["_start"] = pd.to_datetime(df["start_time"], utc=True, format="ISO8601")
     df = df[df["_start"].notna()].reset_index(drop=True)
@@ -216,7 +206,7 @@ def walk_forward(P, raw, lib, salt, log=print):
             row = {"k": row_key(salt, r["trip_id"]), "fold": fold_id(k)}
             for m in MODELS:
                 if ok and r["agency_id"] in agencies:
-                    top = [grader.label(c) for c in preds[m][i]]
+                    top = [grader.label(c, r["agency"]) for c in preds[m][i]]
                     row[m] = [int(top[0] == y), int(y in top[:3]), 1]
                 else:
                     row[m] = [0, 0, 0]

@@ -35,6 +35,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Stops that share a name with another agency's stop stay with the trip's own agency.** A TTC or GO trip to Union Station was being matched to LA Metro's Union Station bus plaza (and Kipling, Finch and VMC had the same problem), which could split or mix end-stop guesses and their grading. Names now resolve to the trip's agency first, on the map too.
 - **Stops tagged Metrolinx count as GO Transit**, so a GO trip finds its own stop even when the stop library files it under Metrolinx. Trips logged as Metrolinx also count as GO in agency totals. Stop-library checks, PRESTO import matching, PRESTO GO tap pairing and the public profile map also treat GO, GO Transit and Metrolinx as one agency.
 - **The V4/V5 end-stop models use the same agency-first stop matching**, in training, in the offline accuracy test and when they predict, so they no longer learn or score TTC/GO Union Station trips as LA Metro's bus plaza.
+- **The weekly retrain check now grades end stops within the trip's agency too**, matching live grading. Its first run compares against the minimum-accuracy floors instead of last week's models.
 - **Texts the app couldn't read no longer count as trips.** They have no route, stop or time, and were inflating trip totals on the dashboard, public profile and in ASK.
 
 ### Security

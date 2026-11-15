@@ -60,6 +60,38 @@ def rows_with(hits, cov=None, base=None, prefix="k"):
             for i, (h, c, b) in enumerate(zip(hits, cov, base))]
 
 
+class GraderAgencyTest(unittest.TestCase):
+    """Gate v2 matches stops within the trip's agency, as live grading does (RYN-523, GitHub #405)."""
+    LIB = [
+        {"name": "Union Station Patsaouras Bus Plaza", "aliases": ["Union Station"], "agency": "LA Metro"},
+        {"name": "Union Station", "aliases": ["Union Stn"], "agency": "TTC"},
+        {"name": "Union Station", "agency": "GO Transit"},
+    ]
+
+    def test_trip_agency_wins_over_library_order(self):
+        gr = g.Grader(self.LIB)
+        self.assertEqual(gr.canon("Union Station", "TTC"), "union station")
+        self.assertEqual(gr.canon("Union Stn", "TTC"), "union station")
+        self.assertEqual(gr.canon("Union Station", "LA Metro"), "union station patsaouras bus plaza")
+        # Unknown agency falls back to the first entry at any agency, as live grading does.
+        self.assertEqual(gr.canon("Union Station"), "union station patsaouras bus plaza")
+
+    def test_other_agencys_stop_does_not_match(self):
+        gr = g.Grader(self.LIB)
+        truth = gr.canon("Union Station", "TTC")
+        # Name only (gate v1), both sides collapsed to the LA stop and this counted as a hit.
+        self.assertNotEqual(gr.label("la_metro::Union Station Patsaouras Bus Plaza", "TTC"), truth)
+        self.assertEqual(gr.label("ttc::Union Station", "TTC"), truth)
+
+    def test_agency_aliases_count(self):
+        gr = g.Grader(self.LIB)
+        self.assertEqual(gr.canon("Union Station", "Metrolinx"), "union station")
+        self.assertEqual(gr.canon("Union Station", "Metrolinx"), gr.canon("Union Station", "GO Transit"))
+
+    def test_gate_version_is_bumped(self):
+        self.assertEqual(g.GATE_VERSION, 2)
+
+
 class FoldCalendarTest(unittest.TestCase):
     def test_anchor_and_length(self):
         self.assertEqual(g.fold_index(datetime(2026, 5, 1, tzinfo=UTC)), 0)
