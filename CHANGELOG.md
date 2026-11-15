@@ -42,6 +42,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ### Security
 
+- **Removed an unused admin stats endpoint** that could still read sign-in activity and ASK logs, and stopped allowing the retired beta and admin sites to use the shared sign-in.
 - **Patched a slow-pattern bug in the Firebase library** the website uses, where a crafted search pattern could tie up the page.
 - **Patched the text-message server's web request library** so login details can't be passed along when a request is redirected to another site, and closed two lower-risk file-search issues.
 

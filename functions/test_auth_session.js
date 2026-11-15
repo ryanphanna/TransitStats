@@ -62,7 +62,7 @@ const okAuth = {
 test('POST on a production host sets a shared-domain Secure cookie', async () => {
   const handler = loadHandler({ adminAuth: okAuth, db: makeDb() });
   const res = makeRes();
-  await handler(makeReq({ method: 'POST', host: 'beta.transitstats.fyi', headers: { Authorization: 'Bearer tok' } }), res);
+  await handler(makeReq({ method: 'POST', host: 'www.transitstats.fyi', headers: { Authorization: 'Bearer tok' } }), res);
   assert.equal(res.statusCode, 204);
   const cookie = res.headers['Set-Cookie'];
   assert.match(cookie, /^transitstats_session=minted-cookie; Domain=\.transitstats\.fyi; Path=\//);

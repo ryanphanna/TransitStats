@@ -2,8 +2,8 @@
  * set-admin.js
  *
  * Grants or revokes admin in one atomic write across both places the app
- * checks admin status: allowedUsers/{email} (Firestore rules, SMS backend,
- * admin-metrics) and profiles/{userId} (web client UI gating). These two
+ * checks admin status: allowedUsers/{email} (Firestore rules, SMS backend)
+ * and profiles/{userId} (web client UI gating). These two
  * flags are independent and nothing in the app keeps them in sync - this
  * script exists so granting/revoking admin is one command instead of two
  * manual Firestore edits that are easy to forget one half of.

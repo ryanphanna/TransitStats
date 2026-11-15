@@ -8,8 +8,6 @@ const LOGIN_ACTIVITY_WINDOW_MS = 15 * 60 * 1000;
 const ALLOWED_HOSTS = new Set([
   'transitstats.fyi',
   'www.transitstats.fyi',
-  'beta.transitstats.fyi',
-  'admin.transitstats.fyi',
   'localhost',
   '127.0.0.1',
 ]);
