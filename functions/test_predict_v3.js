@@ -129,6 +129,15 @@ test('#405: a TTC or GO Union Station trip resolves to the TTC stop, not LA Metr
   assert.equal(V3._stopMatch('Union', 'Union Station', 'TTC'), true);
 });
 
+test('CIV-1463: a GO trip prefers a stop tagged Metrolinx over another agency\'s stop', () => {
+  V3.stopsLibrary = [
+    { name: 'Union Station Patsaouras Bus Plaza', aliases: ['Union Station'], agency: 'LA Metro' },
+    { name: 'Union Station GO', aliases: ['Union Station'], agency: 'Metrolinx' },
+  ];
+  assert.equal(V3._canonicalizeStop('Union Station', 'GO Transit'), 'union station go');
+  assert.equal(V3._canonicalizeStop('Union Station', 'GO'), 'union station go');
+});
+
 test('#405: an LA Metro Union Station trip still resolves to the LA stop', () => {
   V3.stopsLibrary = SHARED_NAME_LIBRARY;
   assert.equal(V3._canonicalizeStop('Union Station', 'LA Metro'), 'union station patsaouras bus plaza');

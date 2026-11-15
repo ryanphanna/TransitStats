@@ -10,6 +10,8 @@ const AGENCY_ALIASES = {
   // GO
   'go': 'GO Transit',
   'go transit': 'GO Transit',
+  // Metrolinx runs GO; some stops in the library are tagged Metrolinx (CIV-1463)
+  'metrolinx': 'GO Transit',
   // MiWay
   'miway': 'MiWay',
   'mississauga transit': 'MiWay',

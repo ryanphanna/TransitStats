@@ -18,7 +18,11 @@ function agencyLabelVariants(agency) {
   const canonical = canonicalAgency(agency);
   const variants = new Set([agency, canonical]);
   for (const [alias, target] of Object.entries(AGENCY_ALIASES)) {
-    if (target === canonical) { variants.add(alias); variants.add(alias.toUpperCase()); }
+    if (target === canonical) {
+      variants.add(alias);
+      variants.add(alias.toUpperCase());
+      variants.add(alias.replace(/\b[a-z]/g, c => c.toUpperCase())); // "Metrolinx"
+    }
   }
   return [...variants].filter(Boolean);
 }

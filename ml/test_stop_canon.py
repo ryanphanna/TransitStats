@@ -27,6 +27,14 @@ class StopCanonTest(unittest.TestCase):
         self.assertEqual(canonical_agency(" go "), "GO Transit")
         self.assertEqual(canonical_agency("Some New Agency"), "Some New Agency")
 
+    def test_metrolinx_tagged_stop_counts_as_go(self):
+        lib = [
+            {"name": "Union Station Patsaouras Bus Plaza", "agency": "LA Metro", "aliases": ["Union Station"]},
+            {"name": "Union Station GO", "agency": "Metrolinx", "aliases": ["Union Station"]},
+        ]
+        self.assertEqual(canonical_agency("Metrolinx"), "GO Transit")
+        self.assertEqual(train_endstop.canonicalize_stop("Union Station", lib, "GO Transit"), "union station go")
+
     def test_trip_agency_wins(self):
         c = train_endstop.canonicalize_stop
         self.assertEqual(c("Union Station", LIB, "TTC"), "union station")

@@ -7,6 +7,11 @@ describe('shared agency aliases', () => {
         expect(canonicalAgency(' go transit ')).toBe('GO Transit');
     });
 
+    it('counts Metrolinx as GO Transit (CIV-1463)', () => {
+        expect(canonicalAgency('Metrolinx')).toBe('GO Transit');
+        expect(canonicalAgency(' METROLINX ')).toBe('GO Transit');
+    });
+
     it('maps NFTA and the common MFTA typo to NFTA Metro', () => {
         expect(canonicalAgency('MFTA')).toBe('NFTA Metro');
         expect(canonicalAgency('nfta')).toBe('NFTA Metro');
