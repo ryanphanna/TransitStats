@@ -27,7 +27,7 @@ const { NetworkEngine } = require('./network.js');
 const { HabitEngine } = require('./habit');
 const { isPhoneConfirmed, phoneTag, tripStartedByPhone } = require('./phone-confirmation');
 const text = require('./sms-text');
-const { incompleteTripUpdate, teachStopRoute } = require('./trip-updates');
+const { incompleteTripUpdate, teachStopRoute, tripDetailFields } = require('./trip-updates');
 const logger = require('./logger');
 const finalization = require('./finalization');
 const { checkMlTasks } = require('./ml-tasks');
@@ -196,10 +196,7 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
         direction,
         agency,
         stopMatched,
-        sentiment: options.sentiment || null,
-        tags: options.tags || [],
-        parsed_by: options.parsed_by || 'manual',
-        vehicle: options.vehicle || null,
+        ...tripDetailFields(options),
       },
     });
 
@@ -310,10 +307,7 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
       stop_matched: stopMatched,
       sourcePhone: phoneTag(phoneNumber),
       agency: resolvedAgency,
-      sentiment: options.sentiment || null,
-      tags: options.tags || [],
-      parsed_by: options.parsed_by || 'manual',
-      vehicle: options.vehicle || null,
+      ...tripDetailFields(options),
       startTime: options.startTime || null,
       source: options.source || null,
       timing_reliability: options.timing_reliability || null,
@@ -449,10 +443,7 @@ async function handleConfirmStart(phoneNumber, user, state, traceId = null) {
     stop_matched: newTrip.stopMatched || false,
     agency: newTrip.agency,
     timing_reliability: determineReliability(state.expiresAt),
-    sentiment: newTrip.sentiment || null,
-    tags: newTrip.tags || [],
-    parsed_by: newTrip.parsed_by || 'manual',
-    vehicle: newTrip.vehicle || null,
+    ...tripDetailFields(newTrip),
     ...predictionTripFields(predictions),
   });
   await clearPendingState(phoneNumber);

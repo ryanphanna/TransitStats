@@ -35,7 +35,18 @@ function teachStopRoute(db, FieldValue, stopId, stopSource, route) {
   db.collection('stops').doc(stopId).update(stopUpdate).catch(() => {});
 }
 
+/** Rider-supplied trip details, with the defaults every new trip stores. */
+function tripDetailFields(source) {
+  return {
+    sentiment: source.sentiment || null,
+    tags: source.tags || [],
+    parsed_by: source.parsed_by || 'manual',
+    vehicle: source.vehicle || null,
+  };
+}
+
 module.exports = {
+  tripDetailFields,
   incompleteTripUpdate,
   mmsTripOptions,
   teachStopRoute,
