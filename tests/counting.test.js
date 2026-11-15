@@ -24,6 +24,7 @@ import {
     COUNT_UNREADABLE_TEXTS,
 } from '../js/shared/trip-stats.js';
 import { Stats } from '../js/stats.js';
+import { PredictionEngine } from '../js/predict.js';
 
 // ASK runs the generated CommonJS copies inside the Cloud Functions.
 const require = createRequire(import.meta.url);
@@ -245,8 +246,11 @@ describe('the website and ASK give the same totals from the same records', () =>
         },
     });
     const db = makeDb(tripDocs, prestoDocs);
+    // Both sides resolve stops through the same library.
+    const stopsLibrary = [{ agency: 'TTC', name: 'Spadina Station', aliases: ['Spadina'] }];
     const sum = counts => Object.values(counts).reduce((a, b) => a + b, 0);
     afterEach(() => {
+        PredictionEngine.stopsLibrary = [];
         vi.useRealTimers();
         process.env.TZ = 'America/Toronto';
     });
@@ -267,11 +271,12 @@ describe('the website and ASK give the same totals from the same records', () =>
         const history = mine.filter(doc => isHistoryTrip(doc, NOW));
         const rides = countedRides(history, buildPrestoTrips(minePresto), { now: NOW, countUnreadableTexts });
         const tiles = computeSummaryStats(rides, { now: new Date(NOW) });
+        PredictionEngine.stopsLibrary = stopsLibrary;
         const metrics = Stats.computeMetrics(rides);
         const streaks = Stats.calculateStreaks(rides);
 
         // ASK: the tools, reading the same records through their own loader.
-        const tools = claude.buildQueryToolExecutors(db, 'user-1', timeZone, { countUnreadableTexts });
+        const tools = claude.buildQueryToolExecutors(db, 'user-1', timeZone, { countUnreadableTexts, stopsLibrary });
         const all = await tools.get_all_time_stats();
         const agencies = await tools.get_agency_stats({ start_date: null, end_date: null });
         const routes = await tools.get_all_time_route_stats();
@@ -308,7 +313,10 @@ describe('the website and ASK give the same totals from the same records', () =>
         expect(routes.top_routes.slice(0, 5).map(([name, count]) => ({ name, count }))).toEqual(metrics.topRoutes);
 
         expect(all.uniqueStops).toBe(metrics.stops);
-        expect(stops.unique_stop_count).toBe(tripsByStop(rides).all.length);
+        expect(stops.unique_stop_count).toBe(metrics.stops);
+        // Union at TTC and Union at GO are two stops, told apart by agency; Spadina shows its library name.
+        expect(stops.stops.filter(name => name.startsWith('Union'))).toEqual(['Union (GO Transit)', 'Union (TTC)']);
+        expect(metrics.topStops[0]).toEqual({ name: 'Spadina Station', count: 2 });
 
         expect(streak.days_ridden).toBe(tiles.daysRidden);
         expect(streak.longest_streak_days).toBe(streaks.best);
@@ -375,7 +383,7 @@ describe('the website and ASK give the same totals from the same records', () =>
         const mine = docs.filter(doc => doc.userId === 'user-1');
         const minePresto = prestoDocs.filter(doc => doc.userId === 'user-1');
         const rides = countedRides(mine.filter(doc => isHistoryTrip(doc, NOW)), buildPrestoTrips(minePresto), { now: NOW });
-        const tools = claude.buildQueryToolExecutors(makeDb(docs, prestoDocs), 'user-1', 'America/Toronto');
+        const tools = claude.buildQueryToolExecutors(makeDb(docs, prestoDocs), 'user-1', 'America/Toronto', { stopsLibrary: [] });
         const profile = publicProfile.publicProfileRides(mine, minePresto, { now: NOW }).stats;
 
         expect(tripLocalDay(laTrip).dayKey).toBe('2026-09-30');
@@ -441,6 +449,7 @@ describe('the website and ASK give the same totals from the same records', () =>
                         return {
                             ...claude,
                             answerQueryWithClaude: async (...args) => { calls.asked.push(args); return 'answer'; },
+                            loadAskStopResolver: () => claude.loadAskStopResolver([]),
                         };
                     }
                 }
@@ -469,7 +478,7 @@ describe('the website and ASK give the same totals from the same records', () =>
             expect(timezone).toBe('America/Toronto');
 
             // What the tools then tell ASK for this rider.
-            const tools = claude.buildQueryToolExecutors(riderDb, 'user-1', timezone);
+            const tools = claude.buildQueryToolExecutors(riderDb, 'user-1', timezone, { stopsLibrary: [] });
             const all = await tools.get_all_time_stats();
             const rides = countedRides([], buildPrestoTrips(importedOnly), { now: NOW });
             expect(all.totalTrips).toBe(3);
@@ -487,5 +496,89 @@ describe('the website and ASK give the same totals from the same records', () =>
                 expect(calls.replies).toEqual([smsText.NO_COMPLETED_TRIPS]);
             }
         });
+    });
+});
+
+describe('stops are counted by the stop they resolve to, as on the map', () => {
+    const library = [
+        { agency: 'TTC', code: '14239', name: 'Spadina Station', aliases: ['Spadina Stn'] },
+        { agency: 'TTC', name: 'Union Station', aliases: [] },
+        { agency: 'GO Transit', name: 'Union Station', aliases: ['Union GO'] },
+    ];
+    const ride = (extra) => finished('2026-09-12T09:00:00-04:00', 10, extra);
+    afterEach(() => { PredictionEngine.stopsLibrary = []; });
+
+    it('counts case and spelling variants, aliases and stop codes as one stop', () => {
+        PredictionEngine.stopsLibrary = library;
+        const rides = [
+            ride({ startStopName: 'Spadina Station', endStopName: 'union station' }),
+            ride({ startStopName: 'spadina station ', endStopName: 'Union Station' }),
+            ride({ startStopName: 'Spadina Stn', endStopName: 'UNION STATION' }),
+            ride({ startStopCode: '14239', endStopName: 'Union Station' }),
+            ride({ startStopName: '14239', startStopCode: '14239' }),
+        ];
+        // As typed, these were 7 different stops.
+        expect(tripsByStop(rides).all).toHaveLength(7);
+        const metrics = Stats.computeMetrics(rides);
+        expect(metrics.stops).toBe(2);
+        expect(metrics.topStops).toEqual([
+            { name: 'Spadina Station', count: 5 },
+            { name: 'Union Station', count: 4 },
+        ]);
+    });
+
+    it('keeps stops that share a name at two agencies apart', () => {
+        PredictionEngine.stopsLibrary = library;
+        const rides = [
+            ride({ startStopName: 'Union Station' }),
+            ride({ agency: 'GO Transit', startStopName: 'Union GO' }),
+            ride({ agency: 'GO', startStopName: 'union station' }),
+        ];
+        expect(tripsByStop(rides).all).toHaveLength(3); // as typed: three spellings
+        expect(Stats.computeMetrics(rides).topStops).toEqual([
+            { name: 'Union Station (GO Transit)', count: 2 },
+            { name: 'Union Station (TTC)', count: 1 },
+        ]);
+    });
+
+    it('matches a stop code only at its own agency, and shows the usual spelling of an unknown stop', () => {
+        PredictionEngine.stopsLibrary = library;
+        const rides = [
+            ride({ agency: 'MiWay', startStopCode: '14239', startStopName: '14239' }),
+            ride({ startStopName: 'Bathurst' }),
+            ride({ startStopName: 'bathurst' }),
+            ride({ startStopName: 'Bathurst' }),
+        ];
+        expect(Stats.computeMetrics(rides).topStops).toEqual([
+            { name: 'Bathurst', count: 3 },
+            { name: '14239', count: 1 },
+        ]);
+    });
+
+    it('gives ASK the same stops as the recap', async () => {
+        PredictionEngine.stopsLibrary = library;
+        const rides = [
+            ride({ startStopName: 'Spadina Stn', endStopName: 'union station' }),
+            ride({ startStopCode: '14239', endStopName: 'Union Station' }),
+            ride({ agency: 'GO Transit', startStopName: 'Union GO', endStopName: 'Exhibition' }),
+        ];
+        const db = {
+            collection: (name) => {
+                const chain = {
+                    where: () => chain,
+                    select: () => chain,
+                    get: async () => ({ docs: (name === 'trips' ? rides : []).map(data => ({ data: () => data })) }),
+                };
+                return chain;
+            },
+        };
+        const tools = claude.buildQueryToolExecutors(db, 'user-1', 'America/Toronto', { stopsLibrary: library });
+        const metrics = Stats.computeMetrics(rides);
+        expect((await tools.get_all_time_stats()).uniqueStops).toBe(metrics.stops);
+        expect(metrics.stops).toBe(4);
+        expect((await tools.get_all_time_stop_stats()).topBoardingStops)
+            .toEqual([['Spadina Station', 2], ['Union Station (GO Transit)', 1]]);
+        expect((await tools.get_unique_stops()).stops)
+            .toEqual(['Exhibition', 'Spadina Station', 'Union Station (GO Transit)', 'Union Station (TTC)']);
     });
 });

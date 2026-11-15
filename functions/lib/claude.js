@@ -18,6 +18,8 @@ const {
   finishedTrips,
   ridingStreaks,
   sortedCounts,
+  stopIdentityResolver,
+  stopLabeler,
   storedTripTimeZone,
   tripAgency,
   tripLocalDay,
@@ -478,15 +480,38 @@ const MAX_LISTED_RUN_TIMES = 100;
 const MAX_LISTED_ROUTES = 50;
 
 /**
+ * How ASK tells which stop a trip endpoint is: the app's stop resolution
+ * (stops library names, aliases and codes, via the end-stop canonicalizer).
+ * Reads the shared stops library unless one is passed (tests). If the library
+ * can't be read, stops are counted as typed rather than failing the question.
+ * @param {Array} [stopsLibrary]
+ * @returns {Promise<Function>} resolver for tripsByStop / stopLabeler
+ */
+function loadAskStopResolver(stopsLibrary) {
+  return Promise.resolve(stopsLibrary || require('./db').getStopsLibrary())
+    .catch((error) => {
+      logger.error('ASK stops library read failed; counting stops as typed', { error: error.message });
+      return [];
+    })
+    .then((library) => {
+      const { PredictionEngine } = require('./predict');
+      const engine = Object.create(PredictionEngine);
+      engine.stopsLibrary = library;
+      return stopIdentityResolver(library, (name, agency) => engine._canonicalizeStop(name, agency));
+    });
+}
+
+/**
  * Build the ASK tool implementations for one user. Every figure comes from the
  * shared counting module (trip-stats), the same one the dashboard uses.
  * @param {object} db - Firestore instance
  * @param {string} userId - The asking user; every read is filtered to this id
  * @param {string} timezone - IANA timezone used for date bucketing
- * @param {object} [options] - countUnreadableTexts overrides the shared setting (tests only)
+ * @param {object} [options] - countUnreadableTexts overrides the shared setting and
+ *   stopsLibrary replaces the shared stops library (tests only)
  * @returns {object} Map of tool name to async function
  */
-function buildQueryToolExecutors(db, userId, timezone, { countUnreadableTexts } = {}) {
+function buildQueryToolExecutors(db, userId, timezone, { countUnreadableTexts, stopsLibrary } = {}) {
   const zone = { timeZone: timezone };
   // The only place trips are read: the asking user's logged trips and imported
   // PRESTO rows, both filtered by the handler's user id, combined into the one
@@ -508,6 +533,16 @@ function buildQueryToolExecutors(db, userId, timezone, { countUnreadableTexts } 
     }
     return ridesRead;
   };
+  // Stops resolve the way the app resolves them, so spellings of one stop count once.
+  let stopResolverRead = null;
+  const stopResolver = () => {
+    if (!stopResolverRead) stopResolverRead = loadAskStopResolver(stopsLibrary);
+    return stopResolverRead;
+  };
+  const ridesByStop = async () => {
+    const [trips, resolveStop] = await Promise.all([allRides(), stopResolver()]);
+    return tripsByStop(trips, resolveStop);
+  };
   /** Counted rides on the local calendar days start to end, inclusive. */
   const ridesBetween = async (startDate, endDate) => {
     const from = requireDate(startDate);
@@ -523,13 +558,13 @@ function buildQueryToolExecutors(db, userId, timezone, { countUnreadableTexts } 
       return {
         totalTrips: trips.length,
         uniqueRoutes: countRoutes(trips),
-        uniqueStops: tripsByStop(trips).all.length,
+        uniqueStops: (await ridesByStop()).all.length,
         uniqueAgencies: countAgencies(trips),
         timedTrips: finishedTrips(trips).length,
       };
     },
     get_all_time_stop_stats: async () => {
-      const stops = tripsByStop(await allRides());
+      const stops = await ridesByStop();
       return { topBoardingStops: stops.boarding.slice(0, 20), topExitStops: stops.exit.slice(0, 20) };
     },
     get_all_time_route_stats: async () => {
@@ -553,7 +588,7 @@ function buildQueryToolExecutors(db, userId, timezone, { countUnreadableTexts } 
       return { by_day_of_week: dates.byWeekday, ...dateTotals(trips, dates) };
     },
     get_unique_stops: async () => {
-      const stops = tripsByStop(await allRides()).all.map(([stop]) => stop);
+      const stops = (await ridesByStop()).all.map(([stop]) => stop);
       return { unique_stop_count: stops.length, stops: stops.sort() };
     },
     get_busiest_weeks: async () => {
@@ -579,12 +614,22 @@ function buildQueryToolExecutors(db, userId, timezone, { countUnreadableTexts } 
       };
     },
     get_stop_pair_stats: async ({ start_stop, end_stop }) => {
-      const matches = (await allRides()).filter((trip) => {
-        const start = String(boardingStop(trip) || '').toLowerCase();
-        const end = String(exitStop(trip) || '').toLowerCase();
-        return (!start_stop || start.includes(start_stop.toLowerCase())) &&
-          (!end_stop || end.includes(end_stop.toLowerCase()));
-      });
+      const [trips, resolveStop] = await Promise.all([allRides(), stopResolver()]);
+      const label = stopLabeler(trips, resolveStop);
+      // A stop matches when the asked name is part of its shown name or of how
+      // it was typed, or when the asked name resolves to the same stop.
+      const matchesStop = (trip, side, asked) => {
+        if (!asked) return true;
+        const stop = label(trip, side);
+        if (!stop) return false;
+        const typed = side === 'boarding' ? boardingStop(trip) : exitStop(trip);
+        const query = asked.toLowerCase();
+        if (stop.label.toLowerCase().includes(query) || String(typed).toLowerCase().includes(query)) return true;
+        const askedStop = resolveStop({ agency: trip.agency, startStopName: asked }, 'boarding');
+        return !!askedStop && askedStop.key === stop.key;
+      };
+      const matches = trips.filter((trip) =>
+        matchesStop(trip, 'boarding', start_stop) && matchesStop(trip, 'exit', end_stop));
       const timed = durationSummary(matches);
 
       return {
@@ -913,6 +958,7 @@ async function lookupAgencyTimezone(agency, traceId = null) {
 module.exports = {
   answerQueryWithClaude,
   buildQueryToolExecutors,
+  loadAskStopResolver,
   ASK_PRESTO_FIELDS,
   parseWithClaude,
   lookupAgencyTimezone,
