@@ -18,6 +18,7 @@ const {
   createTrip,
   getRecentCompletedTrips,
   getStopsLibrary,
+  getRoutesAtStop,
   FieldValue,
   Timestamp,
 } = require('./db');
@@ -60,6 +61,7 @@ const { getEligibility, artifactSupportsAgency } = require('./intelligence-eligi
 // coverage gap. V4/V5 eligibility keeps its original 100-trip window.
 const { PREDICTION_HISTORY_LIMIT, ELIGIBILITY_HISTORY_LIMIT, ML_ENDSTOP_LIVE } = require('./constants');
 const { buildEndStopContext } = require('./endstop-context');
+const { suggestRouteCorrection } = require('./route-typo');
 // V4/V5 only load when they run live (ML_ENDSTOP_LIVE, constants.js). Off, the sms function never
 // downloads the model files or loads the ONNX runtime; the models are graded weekly instead.
 const { PredictionEngineV4 } = ML_ENDSTOP_LIVE ? require('./predict_v4.js') : {};
@@ -189,16 +191,20 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
   const stopData = await lookupStop(parsedStop.stopCode, parsedStop.stopName, resolvedAgency, route, direction);
   const stopMatched = stopData !== null;
 
-  // Background: teach this stop which routes serve it, and promote gtfs→verified on first real trip
-  if (stopData?.id && route) {
-    const stopUpdate = { routes: FieldValue.arrayUnion(route) };
-    if (stopData.source === 'gtfs') stopUpdate.source = 'verified';
-    db.collection('stops').doc(stopData.id).update({
-      ...stopUpdate,
-    }).catch(() => {});
-  }
+  // Background: teach this stop which routes serve it, and promote gtfs→verified on first real trip.
+  // Held back while the route-typo question is open, so a typo isn't learned as a route here.
+  const teachStop = () => {
+    if (stopData?.id && route) {
+      const stopUpdate = { routes: FieldValue.arrayUnion(route) };
+      if (stopData.source === 'gtfs') stopUpdate.source = 'verified';
+      db.collection('stops').doc(stopData.id).update({
+        ...stopUpdate,
+      }).catch(() => {});
+    }
+  };
 
   if (activeTrip) {
+    teachStop();
     const activeTripRouteDisplay = getRouteDisplay(activeTrip.route, activeTrip.direction);
     const newTripRouteDisplay = getRouteDisplay(route, direction);
     const { stale, elapsedMin } = await determineStaleness(db, user.userId, activeTrip);
@@ -249,6 +255,7 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
   const startStopName = stopData ? stopData.stopName : parsedStop.stopName;
   let isAdmin = false;
   let defaultAgency = null;
+  let routeSuggestion = null;
   // Predictions read the owner's history, so an unconfirmed number skips them.
   if (!unconfirmed) try {
     const [history, stopsLibrary, profile, networkGraph, habits, adminStatus, experimentalIntelligence] = await Promise.all([
@@ -350,12 +357,24 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
       const top = engine.guessTopEndStops(history, endStopContext, 3);
       if (top.length > 0) endStopPredictions = top;
     }
+    // Route typo check (RYN-42): admin-only for now, like end-stop suggestions. GTFS routes
+    // at the stop are read only when the rider's history already points at a likely typo.
+    if (isAdmin && isValidRoute(route)) {
+      const typoArgs = { engine, history, startStopName, agency: resolvedAgency, route, now };
+      if (suggestRouteCorrection(typoArgs)) {
+        const stopCode = stopData ? stopData.stopCode : parsedStop.stopCode;
+        const routesAtStop = stopCode ? await getRoutesAtStop(stopCode, resolvedAgency) : null;
+        routeSuggestion = suggestRouteCorrection({ ...typoArgs, routesAtStop });
+      }
+    }
   } catch (err) {
     console.error('Error generating prediction at trip start:', err);
   }
+  if (!routeSuggestion) teachStop();
 
+  let tripId;
   try {
-    await createTrip({
+    tripId = await createTrip({
       userId: user.userId,
       route,
       direction: direction || null,
@@ -381,6 +400,8 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
       provisionalPrevTripId: provisionalTransfer?.prevTripId || null,
       provisionalJourneyConfidence: provisionalTransfer?.confidence || null,
       needs_review: !isValidRoute(route) || null,
+      // The route-typo question replaced the end-stop list, so END 1/2/3 must not pick from it.
+      ...(routeSuggestion ? { routeTypoQuestion: true } : {}),
     });
   } catch (err) {
     console.error('createTrip failed', err.message, err.stack);
@@ -396,6 +417,30 @@ async function handleTripLog(phoneNumber, user, stopInput, route, direction, age
 
   // Warm agency timezone cache in background — never blocks trip confirmation
   if (resolvedAgency) lookupAgencyTimezone(resolvedAgency, traceId).catch(() => {});
+
+  if (routeSuggestion && tripId) {
+    // The trip is already saved with the texted route; the question only offers to change it.
+    // It replaces the end-stop list, whose END 1/2/3 numbers would clash with these.
+    const routeOptions = [routeSuggestion.route, route];
+    await setPendingState(phoneNumber, {
+      type: 'confirm_route',
+      tripId,
+      routeOptions,
+      textedRoute: route,
+      direction: direction || null,
+      agency: resolvedAgency,
+      stopId: stopData?.id || null,
+      stopSource: stopData?.source || null,
+    });
+    let typoReply = text.routeTypoPrompt(
+      routeDisplay, finalStopDisplay, agencySuffix(resolvedAgency, defaultAgency), routeOptions
+    );
+    typoReply += await getAchievementNote(user.userId);
+    await sendSmsReply(phoneNumber, typoReply).catch(err => {
+      console.error('sendSmsReply failed after createTrip — trip created but user not notified', err.message);
+    });
+    return;
+  }
 
   let replyBody = text.tripStarted(routeDisplay, finalStopDisplay, agencySuffix(resolvedAgency, defaultAgency));
   // End-stop suggestions are admin-only; non-admins always get the plain END/FORGOT prompt.
@@ -614,7 +659,7 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
   // A habit trip listed the usual end stop first; getShownEndStopChoices rebuilds that exact list.
   if (/^[123]$/.test((endStopInput || '').trim())) {
     const shown = getShownEndStopChoices(activeTrip.endStopPredictions, activeTrip.habitPrediction);
-    if (endIsAdmin && shown?.length) {
+    if (endIsAdmin && shown?.length && !activeTrip.routeTypoQuestion) {
       const idx = parseInt(endStopInput.trim(), 10) - 1;
       const predicted = shown[idx];
       if (predicted) endStopInput = predicted.stop;

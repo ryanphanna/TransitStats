@@ -384,6 +384,55 @@ async function handleConfirmStopState(phoneNumber, body, upperBody, state, trace
   return false;
 }
 
+// Teaches the boarding stop the route the trip ends up with (held back by handleTripLog while
+// the route-typo question is open, so a typo isn't learned as a route at that stop).
+function teachStopRoute(state, route) {
+  if (!state.stopId || !route) return;
+  const stopUpdate = { routes: FieldValue.arrayUnion(route) };
+  if (state.stopSource === 'gtfs') stopUpdate.source = 'verified';
+  db.collection('stops').doc(state.stopId).update(stopUpdate).catch(() => {});
+}
+
+/**
+ * Route typo question (RYN-42). The trip already started with the texted route; a number
+ * sets the route, and anything else leaves the trip as texted and is handled normally.
+ */
+async function handleConfirmRouteState(phoneNumber, body, upperBody, state, traceId = null, user = null) {
+  const options = state.routeOptions || [];
+  const reply = body.trim();
+  const num = parseInt(reply, 10);
+  if (/^\d+$/.test(reply) && num >= 1 && num <= options.length) {
+    if (user) {
+      const chosen = options[num - 1];
+      await clearPendingState(phoneNumber);
+      if (chosen !== state.textedRoute && state.tripId) {
+        await db.collection('trips').doc(state.tripId).update({
+          route: chosen,
+          routeTypoFrom: state.textedRoute,
+        });
+      }
+      teachStopRoute(state, chosen);
+      await sendSmsReply(phoneNumber, text.routeSet(getRouteDisplay(chosen, state.direction)));
+    }
+    return true;
+  }
+
+  if (upperBody === 'DISCARD') {
+    await clearPendingState(phoneNumber);
+    if (state.tripId) {
+      await db.collection('trips').doc(state.tripId).delete();
+    }
+    await sendSmsReply(phoneNumber, text.TRIP_CANCELLED);
+    return true;
+  }
+
+  // The question is optional: END, another trip, or any other command keeps the texted
+  // route and is processed normally.
+  teachStopRoute(state, state.textedRoute);
+  await clearPendingState(phoneNumber);
+  return false;
+}
+
 async function handleMmsStopNeededState(phoneNumber, body, upperBody, state, traceId = null, user = null) {
   const trace = traceId || generateTraceIdLocal();
   if (upperBody === 'DISCARD') {
@@ -519,6 +568,7 @@ async function handlePendingState(phoneNumber, body, upperBody, state, traceId =
   const stateHandlers = {
     confirm_agency: () => handleConfirmAgencyState(phoneNumber, body, upperBody, state, trace, user),
     confirm_stop: () => handleConfirmStopState(phoneNumber, body, upperBody, state, trace, user),
+    confirm_route: () => handleConfirmRouteState(phoneNumber, body, upperBody, state, trace, user),
     mms_stop_needed: () => handleMmsStopNeededState(phoneNumber, body, upperBody, state, trace, user),
     confirm_mms_route: () => handleConfirmMmsRouteState(phoneNumber, body, upperBody, state, trace, user),
     confirm_start: () => handleConfirmStartState(phoneNumber, upperBody, state, trace, user),

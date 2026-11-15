@@ -41,6 +41,8 @@ const SAMPLES = {
   agencyChoicePrompt: [['Union Station', 'GO Transit', 'TTC']],
   stopMatchesMultiple: [['504 King', 'King St', [{ name: 'King St West', code: '1234' }, { name: 'King St East' }]]],
   stopSet: [['King St West']],
+  routeTypoPrompt: [['51', 'Spadina Station', '', ['510', '51']]],
+  routeSet: [['510']],
   newTripCancelled: [['501 Queen', 'Union Station']],
   activeSavedNewCancelled: [['501 Queen', 'Union Station']],
   confirmStartReminder: [['504 King']],

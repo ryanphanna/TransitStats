@@ -263,6 +263,19 @@ function stopSet(stopName) {
   return `Stop set to ${stopName}.\n\nEND [stop] to finish. FORGOT if you forgot to end.`;
 }
 
+/**
+ * Start reply when the texted route looks like a typo of the rider's usual route at this stop.
+ * options: [suggestedRoute, textedRoute], in the order they are numbered.
+ */
+function routeTypoPrompt(routeDisplay, stopDisplay, agencySuffix, options) {
+  const list = options.map((route, i) => `${i + 1}. Route ${route}`).join('\n');
+  return `${tripStarted(routeDisplay, stopDisplay, agencySuffix)}\n\nDid you mean ${options[0]}?\n${list}\nReply with a number to set the route, or ignore to keep ${options[options.length - 1]}.`;
+}
+
+function routeSet(routeDisplay) {
+  return `Route set to ${routeDisplay}.\n\nEND [stop] to finish. FORGOT if you forgot to end.`;
+}
+
 // --- Pending prompts (dispatcher.js) ---
 
 const TRIP_CANCELLED = 'Trip cancelled.';
@@ -478,6 +491,8 @@ module.exports = {
   agencyChoicePrompt,
   stopMatchesMultiple,
   stopSet,
+  routeTypoPrompt,
+  routeSet,
   // Pending prompts
   TRIP_CANCELLED,
   CHOICE_EXPIRED,
