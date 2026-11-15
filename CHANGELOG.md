@@ -24,6 +24,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ### Map and dashboard
 
+- **Your trip map has a Ridden view.** It draws every route of your most-ridden agency in grey, colours the parts you've ridden, and says how many of that agency's routes you've ridden.
 - **Map pin popups show just the stop name.** A stop you both board and exit at used to say only "Boarding"; the boarding/exiting filter already shows which way a stop was used. Guessed exits still say no exit was recorded.
 
 ### Fixes

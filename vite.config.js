@@ -1,7 +1,10 @@
 
 import { defineConfig, loadEnv } from 'vite';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import { syncPublicProfileTemplate } from './scripts/sync-public-profile-template.mjs';
+
+const { leanRouteShapes } = createRequire(import.meta.url)('./functions/lib/atlas-route-shapes.js');
 
 const themeBootstrap = fs.readFileSync(new URL('./js/theme.js', import.meta.url), 'utf8');
 const requiredFirebaseEnv = [
@@ -180,11 +183,7 @@ export default defineConfig(({ mode, command }) => {
                             } else {
                                 data = {
                                     type: 'FeatureCollection',
-                                    features: (data.features || []).filter(feature => {
-                                        const props = feature.properties || {};
-                                        return routes.has(String(props.routeShortName || '').trim())
-                                            || routes.has(String(props.routeId || '').trim());
-                                    })
+                                    features: leanRouteShapes(data.features, routes),
                                 };
                             }
                         }
