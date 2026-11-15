@@ -5,6 +5,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('./logger');
+const { stopLabeler } = require('./trip-stats');
 
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const GEMINI_MODEL = 'gemini-2.5-flash';
@@ -77,9 +78,13 @@ async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000, traceId = 
 /**
  * Aggregate trip data into summary stats for AI context
  * @param {Array} trips - List of trip objects
+ * @param {string} [defaultTimezone]
+ * @param {Function} [resolveStop] - stop resolver (claude.loadAskStopResolver); spellings of
+ *   one stop then group as one, under its shown name. Without it, stops group as typed.
  * @returns {object} Aggregated stats
  */
-function aggregateTripStats(trips, defaultTimezone = 'America/Toronto') {
+function aggregateTripStats(trips, defaultTimezone = 'America/Toronto', resolveStop = null) {
+  const stopLabel = stopLabeler(trips, resolveStop);
   const routeMap = {};
   const pairMap = {};
   const boardingStopMap = {};
@@ -92,8 +97,8 @@ function aggregateTripStats(trips, defaultTimezone = 'America/Toronto') {
   trips.forEach((trip) => {
     const route = trip.route || 'Unknown';
     const dur = trip.duration || 0;
-    const startStop = trip.startStopName || trip.startStop || trip.startStopCode || 'Unknown';
-    const endStop = trip.endStopName || trip.endStop || trip.endStopCode || 'Unknown';
+    const startStop = stopLabel(trip, 'boarding')?.label || 'Unknown';
+    const endStop = stopLabel(trip, 'exit')?.label || 'Unknown';
     const pairKey = `${startStop} → ${endStop}`;
 
     // Respect per-trip timezone, fallback to provided default

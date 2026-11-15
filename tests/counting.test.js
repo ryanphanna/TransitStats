@@ -314,8 +314,8 @@ describe('the website and ASK give the same totals from the same records', () =>
 
         expect(all.uniqueStops).toBe(metrics.stops);
         expect(stops.unique_stop_count).toBe(metrics.stops);
-        // Union at TTC and Union at GO are two stops; Spadina shows its library name.
-        expect(stops.stops.filter(name => name === 'Union')).toHaveLength(2);
+        // Union at TTC and Union at GO are two stops, told apart by agency; Spadina shows its library name.
+        expect(stops.stops.filter(name => name.startsWith('Union'))).toEqual(['Union (GO Transit)', 'Union (TTC)']);
         expect(metrics.topStops[0]).toEqual({ name: 'Spadina Station', count: 2 });
 
         expect(streak.days_ridden).toBe(tiles.daysRidden);
@@ -449,6 +449,7 @@ describe('the website and ASK give the same totals from the same records', () =>
                         return {
                             ...claude,
                             answerQueryWithClaude: async (...args) => { calls.asked.push(args); return 'answer'; },
+                            loadAskStopResolver: () => claude.loadAskStopResolver([]),
                         };
                     }
                 }
@@ -535,8 +536,8 @@ describe('stops are counted by the stop they resolve to, as on the map', () => {
         ];
         expect(tripsByStop(rides).all).toHaveLength(3); // as typed: three spellings
         expect(Stats.computeMetrics(rides).topStops).toEqual([
-            { name: 'Union Station', count: 2 },
-            { name: 'Union Station', count: 1 },
+            { name: 'Union Station (GO Transit)', count: 2 },
+            { name: 'Union Station (TTC)', count: 1 },
         ]);
     });
 
@@ -576,8 +577,8 @@ describe('stops are counted by the stop they resolve to, as on the map', () => {
         expect((await tools.get_all_time_stats()).uniqueStops).toBe(metrics.stops);
         expect(metrics.stops).toBe(4);
         expect((await tools.get_all_time_stop_stats()).topBoardingStops)
-            .toEqual([['Spadina Station', 2], ['Union Station', 1]]);
+            .toEqual([['Spadina Station', 2], ['Union Station (GO Transit)', 1]]);
         expect((await tools.get_unique_stops()).stops)
-            .toEqual(['Exhibition', 'Spadina Station', 'Union Station', 'Union Station']);
+            .toEqual(['Exhibition', 'Spadina Station', 'Union Station (GO Transit)', 'Union Station (TTC)']);
     });
 });

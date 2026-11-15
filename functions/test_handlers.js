@@ -177,6 +177,7 @@ function loadHandlers(overrides = {}) {
 
   const claude = {
     answerQueryWithClaude: async () => 'ok',
+    loadAskStopResolver: async () => null,
     lookupAgencyTimezone: async () => 'America/Toronto',
     ...overrides.claude,
   };

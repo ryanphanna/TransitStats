@@ -1126,12 +1126,50 @@ test('ASK counts stops by the stop they resolve to, not by spelling', async () =
     const unique = await tools.get_unique_stops();
     const top = await tools.get_all_time_stop_stats();
     assert.equal(all.uniqueStops, 5);
+    // Two stops named Union Station: each shows its agency.
     assert.deepEqual(unique, {
       unique_stop_count: 5,
-      stops: ['14239', 'Bathurst', 'Spadina Station', 'Union Station', 'Union Station'],
+      stops: ['14239', 'Bathurst', 'Spadina Station', 'Union Station (GO Transit)', 'Union Station (TTC)'],
     });
-    assert.deepEqual(top.topBoardingStops, [['Spadina Station', 4], ['Union Station', 1], ['14239', 1], ['bathurst', 1]]);
-    assert.deepEqual(top.topExitStops, [['Union Station', 4], ['Union Station', 1], ['Bathurst', 1]]);
+    assert.deepEqual(top.topBoardingStops,
+      [['Spadina Station', 4], ['Union Station (GO Transit)', 1], ['14239', 1], ['Bathurst', 1]]);
+    assert.deepEqual(top.topExitStops,
+      [['Union Station (TTC)', 4], ['Union Station (GO Transit)', 1], ['Bathurst', 1]]);
+
+    // Stop pairs: every spelling of the asked stops matches, including an alias asked for.
+    const pair = await tools.get_stop_pair_stats({ start_stop: 'Spadina Stn', end_stop: 'Union Station' });
+    assert.equal(pair.total, 4);
+    const goOnly = await tools.get_stop_pair_stats({ start_stop: null, end_stop: 'Union Station (GO Transit)' });
+    assert.equal(goOnly.total, 1);
+  } finally {
+    restore();
+  }
+});
+
+test('the recent stops in the ASK prompt group spellings of one stop', async () => {
+  const { claude, restore } = loadClaude();
+  const { aggregateTripStats } = require('./lib/gemini');
+  try {
+    const library = [
+      { agency: 'TTC', code: '14239', name: 'Spadina Station', aliases: ['Spadina Stn'] },
+      { agency: 'TTC', name: 'Union Station', aliases: [] },
+      { agency: 'GO Transit', name: 'Union Station', aliases: [] },
+    ];
+    const resolveStop = await claude.loadAskStopResolver(library);
+    const trips = [
+      { agency: 'TTC', route: '510', startStopName: 'Spadina Stn', endStopName: 'union station' },
+      { agency: 'TTC', route: '510', startStopCode: '14239', endStopName: 'Union Station' },
+      { agency: 'GO Transit', route: 'LW', startStopName: 'Union Station', endStopName: 'Exhibition' },
+    ];
+    const stats = aggregateTripStats(trips, 'America/Toronto', resolveStop);
+    assert.deepEqual(stats.allStops,
+      ['Exhibition', 'Spadina Station', 'Union Station (GO Transit)', 'Union Station (TTC)']);
+    assert.deepEqual(stats.pairStats.map((pair) => [pair.pair, pair.count]), [
+      ['Spadina Station → Union Station (TTC)', 2],
+      ['Union Station (GO Transit) → Exhibition', 1],
+    ]);
+    // Without a resolver, stops stay as typed.
+    assert.equal(aggregateTripStats(trips).allStops.length, 5);
   } finally {
     restore();
   }

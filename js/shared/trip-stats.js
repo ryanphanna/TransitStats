@@ -353,7 +353,7 @@ export function exitStop(trip) {
  * server (the same lookup the map and end-stop grading use). The agency is part
  * of the stop's identity, so stops sharing a name at two agencies stay apart.
  * The name shown is the library stop's own name when there is one.
- * Returns (trip, side) => { key, name } | null, side being 'boarding' or 'exit'.
+ * Returns (trip, side) => { key, name, agency } | null, side being 'boarding' or 'exit'.
  */
 export function stopIdentityResolver(stopsLibrary, canonicalize) {
     const byCode = new Map();
@@ -383,43 +383,67 @@ export function stopIdentityResolver(stopsLibrary, canonicalize) {
         const coded = stopWithCode(side === 'boarding' ? trip.startStopCode : trip.endStopCode, agency)
             || stopWithCode(label, agency);
         const key = identity(agency, canonicalize(String(coded ? coded.name : label), agency));
-        return { key, name: names.get(key) || null };
+        return { key, name: names.get(key) || null, agency: tripAgency(trip) };
+    };
+}
+
+/**
+ * The name to show for each stop the trips touch, as (trip, side) =>
+ * { key, label } | null. With a resolver from stopIdentityResolver, spellings
+ * of one stop share a key and show the library name (or else the spelling used
+ * most); when two stops would show the same name, such as Union Station at TTC
+ * and at GO, each gets its agency added: "Union Station (GO Transit)". Without
+ * a resolver, stops are keyed and shown exactly as typed.
+ */
+export function stopLabeler(trips, resolveStop = null) {
+    const stops = new Map();
+    const resolve = (trip, side) => {
+        const label = side === 'boarding' ? boardingStop(trip) : exitStop(trip);
+        if (!label) return null;
+        const resolved = resolveStop ? resolveStop(trip, side) : null;
+        return { label, key: resolved ? resolved.key : label, name: resolved?.name || null, agency: resolved?.agency || null };
+    };
+    (trips || []).forEach(trip => ['boarding', 'exit'].forEach(side => {
+        const stop = resolve(trip, side);
+        if (!stop) return;
+        if (!stops.has(stop.key)) stops.set(stop.key, { name: stop.name, agency: stop.agency, spellings: new Map() });
+        const entry = stops.get(stop.key);
+        entry.spellings.set(stop.label, (entry.spellings.get(stop.label) || 0) + 1);
+    }));
+    const keysByName = new Map();
+    stops.forEach((entry, key) => {
+        entry.shown = entry.name || [...entry.spellings].sort((a, b) => b[1] - a[1])[0][0];
+        keysByName.set(entry.shown, (keysByName.get(entry.shown) || 0) + 1);
+    });
+    stops.forEach(entry => {
+        entry.label = keysByName.get(entry.shown) > 1 && entry.agency ? `${entry.shown} (${entry.agency})` : entry.shown;
+    });
+    return (trip, side) => {
+        const stop = resolve(trip, side);
+        return stop ? { key: stop.key, label: (stops.get(stop.key) || { label: stop.label }).label } : null;
     };
 }
 
 /**
  * Uses per stop, most first: as a boarding stop, as an exit stop, and either
  * way (`all`, one entry per distinct stop the rider has touched). Entries are
- * [name, count]. With a resolver from stopIdentityResolver, spellings of the
- * same stop count as one, under the library name (or else the spelling used
- * most); without one, stops are counted exactly as typed.
+ * [name, count], named by stopLabeler: with a resolver, spellings of the same
+ * stop count as one; without one, stops are counted exactly as typed.
  */
 export function tripsByStop(trips, resolveStop = null) {
+    const label = stopLabeler(trips, resolveStop);
     const groups = { boarding: new Map(), exit: new Map(), all: new Map() };
-    const add = (group, resolved, label) => {
-        const key = resolved ? resolved.key : label;
-        if (!group.has(key)) group.set(key, { name: resolved?.name || null, count: 0, spellings: new Map() });
-        const entry = group.get(key);
-        entry.count++;
-        entry.spellings.set(label, (entry.spellings.get(label) || 0) + 1);
+    const add = (group, stop) => {
+        if (!group.has(stop.key)) group.set(stop.key, [stop.label, 0]);
+        group.get(stop.key)[1]++;
     };
     (trips || []).forEach(trip => {
-        const start = boardingStop(trip);
-        const end = exitStop(trip);
-        if (start) {
-            const resolved = resolveStop ? resolveStop(trip, 'boarding') : null;
-            add(groups.boarding, resolved, start);
-            add(groups.all, resolved, start);
-        }
-        if (end) {
-            const resolved = resolveStop ? resolveStop(trip, 'exit') : null;
-            add(groups.exit, resolved, end);
-            add(groups.all, resolved, end);
-        }
+        const start = label(trip, 'boarding');
+        const end = label(trip, 'exit');
+        if (start) { add(groups.boarding, start); add(groups.all, start); }
+        if (end) { add(groups.exit, end); add(groups.all, end); }
     });
-    const counts = group => [...group.values()]
-        .map(entry => [entry.name || [...entry.spellings].sort((a, b) => b[1] - a[1])[0][0], entry.count])
-        .sort((a, b) => b[1] - a[1]);
+    const counts = group => [...group.values()].sort((a, b) => b[1] - a[1]);
     return { boarding: counts(groups.boarding), exit: counts(groups.exit), all: counts(groups.all) };
 }
 

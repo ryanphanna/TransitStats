@@ -27,6 +27,7 @@ const {
 } = require('./gemini');
 const {
   answerQueryWithClaude,
+  loadAskStopResolver,
   lookupAgencyTimezone,
   ASK_PRESTO_FIELDS,
 } = require('./claude');
@@ -75,7 +76,8 @@ async function handleQuery(phoneNumber, user, question, traceId = null) {
 
   const recentAgency = trips[0]?.agency || null;
   const timezone = await lookupAgencyTimezone(recentAgency, traceId);
-  const stats = aggregateTripStats(trips, timezone);
+  // The recent stops in the prompt group spellings of one stop, as the ASK tools do.
+  const stats = aggregateTripStats(trips, timezone, await loadAskStopResolver());
   if (await isGeminiRateLimited(phoneNumber, !!profile?.isPremium, isAdmin)) {
     await sendSmsReply(phoneNumber, text.AI_LIMIT_REACHED);
     return;
