@@ -24,6 +24,7 @@ const {
 } = require('./gemini');
 const logger = require('./logger');
 const text = require('./sms-text');
+const { mmsTripOptions } = require('./trip-updates');
 const { handleTripLog } = require('./handlers-trip');
 const { isModelReady } = require('./intelligence-eligibility');
 
@@ -168,7 +169,7 @@ async function handleMmsTrip(phoneNumber, user, mediaUrl, receivedAt, traceId = 
   const userProfile = await getUserProfile(user.userId);
   const defaultAgency = getConfiguredPrimaryAgency(userProfile);
 
-  const tripOptions = { parsed_by: 'mms', startTime: receivedAt, source: 'mms', timing_reliability: 'approximate' };
+  const tripOptions = mmsTripOptions(receivedAt);
 
   if (parsed.routes.length === 1) {
     const { route, agency } = parsed.routes[0];
