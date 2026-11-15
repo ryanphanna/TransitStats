@@ -2,7 +2,8 @@
 Agency-aware stop-name canonicalization for the Python ML code.
 
 Mirrors functions/lib/ml_utils.js canonicalizeStop() (ML features and labels) and
-functions/lib/predict_v3.js _canonicalizeStop() (grading, as finalization.js grades). Both pick the
+functions/lib/predict_v3.js _canonicalizeStop() (grading, as finalization.js grades). Since RYN-541
+both use one string rule, js/shared/stop-names.js, copied here as ml_norm(). Both pick the
 first stops-library entry at the trip's agency, and fall back to the first entry at any agency when
 the agency is unknown or has no stop by that name. Without the agency step, LA Metro's "Union Station
 Patsaouras Bus Plaza" (alias "Union Station") captured TTC/GO Union Station trips (GitHub #405).
@@ -49,18 +50,16 @@ def _present(v):
 
 
 def ml_norm(s):
-    """ml_utils.js canonicalizeStop's string steps."""
+    """js/shared/stop-names.js normalizeStopName(): the one stop-name rule for ML features, the gate
+    and live grading (RYN-541). Keep the steps identical to the JS."""
     s = str(s).strip().lower()
     s = re.sub(r"\s+and\s+", "/", s)
     s = re.sub(r"\s*[/&@]\s*", "/", s)
     return re.sub(r"\s+at\s+", "/", s)
 
 
-def v3_norm(s):
-    """predict_v3.js _normStopName (no " and " step)."""
-    s = str(s).strip().lower()
-    s = re.sub(r"\s*[/&@]\s*", "/", s)
-    return re.sub(r"\s+at\s+", "/", s)
+# predict_v3.js _normStopName (live grading) uses the same shared rule since RYN-541.
+v3_norm = ml_norm
 
 
 class StopIndex:

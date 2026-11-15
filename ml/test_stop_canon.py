@@ -35,6 +35,14 @@ class StopCanonTest(unittest.TestCase):
         self.assertEqual(canonical_agency("Metrolinx"), "GO Transit")
         self.assertEqual(train_endstop.canonicalize_stop("Union Station", lib, "GO Transit"), "union station go")
 
+    def test_grading_and_features_share_one_rule(self):
+        # RYN-541: live grading (V3) collapses " and " like the gate and ML features.
+        from stop_canon import ml_norm, v3_norm
+        for s in ["Spadina and Nassau", "Spadina & Nassau", "Spadina/Nassau", "Spadina @ Nassau"]:
+            self.assertEqual(v3_norm(s), "spadina/nassau")
+            self.assertEqual(ml_norm(s), "spadina/nassau")
+        self.assertEqual(v3_norm("Andrew Rd"), "andrew rd")
+
     def test_trip_agency_wins(self):
         c = train_endstop.canonicalize_stop
         self.assertEqual(c("Union Station", LIB, "TTC"), "union station")

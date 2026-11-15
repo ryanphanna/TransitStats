@@ -26,6 +26,13 @@ describe('PredictionEngine._canonicalizeStop', () => {
     expect(PredictionEngine._canonicalizeStop('Queen @ Spadina')).toBe('queen/spadina');
   });
 
+  test('"and" is replaced with "/" like the other joiners (RYN-541)', () => {
+    expect(PredictionEngine._canonicalizeStop('Spadina and Nassau')).toBe('spadina/nassau');
+    expect(PredictionEngine._canonicalizeStop('Spadina & Nassau')).toBe('spadina/nassau');
+    expect(PredictionEngine._canonicalizeStop('Spadina/Nassau')).toBe('spadina/nassau');
+    expect(PredictionEngine._canonicalizeStop('Andrew Rd')).toBe('andrew rd');
+  });
+
   test('"at" is replaced with "/"', () => {
     expect(PredictionEngine._canonicalizeStop('Queen at Spadina')).toBe('queen/spadina');
   });

@@ -1,8 +1,8 @@
+const { normalizeStopName } = require('./stop-names');
+
 function normalizeStopLabel(name) {
   if (!name) return null;
-  return name.trim().toLowerCase()
-    .replace(/\s*[/&@]\s*/g, '/')
-    .replace(/\s+at\s+/g, '/');
+  return normalizeStopName(name);
 }
 
 // Both sides of every comparison are reduced the same way: the plain normalized label, and (when a

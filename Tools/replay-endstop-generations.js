@@ -20,6 +20,7 @@ const { PredictionEngineV5 } = require('../functions/lib/predict_v5');
 const { NetworkEngine } = require('../functions/lib/network');
 const TopologyConstraints = require('../functions/lib/topology-constraints');
 const topology = require('../functions/lib/topology.json');
+const { normalizeStopName } = require('../functions/lib/stop-names');
 const { canonicalizeStop, normalizeRouteForMl, normalizeDirectionForMl, loadPolicies } = require('../functions/lib/ml_utils');
 
 loadPolicies();
@@ -132,10 +133,8 @@ function cleanTrip(id, data, args) {
 
 function normalizeStop(name) {
   if (!name) return '';
-  return String(name).trim().toLowerCase()
-    .replace(/\s+(and|at)\s+/g, '/')
-    .replace(/\s*[/&@]\s*/g, '/')
-    .replace(/\s+/g, ' ');
+  // The shared stop-name rule (RYN-541), plus collapsed inner spaces.
+  return normalizeStopName(name).replace(/\s+/g, ' ');
 }
 
 function stopLabelForms(name) {

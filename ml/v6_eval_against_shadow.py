@@ -65,6 +65,7 @@ TOPOLOGY_PATH = os.path.join(REPO_ROOT, "functions", "lib", "topology.json")
 
 sys.path.insert(0, SCRIPT_DIR)
 from route_normalization import load_policies, normalize_route_for_ml  # noqa: E402
+from stop_canon import ml_norm  # noqa: E402
 
 HIGH_IMPACT_FIELDS = {
     "route",
@@ -155,11 +156,8 @@ def parse_since(value: str | None) -> datetime | None:
 def normalize_stop(name: Any) -> str:
     if not name:
         return ""
-    value = str(name).strip().lower()
-    value = re.sub(r"\s+(and|at)\s+", "/", value)
-    value = re.sub(r"\s*[/&@]\s*", "/", value)
-    value = re.sub(r"\s+", " ", value)
-    return value
+    # The shared stop-name rule (RYN-541), plus collapsed inner spaces.
+    return re.sub(r"\s+", " ", ml_norm(name))
 
 
 def normalize_route(route: Any, agency: str | None, primary_agency: str | None) -> str:
