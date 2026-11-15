@@ -1238,6 +1238,73 @@ test('handleTripLog: end-to-end prediction prompt does not surface illegal 506 d
   ));
 });
 
+// RYN-42: route typo check at trip start.
+function routeTypoHistory() {
+  return Array.from({ length: 8 }, (_, i) => {
+    const startTime = new Date(Date.now() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
+    return {
+      route: '510',
+      agency: 'TTC',
+      startStopName: 'Spadina Station',
+      endStopName: 'Union Station',
+      startTime,
+      endTime: new Date(startTime.getTime() + 15 * 60 * 1000),
+    };
+  });
+}
+
+function loadRouteTypoHandlers({ admin = true, routesAtStop = ['510'] } = {}) {
+  return loadHandlers({
+    dbModule: {
+      getRecentCompletedTrips: async () => routeTypoHistory(),
+      isEmailAdmin: async () => admin,
+      getUserProfile: async () => ({ defaultAgency: 'TTC', isAdmin: admin }),
+      getRoutesAtStop: async () => routesAtStop,
+      lookupStop: async () => ({ id: 'stop_spadina', stopCode: '14500', stopName: 'Spadina Station', source: 'verified' }),
+    },
+    predict: { PredictionEngine: require('./lib/predict.js').PredictionEngine },
+    predictV4: { PredictionEngineV4: { guessTopEndStops: () => [] } },
+    predictV5: { PredictionEngineV5: { guessTopEndStops: async () => [] } },
+  });
+}
+
+test('handleTripLog: a likely route typo starts the trip as texted and asks "did you mean"', async () => {
+  const { handlers, calls, restore } = loadRouteTypoHandlers();
+  try {
+    await handlers.handleTripLog('+14165550042', { userId: 'u42' }, '14500', '51', null, 'TTC');
+  } finally {
+    restore();
+  }
+
+  assert.equal(calls.createTrip.length, 1);
+  assert.equal(calls.createTrip[0].route, '51', 'the trip is never silently changed');
+  const state = calls.setPendingState.find(s => s.type === 'confirm_route');
+  assert.ok(state, 'confirm_route state is set');
+  assert.deepEqual(state.routeOptions, ['510', '51']);
+  assert.equal(state.textedRoute, '51');
+  assert.equal(state.tripId, 'trip_1');
+  assert.equal(state.stopId, 'stop_spadina');
+  assert.equal(calls.createTrip[0].routeTypoQuestion, true);
+  const reply = calls.sendSmsReply[0].message;
+  assert.match(reply, /^Started 51 from 14500\.\n\nDid you mean 510\?\n1\. Route 510\n2\. Route 51\nReply with a number to set the route\./);
+  assert.doesNotMatch(reply, /END 1/, 'end-stop numbers are left out so the numbers do not clash');
+  assert.ok(!calls.docUpdates.some(u => u.routes), 'the typo is not taught to the stop while the question is open');
+});
+
+test('handleTripLog: no route typo question for non-admins or routes GTFS lists at the stop', async () => {
+  for (const opts of [{ admin: false }, { routesAtStop: ['510', '51'] }]) {
+    const { handlers, calls, restore } = loadRouteTypoHandlers(opts);
+    try {
+      await handlers.handleTripLog('+14165550042', { userId: 'u42' }, '14500', '51', null, 'TTC');
+    } finally {
+      restore();
+    }
+    assert.equal(calls.createTrip.length, 1);
+    assert.ok(!calls.setPendingState.some(s => s.type === 'confirm_route'), JSON.stringify(opts));
+    assert.doesNotMatch(calls.sendSmsReply[0].message, /Did you mean/);
+  }
+});
+
 test('handleTripLog: writes provisional transfer metadata at second-leg start', async () => {
   const { TransferEngine } = require('./lib/transfer.js');
   const now = Date.now();
@@ -1864,7 +1931,7 @@ test('getPredictionPrompt: admin end-stop list shows only guesses with confidenc
     [{ stop: 'B', confidence: 90 }]);
 });
 
-function endTripWithStoredGuesses(endStopPredictions) {
+function endTripWithStoredGuesses(endStopPredictions, tripExtra = {}) {
   return loadHandlers({
     dbModule: {
       isEmailAdmin: async () => true,
@@ -1886,6 +1953,7 @@ function endTripWithStoredGuesses(endStopPredictions) {
         endStopPredictionV5: null,
         endStopPredictions,
         stop_matched: true,
+        ...tripExtra,
       }),
       findMatchingStops: async (name) => (
         name === 'College Station'
@@ -1918,6 +1986,21 @@ test('handleEndTrip: admin END 1 does not resolve a stored guess below 60', asyn
   }
   assert.ok(calls.docUpdates.length > 0, 'trip still ends');
   // Same as a non-admin: "1" is parsed as typed input (a stop code), not the hidden guess.
+  assert.equal(calls.docUpdates[0].endStopCode, '1');
+  assert.notEqual(calls.docUpdates[0].endStopName, 'College Station');
+});
+
+test('handleEndTrip: END 1 after the route typo question never picks the unshown end-stop list', async () => {
+  const { handlers, calls, restore } = endTripWithStoredGuesses(
+    [{ stop: 'College Station', confidence: 90, version: '3.6.0' }],
+    { routeTypoQuestion: true, habitPrediction: { endStop: 'College Station' } },
+  );
+  try {
+    await handlers.handleEndTrip('+14165550015', { userId: 'u13' }, '1');
+  } finally {
+    restore();
+  }
+  assert.ok(calls.docUpdates.length > 0, 'trip still ends');
   assert.equal(calls.docUpdates[0].endStopCode, '1');
   assert.notEqual(calls.docUpdates[0].endStopName, 'College Station');
 });

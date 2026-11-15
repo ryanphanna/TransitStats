@@ -37,6 +37,8 @@ function buildHarness({
     confirmations: [],
     handleDiscard: 0,
     handleStatus: 0,
+    dbUpdates: [],
+    dbDeletes: [],
   };
 
   const handlers = {
@@ -93,8 +95,11 @@ function buildHarness({
       collection: (name) => ({
         add: async () => {},
         doc: (id) => ({
-          update: async () => {},
-          delete: async () => { if (name === 'smsOptOuts') calls.optOutDeletes.push(id); },
+          update: async (data) => { calls.dbUpdates.push({ collection: name, id, data }); },
+          delete: async () => {
+            calls.dbDeletes.push({ collection: name, id });
+            if (name === 'smsOptOuts') calls.optOutDeletes.push(id);
+          },
         }),
       }),
     },
@@ -461,6 +466,74 @@ test('dispatcher: confirm_mms_route selection starts trip with preserved timing 
     source: 'mms',
     timing_reliability: 'approximate',
   });
+});
+
+function routeTypoState(overrides = {}) {
+  return {
+    type: 'confirm_route',
+    tripId: 'trip_typo',
+    routeOptions: ['510', '51'],
+    textedRoute: '51',
+    direction: null,
+    agency: 'TTC',
+    stopId: 'stop_spadina',
+    stopSource: 'verified',
+    ...overrides,
+  };
+}
+
+test('dispatcher: confirm_route "1" sets the suggested route on the started trip', async () => {
+  const { dispatch, calls } = buildHarness({ user: { userId: 'u_typo' }, pendingState: routeTypoState() });
+
+  await dispatch('+14165550123', '1', 'SM_ROUTE_TYPO_1');
+
+  assert.equal(calls.clearPendingState, 1);
+  const tripUpdate = calls.dbUpdates.find(u => u.collection === 'trips');
+  assert.deepEqual(tripUpdate, { collection: 'trips', id: 'trip_typo', data: { route: '510', routeTypoFrom: '51' } });
+  const stopUpdate = calls.dbUpdates.find(u => u.collection === 'stops');
+  assert.deepEqual(stopUpdate.data.routes.vals, ['510'], 'the stop learns the chosen route, not the typo');
+  assert.equal(calls.sendSmsReply.length, 1);
+  assert.equal(calls.sendSmsReply[0].message, 'Route set to 510.\n\nEND [stop] to finish. FORGOT if you forgot to end.');
+  assert.equal(calls.handleTripLog, 0, 'no second trip is started');
+});
+
+test('dispatcher: confirm_route "2" keeps the texted route without touching the trip', async () => {
+  const { dispatch, calls } = buildHarness({ user: { userId: 'u_typo' }, pendingState: routeTypoState() });
+
+  await dispatch('+14165550123', '2', 'SM_ROUTE_TYPO_2');
+
+  assert.equal(calls.clearPendingState, 1);
+  assert.equal(calls.dbUpdates.filter(u => u.collection === 'trips').length, 0, 'trip keeps the texted route');
+  assert.deepEqual(calls.dbUpdates.find(u => u.collection === 'stops').data.routes.vals, ['51']);
+  assert.equal(calls.sendSmsReply[0].message, 'Route set to 51.\n\nEND [stop] to finish. FORGOT if you forgot to end.');
+});
+
+test('dispatcher: confirm_route END falls through and keeps the texted route', async () => {
+  const { dispatch, calls } = buildHarness({ user: { userId: 'u_typo' }, pendingState: routeTypoState() });
+
+  await dispatch('+14165550123', 'END Union Station', 'SM_ROUTE_TYPO_END');
+
+  assert.equal(calls.clearPendingState, 1);
+  assert.equal(calls.handleEndTrip, 1, 'END reaches handleEndTrip');
+  assert.equal(calls.dbUpdates.filter(u => u.collection === 'trips').length, 0);
+});
+
+test('dispatcher: confirm_route out-of-range number is not treated as a choice', async () => {
+  const { dispatch, calls } = buildHarness({ user: { userId: 'u_typo' }, pendingState: routeTypoState() });
+
+  await dispatch('+14165550123', '3', 'SM_ROUTE_TYPO_3');
+
+  assert.equal(calls.clearPendingState, 1, 'the optional question is dropped');
+  assert.equal(calls.dbUpdates.filter(u => u.collection === 'trips').length, 0);
+});
+
+test('dispatcher: confirm_route DISCARD cancels the started trip', async () => {
+  const { dispatch, calls } = buildHarness({ user: { userId: 'u_typo' }, pendingState: routeTypoState() });
+
+  await dispatch('+14165550123', 'DISCARD', 'SM_ROUTE_TYPO_DISCARD');
+
+  assert.deepEqual(calls.dbDeletes, [{ collection: 'trips', id: 'trip_typo' }]);
+  assert.equal(calls.sendSmsReply[0].message, 'Trip cancelled.');
 });
 
 test('dispatcher: confirm_stop "1" clears state and updates trip', async () => {
