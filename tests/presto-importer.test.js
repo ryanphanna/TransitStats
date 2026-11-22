@@ -307,6 +307,18 @@ describe('PRESTO card Transaction History export', () => {
         const goUsage = parseCsv('Date,TransitAgency,Location,Type,Amount\n"12/17/2025 8:28:02 AM","GO Transit","Aldershot GO Station Rail","Fare Payment","$-5.25"')
             .map((row, index) => toRecord(row, index + 2, 'usage.csv'));
         expect(withoutCrossExportDuplicates(goTap.filter(r => r.type === 'fare_payment'), goUsage)).toEqual([]);
+        // A pass tap or free transfer a minute after a paid fare is its own ride.
+        const passTap = parseCsv([
+            'Date,Sequence Number,Service Provider Name,Location,Type,Discount Sum,Amount,Balance',
+            '"1 November 2026 02:01 p.m.","3","Toronto Transit Commission","SPADINA STATION","Free Transfer","0","","$13.20"',
+        ].join('\n')).map((row, index) => toRecord(row, index + 2, 'card.csv'));
+        expect(withoutCrossExportDuplicates(passTap, usage)).toHaveLength(1);
+        // An unreadable amount stays null instead of becoming $0.
+        const bad = parseCsv([
+            'Date,Sequence Number,Service Provider Name,Location,Type,Discount Sum,Amount,Balance',
+            '"1 November 2026 02:00 p.m.","1","Toronto Transit Commission","BATHURST STATION","Fare Payment","0","N/A","$13.20"',
+        ].join('\n')).map((row, index) => toRecord(row, index + 2, 'card.csv'));
+        expect(bad[0].amountCents).toBeNull();
         // Re-importing the same export is not treated as a repeat.
         expect(withoutCrossExportDuplicates(history, history)).toHaveLength(2);
     });

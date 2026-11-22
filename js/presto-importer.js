@@ -112,9 +112,6 @@ function parseDate(value) {
     };
 }
 
-// From Transaction History only rides on a pass are imported: the Transit
-// Usage Report already has every paid fare (with seconds, so they dedupe), and
-// importing both would count paid rides twice.
 // Every boarding in Transaction History is a ride: a pass tap, a paid fare, a
 // free transfer onto another vehicle, or a GO tap-on (its tap-off is the same
 // ride, so it's skipped). Paid fares can also come from the Transit Usage
@@ -140,10 +137,17 @@ function exportKind(record) {
 // wins over a new one. Repeats within one export are left alone (two fares a
 // minute apart can be real), and re-importing the same export still lands on
 // the same document ids.
+// Only paid fares appear in both exports; pass taps and free transfers are
+// only in Transaction History, so they are never treated as repeats.
+function isPaidFare(record) {
+    const type = record?.raw?.Type;
+    return record?.type === 'fare_payment' && (type === 'Fare Payment' || (exportKind(record) === 'history' && type === 'Tap On'));
+}
+
 export function withoutCrossExportDuplicates(records, savedRows = []) {
     const timesByAgencyKind = new Map();
     const add = record => {
-        if (!Number.isFinite(record?.occurredAtSortKey)) return;
+        if (!isPaidFare(record) || !Number.isFinite(record?.occurredAtSortKey)) return;
         const key = `${record.agency}|${exportKind(record)}`;
         if (!timesByAgencyKind.has(key)) timesByAgencyKind.set(key, []);
         timesByAgencyKind.get(key).push(record.occurredAtSortKey);
@@ -151,7 +155,7 @@ export function withoutCrossExportDuplicates(records, savedRows = []) {
     savedRows.filter(row => row.type === 'fare_payment').forEach(add);
     records.filter(record => exportKind(record) === 'usage').forEach(add);
     return records.filter(record => {
-        if (!Number.isFinite(record.occurredAtSortKey)) return true;
+        if (!isPaidFare(record) || !Number.isFinite(record.occurredAtSortKey)) return true;
         const other = exportKind(record) === 'usage' ? 'history' : 'usage';
         const times = timesByAgencyKind.get(`${record.agency}|${other}`) || [];
         return !times.some(time => Math.abs(time - record.occurredAtSortKey) <= SAME_FARE_WINDOW_MS);
@@ -164,6 +168,11 @@ function classifyType(value) {
     if (value === 'Epurse Load') return 'epurse_load';
     if (/refund/i.test(String(value || ''))) return 'refund';
     return 'unknown';
+}
+
+// An unreadable amount stays null so the row is flagged, not imported as $0.
+function negativeCents(cents) {
+    return Number.isFinite(cents) ? -Math.abs(cents) : cents;
 }
 
 function toRecord(row, rowNumber, fileName) {
@@ -182,7 +191,7 @@ function toRecord(row, rowNumber, fileName) {
         // Transaction History lists a fare as a positive amount; the Usage Report
         // (and the rest of the app) stores charges as negative.
         amountCents: row.__history && (row.Type === 'Fare Payment' || row.Type === 'Tap On')
-            ? -Math.abs(parseAmountCents(row.Amount) || 0)
+            ? negativeCents(parseAmountCents(row.Amount))
             : parseAmountCents(row.Amount),
         location: rawLocation,
         locationLabel: LOCATION_ALIASES.get(rawLocation) || rawLocation,
@@ -333,19 +342,6 @@ function loadPrestoStops(records) {
         stopReads.set(key, read);
     }
     return stopReads.get(key);
-}
-
-async function checkLocationMatches(records) {
-    const fareRecords = records.filter(record => record.type === 'fare_payment' && record.location);
-    if (fareRecords.length === 0) return { checked: 0, matched: 0, unmatched: 0 };
-    let stops;
-    try {
-        stops = await loadPrestoStops(fareRecords);
-    } catch {
-        return { checked: 0, matched: 0, unmatched: 0 };
-    }
-    const matched = fareRecords.filter(record => prestoMatchFields(record, stops).stopMatchStatus === 'matched').length;
-    return { checked: fareRecords.length, matched, unmatched: fareRecords.length - matched };
 }
 
 // The "later" step: rides saved without a stop usually need a manual fix (a
@@ -521,6 +517,7 @@ export function initPrestoImporter({ user }) {
             item.classList.toggle('is-done', index < stepIndex);
         });
         show(statusElement, false);
+        if (name !== 'review') clearPreviewMap();
         if (name === 'choose') refreshExisting();
     };
 
@@ -568,18 +565,21 @@ export function initPrestoImporter({ user }) {
     input.addEventListener('change', () => { if (input.files.length) review([...input.files]); });
 
     let previewMap = null;
+    const clearPreviewMap = () => {
+        if (previewMap) previewMap.remove();
+        previewMap = null;
+    };
     // A small map of the stops this file adds; stops not already on the
     // rider's map are highlighted. Only drawn where Leaflet is loaded (the
     // dashboard); elsewhere the review screen just skips it.
-    async function drawPreviewMap(matchedStops) {
+    async function drawPreviewMap(matchedStops, savedRows) {
         const container = $('[data-review-map]');
         const points = matchedStops.filter(stop => Number.isFinite(stop?.location?.lat) && Number.isFinite(stop?.location?.lng));
         if (typeof window.L === 'undefined' || !points.length) return show(container, false);
         const known = new Set();
         const keyOf = loc => `${loc.lat.toFixed(3)},${loc.lng.toFixed(3)}`;
         try {
-            const snap = await db.collection('prestoTransactions').where('userId', '==', user.uid).get();
-            snap.docs.forEach(doc => { const loc = doc.data().matchedStop?.location; if (loc) known.add(keyOf(loc)); });
+            savedRows.forEach(row => { const loc = row.matchedStop?.location; if (Number.isFinite(loc?.lat)) known.add(keyOf(loc)); });
             const { MapEngine } = await import('./map-engine.js');
             MapEngine.getTripEndpointLocations?.().forEach(({ boarding, exiting }) => {
                 [boarding?.location, exiting?.location].forEach(loc => { if (Number.isFinite(loc?.lat)) known.add(keyOf(loc)); });
@@ -589,9 +589,15 @@ export function initPrestoImporter({ user }) {
         points.forEach(stop => unique.set(keyOf(stop.location), stop));
         const fresh = [...unique.keys()].filter(key => !known.has(key)).length;
         show(container, true);
-        if (previewMap) previewMap.remove();
-        previewMap = window.L.map(container, { zoomControl: false, attributionControl: false, scrollWheelZoom: false });
-        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, opacity: 0.58, className: 'minimal-basemap' }).addTo(previewMap);
+        clearPreviewMap();
+        previewMap = window.L.map(container, { zoomControl: false, scrollWheelZoom: false });
+        previewMap.attributionControl.setPrefix(false);
+        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            opacity: 0.58,
+            className: 'minimal-basemap',
+            attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+        }).addTo(previewMap);
         const style = getComputedStyle(group);
         const accent = style.getPropertyValue('--accent').trim() || '#16a34a';
         const muted = style.getPropertyValue('--text-secondary').trim() || '#888';
@@ -613,6 +619,8 @@ export function initPrestoImporter({ user }) {
 
     async function review(files) {
         status(statusElement, `Reading ${files.length === 1 ? files[0].name : `${files.length} files`}…`, 'info');
+        let matched;
+        let saved;
         try {
             const recordsByFile = await Promise.all(files.map(async file => {
                 const rows = parseCsv(await file.text());
@@ -626,14 +634,15 @@ export function initPrestoImporter({ user }) {
                 const skipped = Object.entries(summary.skipped).map(([label, count]) => `${count} ${label}`).join(', ');
                 throw new Error(`No rides to import in this file${skipped ? ` (it has ${skipped})` : ''}. Check it's the right export.`);
             }
-            const saved = await db.collection('prestoTransactions').where('userId', '==', user.uid).get()
-                .then(snap => snap.docs.map(doc => doc.data())).catch(() => []);
+            // Without the saved rides there's no way to skip fares already imported
+            // from the other PRESTO export, so a failed read stops the review.
+            saved = await db.collection('prestoTransactions').where('userId', '==', user.uid).get()
+                .then(snap => snap.docs.map(doc => doc.data()))
+                .catch(() => { throw new Error("Couldn't check which rides are already on your map. Try again in a moment."); });
             fareRecords = withoutCrossExportDuplicates(fareRecords, saved);
             if (!fareRecords.length) throw new Error('Every ride in this file is already on your map.');
-            const summary = summarize(pendingRecords);
             const stops = await loadPrestoStops(fareRecords).catch(() => null);
-            const matches = stops ? fareRecords.map(record => prestoMatchFields(record, stops)) : [];
-            const matched = matches.filter(fields => fields.stopMatchStatus === 'matched');
+            matched = stops ? fareRecords.map(record => prestoMatchFields(record, stops)).filter(fields => fields.stopMatchStatus === 'matched') : [];
             const later = fareRecords.length - matched.length;
 
             $('[data-review-count]').textContent = fareRecords.length.toLocaleString('en-CA');
@@ -643,16 +652,22 @@ export function initPrestoImporter({ user }) {
                 stops ? `${matched.length.toLocaleString('en-CA')} matched to a stop${later ? `; ${later.toLocaleString('en-CA')} will be matched later` : ''}` : null,
             ];
             $('[data-review-facts]').innerHTML = facts.filter(Boolean).map(fact => `<li>${escapeHtml(fact)}</li>`).join('');
-
-
-            showScreen('review');
-            await drawPreviewMap(matched.map(fields => fields.matchedStop));
             importButton.textContent = `Add ${plural(fareRecords.length, 'ride')}`;
+            showScreen('review');
         } catch (error) {
             pendingRecords = [];
             fareRecords = [];
             input.value = '';
             status(statusElement, error.message || 'Could not read this PRESTO file.');
+            return;
+        }
+        // The map is a nice-to-have: if it fails, hide it and keep the import.
+        try {
+            await drawPreviewMap(matched.map(fields => fields.matchedStop), saved);
+        } catch (error) {
+            console.warn('PRESTO preview map skipped:', error);
+            clearPreviewMap();
+            show($('[data-review-map]'), false);
         }
     }
 
