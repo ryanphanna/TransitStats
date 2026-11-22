@@ -115,46 +115,47 @@ function parseDate(value) {
 // From Transaction History only rides on a pass are imported: the Transit
 // Usage Report already has every paid fare (with seconds, so they dedupe), and
 // importing both would count paid rides twice.
-// Transaction History has both rides on a pass and paid fares. Paid fares can
-// also come from the Transit Usage Report, so the import skips any that match
-// a fare already saved (see sameFareKey).
+// Every boarding in Transaction History is a ride: a pass tap, a paid fare, a
+// free transfer onto another vehicle, or a GO tap-on (its tap-off is the same
+// ride, so it's skipped). Paid fares can also come from the Transit Usage
+// Report, so the import skips any already saved (see withoutCrossExportDuplicates).
+const HISTORY_RIDE_TYPES = new Set(['Transit Pass Tap', 'Fare Payment', 'Free Transfer', 'Tap On']);
 function classifyHistoryType(value) {
-    return value === 'Transit Pass Tap' || value === 'Fare Payment' ? 'fare_payment' : 'history_other';
+    return HISTORY_RIDE_TYPES.has(value) ? 'fare_payment' : 'history_other';
 }
 
 // The two PRESTO exports write the same paid fare differently (Usage Report:
 // stop code, seconds, negative amount; Transaction History: stop name, minutes,
-// positive amount), so their fingerprints differ. Agency + minute + amount
-// identifies the same fare across both.
+// positive amount, and GO taps sometimes a minute apart), so their fingerprints
+// differ. The same agency within two minutes identifies the same fare.
+const SAME_FARE_WINDOW_MS = 2 * 60 * 1000;
+
 function exportKind(record) {
     const raw = record?.raw || {};
     return 'Service Provider Name' in raw || 'TransactionDateTime' in raw ? 'history' : 'usage';
 }
 
-// Drops paid fares that the other PRESTO export already covers. Usage Report
-// rows win over Transaction History rows for the same fare; a fare already
-// saved wins over a new one. Repeats within one export are left alone (two
-// fares in the same minute can be real), and re-importing the same export
-// still lands on the same document ids.
+// Drops rides that the other PRESTO export already covers. Usage Report rows
+// win over Transaction History rows for the same fare; a ride already saved
+// wins over a new one. Repeats within one export are left alone (two fares a
+// minute apart can be real), and re-importing the same export still lands on
+// the same document ids.
 export function withoutCrossExportDuplicates(records, savedRows = []) {
-    const kindsByKey = new Map();
-    const note = (key, kind) => {
-        if (!key) return;
-        if (!kindsByKey.has(key)) kindsByKey.set(key, new Set());
-        kindsByKey.get(key).add(kind);
+    const timesByAgencyKind = new Map();
+    const add = record => {
+        if (!Number.isFinite(record?.occurredAtSortKey)) return;
+        const key = `${record.agency}|${exportKind(record)}`;
+        if (!timesByAgencyKind.has(key)) timesByAgencyKind.set(key, []);
+        timesByAgencyKind.get(key).push(record.occurredAtSortKey);
     };
-    savedRows.forEach(row => note(sameFareKey(row), exportKind(row)));
-    records.filter(record => exportKind(record) === 'usage').forEach(record => note(sameFareKey(record), 'usage'));
+    savedRows.filter(row => row.type === 'fare_payment').forEach(add);
+    records.filter(record => exportKind(record) === 'usage').forEach(add);
     return records.filter(record => {
-        const kinds = kindsByKey.get(sameFareKey(record));
-        if (!kinds) return true;
-        return [...kinds].every(kind => kind === exportKind(record));
+        if (!Number.isFinite(record.occurredAtSortKey)) return true;
+        const other = exportKind(record) === 'usage' ? 'history' : 'usage';
+        const times = timesByAgencyKind.get(`${record.agency}|${other}`) || [];
+        return !times.some(time => Math.abs(time - record.occurredAtSortKey) <= SAME_FARE_WINDOW_MS);
     });
-}
-
-export function sameFareKey(record) {
-    if (!Number.isFinite(record?.occurredAtSortKey)) return null;
-    return `${record.agency}|${Math.floor(record.occurredAtSortKey / 60000)}|${Math.abs(record.amountCents || 0)}`;
 }
 
 function classifyType(value) {
@@ -180,7 +181,7 @@ function toRecord(row, rowNumber, fileName) {
         ...(row.__history && row.Type === 'Transit Pass Tap' ? { passRide: true } : {}),
         // Transaction History lists a fare as a positive amount; the Usage Report
         // (and the rest of the app) stores charges as negative.
-        amountCents: row.__history && row.Type === 'Fare Payment'
+        amountCents: row.__history && (row.Type === 'Fare Payment' || row.Type === 'Tap On')
             ? -Math.abs(parseAmountCents(row.Amount) || 0)
             : parseAmountCents(row.Amount),
         location: rawLocation,

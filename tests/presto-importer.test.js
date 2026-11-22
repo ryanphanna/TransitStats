@@ -254,9 +254,9 @@ describe('Transaction History export', () => {
         '"20 Nov 2025 12:20 a.m.","Toronto Transit Commission","COLLEGE STATION","Free Transfer","","X3"',
     ].join('\n');
 
-    it('imports rides on a pass and paid fares', () => {
+    it('imports rides on a pass, paid fares and free transfers', () => {
         const records = parseCsv(csv).map((row, index) => toRecord(row, index + 2, 'history.csv'));
-        expect(records.map(record => record.type)).toEqual(['fare_payment', 'fare_payment', 'history_other']);
+        expect(records.map(record => record.type)).toEqual(['fare_payment', 'fare_payment', 'fare_payment']);
         expect(records[1].amountCents).toBe(-330);
         expect(records[0]).toMatchObject({ passRide: true, amountCents: 0, agency: 'TTC', location: 'QUEENS PARK STATION' });
         expect(records[0].occurredAtSortKey).toBe(Date.UTC(2025, 10, 21, 21, 15, 0));
@@ -264,7 +264,7 @@ describe('Transaction History export', () => {
         expect(records[0].raw.__history).toBeUndefined();
         const summary = summarize(records);
         expect(summary.passRides).toBe(1);
-        expect(summary.farePayments).toBe(2);
+        expect(summary.farePayments).toBe(3);
     });
 });
 
@@ -297,6 +297,16 @@ describe('PRESTO card Transaction History export', () => {
         expect(withoutCrossExportDuplicates(usage, history)).toEqual([]);
         // Both files at once: the usage row wins.
         expect(withoutCrossExportDuplicates([...history, ...usage]).map(r => r.raw.Location)).toEqual(['BATHURST STATION', '14583']);
+        // A GO tap-on a minute off its Usage Report row is the same ride.
+        const goTap = parseCsv([
+            'Date,Sequence Number,Service Provider Name,Location,Type,Discount Sum,Amount,Balance',
+            '"17 December 2025 08:29 a.m.","10","GO Transit","Burlington - AldershotGOStationBusLoop","Tap On","0","$5.25","$9.90"',
+            '"17 December 2025 09:10 a.m.","9","GO Transit","Aldershot GO Station Rail","Tap Off","0","$0.00","$9.90"',
+        ].join('\n')).map((row, index) => toRecord(row, index + 2, 'card.csv'));
+        expect(goTap.map(r => r.type)).toEqual(['fare_payment', 'history_other']);
+        const goUsage = parseCsv('Date,TransitAgency,Location,Type,Amount\n"12/17/2025 8:28:02 AM","GO Transit","Aldershot GO Station Rail","Fare Payment","$-5.25"')
+            .map((row, index) => toRecord(row, index + 2, 'usage.csv'));
+        expect(withoutCrossExportDuplicates(goTap.filter(r => r.type === 'fare_payment'), goUsage)).toEqual([]);
         // Re-importing the same export is not treated as a repeat.
         expect(withoutCrossExportDuplicates(history, history)).toHaveLength(2);
     });
