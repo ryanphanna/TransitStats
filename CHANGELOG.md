@@ -10,6 +10,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ### Website
 
+- **Saving no longer stops working about an hour after you sign in.** Sign-ins couldn't renew, so saves and imports hung until you signed in again; this was a Google Cloud key setting, fixed for the website and the iOS app.
 - **Settings → Sharing shows your real sharing setting.** It could show sharing as off and your identity as ??? when your profile was public.
 - **Imported PRESTO rides are matched to your stops when you import them**, and the match is saved, instead of being worked out again every time the map loads. The import preview now shows how many rides match a stop, rather than promising a later matching step that never ran.
 - **The PRESTO importer now takes your Transaction History export too**, which is the only PRESTO export that lists rides taken on a monthly pass. Only those pass rides are taken from it; paid fares still come from the Transit Usage Report, so nothing is counted twice.
