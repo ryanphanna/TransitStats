@@ -4,6 +4,7 @@ import { TripStatsView } from './trips/TripStatsView.js';
 import { MapEngine } from './map-engine.js';
 import { PredictionEngine } from './predict.js';
 import { buildPrestoTrips } from './presto-stop-matcher.js';
+import { rematchUnmatchedPresto } from './presto-importer.js';
 import { setAtlasCardEmptyState } from './shared/atlas-card.js';
 
 /**
@@ -66,6 +67,7 @@ export const Trips = {
                 this._prestoTrips = buildPrestoTrips(records);
                 MapEngine.updatePrestoTrips(this._prestoTrips);
                 this.sync(TripController.allTrips, TripController.activeTrip);
+                rematchUnmatchedPresto(userId, snap.docs);
             },
             err => console.error('PRESTO trips sync failed:', err),
         );

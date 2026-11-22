@@ -308,6 +308,41 @@ async function checkLocationMatches(records) {
     return { checked: fareRecords.length, matched, unmatched: fareRecords.length - matched };
 }
 
+// The "later" step: rides saved without a stop usually need a manual fix (a
+// stop alias or a new library stop, same as trips flagged for review). Once that
+// fix lands, they are tried again at most once a day when the dashboard loads. Only rows that now match are written.
+const REMATCH_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const rematchStarted = new Set();
+export async function rematchUnmatchedPresto(userId, docs, { now = Date.now() } = {}) {
+    if (!userId || rematchStarted.has(userId)) return 0;
+    rematchStarted.add(userId);
+    const stampKey = `ts_presto_rematch_${userId}`;
+    try {
+        if (now - Number(localStorage.getItem(stampKey) || 0) < REMATCH_INTERVAL_MS) return 0;
+    } catch { /* storage blocked: just run */ }
+    const waiting = docs.filter(doc => {
+        const row = doc.data();
+        return row.type === 'fare_payment' && row.stopMatchStatus !== 'matched';
+    });
+    if (!waiting.length) return 0;
+    try {
+        const stops = await loadPrestoStops(waiting.map(doc => doc.data()));
+        const updates = waiting
+            .map(doc => ({ doc, fields: prestoMatchFields(doc.data(), stops) }))
+            .filter(({ fields }) => fields.stopMatchStatus === 'matched');
+        for (let start = 0; start < updates.length; start += 400) {
+            const batch = db.batch();
+            updates.slice(start, start + 400).forEach(({ doc, fields }) => batch.update(doc.ref, fields));
+            await batch.commit();
+        }
+        try { localStorage.setItem(stampKey, String(now)); } catch { /* ignore */ }
+        return updates.length;
+    } catch (error) {
+        console.warn('PRESTO re-match skipped:', error);
+        return 0;
+    }
+}
+
 // The import flow is a few screens, one per phase: choose what to import,
 // get the file, review it, save, done. Both hosts (Settings → Import and the
 // /import page) supply an empty #presto-import-group and this fills it.
@@ -521,7 +556,7 @@ export function initPrestoImporter({ user }) {
                 passRides && paid ? `${plural(paid, 'paid fare')} and ${plural(passRides, 'pass ride')}` : passRides ? 'All taken on a monthly pass' : 'All paid fares',
                 rangeLabel(fareRecords),
                 locationCheck.checked
-                    ? `${locationCheck.matched.toLocaleString('en-CA')} of ${locationCheck.checked.toLocaleString('en-CA')} matched to a stop${locationCheck.unmatched ? `; ${plural(locationCheck.unmatched, 'ride')} will be saved without one` : ''}`
+                    ? `${locationCheck.matched.toLocaleString('en-CA')} of ${locationCheck.checked.toLocaleString('en-CA')} matched to a stop now${locationCheck.unmatched ? `; the other ${locationCheck.unmatched.toLocaleString('en-CA')} need a manual match. They still count as rides now and get their stop once it's fixed` : ''}`
                     : null,
                 `Agencies: ${Object.entries(summary.agencies).sort((a, b) => b[1] - a[1]).map(([agency]) => agency).join(', ')}`,
             ];
@@ -580,9 +615,14 @@ export function initPrestoImporter({ user }) {
             progress.value = 1;
             const after = await db.collection('prestoTransactions').where('userId', '==', user.uid).get();
             const added = after.size - before.size;
+            const matchedNow = records.filter(record => record.stopMatchStatus === 'matched').length;
+            const later = records.length - matchedNow;
+            const matchLine = stops
+                ? ` ${matchedNow.toLocaleString('en-CA')} ${matchedNow === 1 ? 'was' : 'were'} matched to a stop${later ? `; the other ${later.toLocaleString('en-CA')} need a manual match and will pick up their stop once it's fixed` : ''}.`
+                : ' Stops will be matched later.';
             $('[data-done-title]').textContent = added > 0 ? `Added ${plural(added, 'ride')}` : 'Already up to date';
             $('[data-done-text]').textContent = added > 0
-                ? `${added < records.length ? `${plural(records.length - added, 'ride')} were already imported. ` : ''}You now have ${plural(after.size, 'PRESTO ride')} on your map.`
+                ? `${added < records.length ? `${plural(records.length - added, 'ride')} were already imported. ` : ''}You now have ${plural(after.size, 'PRESTO ride')} on your map.${matchLine}`
                 : `Every ride in this file was already imported. You have ${plural(after.size, 'PRESTO ride')} on your map.`;
             pendingRecords = [];
             fareRecords = [];

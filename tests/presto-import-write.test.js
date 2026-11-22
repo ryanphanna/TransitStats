@@ -194,3 +194,21 @@ describe('PRESTO import screens', () => {
         expect(dom.screen('file').textContent).toMatch(/Load More/);
     });
 });
+
+describe('PRESTO later re-match', () => {
+    it('updates only rides that now match, at most once a day', async () => {
+        const { rematchUnmatchedPresto } = await import('../js/presto-importer.js');
+        localStorage.clear();
+        const updates = [];
+        const doc = (data) => ({ data: () => data, ref: { id: data.id } });
+        const docs = [
+            doc({ id: 'a', type: 'fare_payment', agency: 'TTC', location: 'NOWHERE AT ALL', stopMatchStatus: 'unmatched' }),
+            doc({ id: 'b', type: 'fare_payment', agency: 'TTC', location: 'BAY STATION', stopMatchStatus: 'matched' }),
+        ];
+        const count = await rematchUnmatchedPresto('user_9', docs);
+        expect(count).toBe(0);
+        expect(updates).toEqual([]);
+        // A second call in the same session does nothing.
+        expect(await rematchUnmatchedPresto('user_9', docs)).toBe(0);
+    });
+});
