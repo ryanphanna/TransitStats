@@ -9,9 +9,11 @@ vi.mock('../js/firebase.js', () => ({
     db: {
         collection: (name) => ({
             doc: (id) => ({ name, id }),
-            where: () => ({
+            where: (field, op, value) => ({
                 get: async () => {
-                    const docs = [...store.entries()].filter(([key]) => key.startsWith('prestoTransactions/')).map(([, data]) => ({ data: () => data }));
+                    const docs = [...store.entries()]
+                        .filter(([key, data]) => key.startsWith('prestoTransactions/') && data[field] === value)
+                        .map(([, data]) => ({ data: () => data }));
                     return { size: docs.length, docs };
                 },
             }),
@@ -63,7 +65,7 @@ async function chooseFile(dom, text, name = 'PRESTO 2026.csv') {
     file.text = async () => text;
     dom.group.querySelector('[data-choose="paid"]').click();
     await pickFile(dom, file);
-    await vi.waitFor(() => expect(visible(dom.screen('review')) || /No rides/.test(dom.status.textContent)).toBe(true));
+    await vi.waitFor(() => expect(visible(dom.screen('review')) || /No rides|already on your map/.test(dom.status.textContent)).toBe(true));
 }
 
 async function runImport(dom) {
@@ -106,7 +108,7 @@ describe('PRESTO import write', () => {
 
         dom = setupDom();
         await chooseFile(dom, text);
-        await runImport(dom);
+        expect(dom.status.textContent).toMatch(/already on your map/);
 
         expect([...store.keys()].sort()).toEqual(firstIds);
     });
@@ -170,7 +172,7 @@ describe('PRESTO import screens', () => {
         const dom = setupDom();
         expect(visible(dom.screen('choose'))).toBe(true);
         await chooseFile(dom, csv(fare('1/1/2026 8:00:00 AM'), fare('1/2/2026 8:00:00 AM')));
-        expect(dom.screen('review').textContent).toMatch(/2\s*rides ready to add/);
+        expect(dom.screen('review').textContent).toMatch(/2\s*new rides to add/);
         expect(dom.importButton.textContent).toBe('Add 2 rides');
         await runImport(dom);
         expect(dom.screen('done').textContent).toMatch(/Added 2 rides/);
@@ -183,8 +185,8 @@ describe('PRESTO import screens', () => {
         await runImport(dom);
         dom = setupDom();
         await chooseFile(dom, text);
-        await runImport(dom);
-        expect(dom.screen('done').textContent).toMatch(/Already up to date/);
+        expect(dom.status.textContent).toMatch(/Every ride in this file is already on your map/);
+        expect(visible(dom.screen('review'))).toBe(false);
     });
 
     it('the pass choice shows the Transaction History steps', () => {

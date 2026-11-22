@@ -639,14 +639,21 @@ export function initPrestoImporter({ user }) {
             saved = await db.collection('prestoTransactions').where('userId', '==', user.uid).get()
                 .then(snap => snap.docs.map(doc => doc.data()))
                 .catch(() => { throw new Error("Couldn't check which rides are already on your map. Try again in a moment."); });
-            fareRecords = withoutCrossExportDuplicates(fareRecords, saved);
+            // Rides already saved (same ride from this export, or the same paid
+            // fare from the other export) aren't counted or written again.
+            const savedFingerprints = new Set(saved.map(row => row.fingerprint).filter(Boolean));
+            const fingerprints = await Promise.all(fareRecords.map(record => fingerprint(record)));
+            fareRecords = withoutCrossExportDuplicates(
+                fareRecords.filter((record, index) => !savedFingerprints.has(fingerprints[index])),
+                saved,
+            );
             if (!fareRecords.length) throw new Error('Every ride in this file is already on your map.');
             const stops = await loadPrestoStops(fareRecords).catch(() => null);
             matched = stops ? fareRecords.map(record => prestoMatchFields(record, stops)).filter(fields => fields.stopMatchStatus === 'matched') : [];
             const later = fareRecords.length - matched.length;
 
             $('[data-review-count]').textContent = fareRecords.length.toLocaleString('en-CA');
-            $('[data-review-noun]').textContent = `ride${fareRecords.length === 1 ? '' : 's'} ready to add`;
+            $('[data-review-noun]').textContent = `new ride${fareRecords.length === 1 ? '' : 's'} to add`;
             const facts = [
                 rangeLabel(fareRecords),
                 stops ? `${matched.length.toLocaleString('en-CA')} matched to a stop${later ? `; ${later.toLocaleString('en-CA')} will be matched later` : ''}` : null,
