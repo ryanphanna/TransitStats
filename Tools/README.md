@@ -4,6 +4,10 @@ Operational scripts and small utilities for TransitStats.
 
 Keep reusable scripts here. Do not create a second top-level scripts folder unless the repo develops a clear split between product/admin utilities and build/dev automation.
 
+## MCP server
+
+- `mcp/server.mjs` — read-only, local-only MCP server so other Claude chats can query the admin's own trips. It serves the same tools as SMS ASK (`functions/lib/claude.js`), so numbers match. Registered with `claude mcp add -s user transitstats -- node "<repo>/Tools/mcp/server.mjs"`; run `npm install` in `Tools/mcp` first.
+
 ## Most Used
 
 - `inspect-trip-context.js` — inspect one trip with nearby context for the same user

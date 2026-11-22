@@ -1,0 +1,10 @@
+{
+  "name": "transitstats-mcp",
+  "private": true,
+  "type": "module",
+  "description": "Read-only MCP server over the admin's own TransitStats trips (runs locally only).",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  }
+}

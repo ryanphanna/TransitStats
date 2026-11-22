@@ -958,6 +958,7 @@ async function lookupAgencyTimezone(agency, traceId = null) {
 module.exports = {
   answerQueryWithClaude,
   buildQueryToolExecutors,
+  QUERY_TOOLS,
   loadAskStopResolver,
   ASK_PRESTO_FIELDS,
   parseWithClaude,
