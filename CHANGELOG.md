@@ -16,6 +16,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Every new trip saves its direction in the app's standard form**, whichever way the text was read: "SOUTH", "North" or "WB" are stored as Southbound, Northbound and Westbound instead of as typed, so the same direction no longer splits into several. Destination-style directions like "Downtown" are still kept as typed.
 - **Trip texts, ASK answers and time-zone lookups now run on Claude** instead of Gemini, the pick from a side-by-side test on real messages. Stop-sign photos still use Gemini.
 - **ASK replies stay plain text and never say "I"**, including when the message isn't really a question.
+- **ASK counts months with no trips as 0** instead of leaving them out, so a gap in logging shows up rather than being skipped, and all-time totals now include the dates of your first and last trip.
 - **ASK can answer questions about transit agencies**, such as how many you have ridden or which you ride most. It used to guess from stop names.
 - **ASK says when something isn't in your trip data** instead of estimating an answer from other details.
 - **ASK totals now count every trip and agree with each other.** Trips without an end time, such as imported history, used to be left out of all-time answers, so ASK could report 1,146 trips for a rider with over 3,000 logged, and a month could differ by one depending on how the question was worded. Every count now comes from the same set of logged trips; trip lengths still use only trips with an end time, and the reply says how many.

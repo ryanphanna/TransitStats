@@ -327,7 +327,7 @@ const QUERY_TOOLS = [
   {
     name: 'get_all_time_stats',
     description: 'Get all-time totals: trips, different routes, stops and agencies, plus timedTrips, ' +
-      'the number of trips that have a recorded duration. ' +
+      'the number of trips that have a recorded duration, and firstTripDate / lastTripDate. ' +
       'Call this for "total ever", "all time", or "since I started" questions.',
   },
   {
@@ -343,7 +343,7 @@ const QUERY_TOOLS = [
   {
     name: 'get_monthly_trip_counts',
     description: 'Get trip counts for every month (by_month) and every year (by_year) across all time, ' +
-      'with the all-time total. Call this for questions about a specific month or year, such as ' +
+      'with the all-time total. Months with no trips between the first and last are listed as 0. Call this for questions about a specific month or year, such as ' +
       '"how many trips this year?", and for per-month averages. Read a year from by_year instead of ' +
       'adding months up.',
   },
@@ -511,6 +511,33 @@ function loadAskStopResolver(stopsLibrary) {
  *   stopsLibrary replaces the shared stops library (tests only)
  * @returns {object} Map of tool name to async function
  */
+/**
+ * Month counts in date order with every month from the first to the last
+ * included, so a month with no trips reads as 0 instead of being missing.
+ * @param {object} byMonth - 'YYYY-MM' -> count
+ * @returns {object}
+ */
+function everyMonth(byMonth) {
+  const keys = Object.keys(byMonth).sort();
+  if (!keys.length) return {};
+  const out = {};
+  let [y, m] = keys[0].split('-').map(Number);
+  const last = keys[keys.length - 1];
+  for (;;) {
+    const key = `${y}-${String(m).padStart(2, '0')}`;
+    out[key] = byMonth[key] || 0;
+    if (key >= last) break;
+    if (++m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+
+/** Local days of the earliest and latest counted trip (null when there are none). */
+function firstAndLastDay(trips, options) {
+  const days = trips.map((trip) => tripLocalDay(trip, options)?.dayKey).filter(Boolean).sort();
+  return { firstTripDate: days[0] || null, lastTripDate: days[days.length - 1] || null };
+}
+
 function buildQueryToolExecutors(db, userId, timezone, { countUnreadableTexts, stopsLibrary } = {}) {
   const zone = { timeZone: timezone };
   // The only place trips are read: the asking user's logged trips and imported
@@ -561,6 +588,7 @@ function buildQueryToolExecutors(db, userId, timezone, { countUnreadableTexts, s
         uniqueStops: (await ridesByStop()).all.length,
         uniqueAgencies: countAgencies(trips),
         timedTrips: finishedTrips(trips).length,
+        ...firstAndLastDay(trips, zone),
       };
     },
     get_all_time_stop_stats: async () => {
@@ -580,7 +608,7 @@ function buildQueryToolExecutors(db, userId, timezone, { countUnreadableTexts, s
     get_monthly_trip_counts: async () => {
       const trips = await allRides();
       const dates = tripsByDate(trips, zone);
-      return { by_month: dates.byMonth, by_year: dates.byYear, ...dateTotals(trips, dates) };
+      return { by_month: everyMonth(dates.byMonth), by_year: dates.byYear, ...dateTotals(trips, dates) };
     },
     get_day_of_week_stats: async () => {
       const trips = await allRides();

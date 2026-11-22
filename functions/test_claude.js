@@ -649,7 +649,12 @@ test('every ASK tool counts the same trips for the same rider', async () => {
       split.weekdays + split.weekends, sum(pairs.by_day_of_week)]) {
       assert.equal(dated, all.totalTrips - monthly.trips_without_date);
     }
-    assert.deepEqual(monthly.by_month, { '2024-03': 1, '2026-09': 3, '2026-10': 2, '2026-11': 1 });
+    const ridden = Object.fromEntries(Object.entries(monthly.by_month).filter(([, n]) => n > 0));
+    assert.deepEqual(ridden, { '2024-03': 1, '2026-09': 3, '2026-10': 2, '2026-11': 1 });
+    // Months with no trips between the first and last read as 0 instead of being missing.
+    assert.equal(Object.keys(monthly.by_month).length, 33);
+    assert.equal(monthly.by_month['2025-06'], 0);
+    assert.deepEqual(Object.keys(monthly.by_month), Object.keys(monthly.by_month).slice().sort());
     assert.deepEqual(monthly.by_year, { 2024: 1, 2026: 6 });
     assert.equal(sum((await tools.get_day_of_week_stats_for_year({ year: 2026 })).by_day_of_week), 6);
     assert.equal(streak.days_ridden, 6);
@@ -669,7 +674,7 @@ test('every ASK tool counts the same trips for the same rider', async () => {
 
     // A month asked for as a date range matches the monthly count, for every month.
     const lastDay = { '2024-03': 31, '2026-09': 30, '2026-10': 31, '2026-11': 30 };
-    for (const [month, count] of Object.entries(monthly.by_month)) {
+    for (const [month, count] of Object.entries(ridden)) {
       const period = { start_date: `${month}-01`, end_date: `${month}-${lastDay[month]}` };
       assert.equal((await tools.get_trips_for_date_range(period)).count, count, month);
       assert.equal((await tools.get_agency_stats(period)).total_trips, count, month);
@@ -787,7 +792,7 @@ test('answerQueryWithClaude returns all tool results for a turn in one user mess
       ['tool_result', 'toolu_2'],
     ]);
     assert.deepEqual(JSON.parse(resultTurn.content[0].content),
-      { totalTrips: 2, uniqueRoutes: 2, uniqueStops: 3, uniqueAgencies: 0, timedTrips: 1 });
+      { totalTrips: 2, uniqueRoutes: 2, uniqueStops: 3, uniqueAgencies: 0, timedTrips: 1, firstTripDate: '2026-03-01', lastTripDate: '2026-03-01' });
     assert.deepEqual(JSON.parse(resultTurn.content[1].content),
       { total_trips: 2, route_count: 2, trips_without_route: 0, top_routes: [['504', 1], ['510', 1]] });
 
