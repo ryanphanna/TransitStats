@@ -52,6 +52,9 @@ const presto = (wallClock, agency = 'TTC', userId = 'user-1') => ({
 const unreadableDiscarded = { userId: 'user-1', source: 'sms_fallback', discarded: true, raw_text: 'hello', timestamp: new Date(NOW) };
 const unreadablePending = { userId: 'user-1', source: 'sms_fallback', needs_review: true, raw_text: 'what' };
 
+/** Months that have trips (ASK lists empty months between the first and last as 0). */
+const ridden = (byMonth) => Object.fromEntries(Object.entries(byMonth).filter(([, n]) => n > 0));
+
 describe('which records count as trips', () => {
     const readable = [
         finished('2026-09-12T09:00:00-04:00', 20),
@@ -321,7 +324,8 @@ describe('the website and ASK give the same totals from the same records', () =>
         expect(streak.days_ridden).toBe(tiles.daysRidden);
         expect(streak.longest_streak_days).toBe(streaks.best);
         expect(sum(monthly.by_month)).toBe(tiles.totalTrips - undated);
-        expect(monthly.by_month).toEqual(tripsByDate(rides).byMonth);
+        // ASK also lists empty months as 0; the months with trips must match the site.
+        expect(ridden(monthly.by_month)).toEqual(tripsByDate(rides).byMonth);
         expect(monthly.by_month['2026-09']).toBe(Stats.filterByCalendarMonth(rides, 2026, 8).length);
         // The public profile counts days in each trip's stored zone (Toronto
         // here), whatever zone the viewer is in.
@@ -398,7 +402,7 @@ describe('the website and ASK give the same totals from the same records', () =>
         expect((await tools.get_trips_for_date({ date: '2026-10-01' })).count).toBe(1);
         expect((await tools.get_trips_for_date_range({ start_date: '2026-09-01', end_date: '2026-09-30' })).count)
             .toBe(septemberOnSite.length);
-        expect((await tools.get_monthly_trip_counts()).by_month).toEqual(tripsByDate(rides).byMonth);
+        expect(ridden((await tools.get_monthly_trip_counts()).by_month)).toEqual(tripsByDate(rides).byMonth);
         // Public profile.
         const tiles = computeSummaryStats(rides, { now: new Date(NOW) });
         expect(profile.daysRidden).toBe(tiles.daysRidden);
