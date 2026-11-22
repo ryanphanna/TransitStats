@@ -25,6 +25,7 @@ Keep reusable scripts here. Do not create a second top-level scripts folder unle
 - `bulk-mark-duplicate-groups.js`
 - `clear-route-review-flags.js`
 - `retro-verify.js`
+- `backfill-presto-stop-matches.js` — dry-run-first: match imported PRESTO rows to the stop library and save the match (also the re-match pass after adding aliases; undo file on `--apply`)
 - `backfill-atlas-stops.js` — dry-run-first repair: add missing Atlas stops and mark fully-resolved trips matched (undo file on `--apply`)
 - `audit-unresolved.js`
 - `repair-trip-directions.js` — dry-run-first repair: turn stored direction typos ("SOUTH", "Northq") into app directions and mark unmarked zero-length trips incomplete (undo file on `--apply`)

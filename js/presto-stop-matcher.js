@@ -92,7 +92,31 @@ export function matchPrestoRecords(records = [], stops = []) {
  * Adapter for the existing map resolver. Ambiguous or coordinate-less matches
  * stay unresolved rather than selecting one directional stop arbitrarily.
  */
+/**
+ * The match fields saved on an imported PRESTO row: its status and, when
+ * exactly one stop matched, that stop. Stored at import (and by the backfill
+ * tool) so the stop is known without re-matching on every map load.
+ */
+export function prestoMatchFields(record, stops = []) {
+    const match = matchPrestoRecord(record, stops);
+    if (match.status !== 'matched') return { stopMatchStatus: match.status, matchedStop: null };
+    const { id, name, code, location } = match.candidate;
+    return { stopMatchStatus: 'matched', matchedStop: { id: id || null, name: name || null, code: code || null, location: location || null } };
+}
+
 export function resolvePrestoStopLocation(record, stops = []) {
+    // A stop saved at import is used as is; anything else is matched now, so a
+    // stop alias added later still fixes rows that didn't match at import.
+    if (record?.stopMatchStatus === 'matched' && record.matchedStop?.location) {
+        return {
+            source: 'saved',
+            location: record.matchedStop.location,
+            label: record.matchedStop.name,
+            match: 'exact',
+            matchStatus: 'matched',
+            candidates: [],
+        };
+    }
     const match = matchPrestoRecord(record, stops);
     if (match.status !== 'matched' || !match.candidate.location) {
         return {

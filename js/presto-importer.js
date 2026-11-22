@@ -1,6 +1,6 @@
 import { db, serverTimestamp } from './firebase.js';
-import { loadAtlasStops } from './atlas-stops.js';
-import { buildStopIndex, resolveStopLocation } from './atlas-stop-resolver.js';
+import { preparePrestoStops, prestoMatchFields } from './presto-stop-matcher.js';
+import { PredictionEngine } from './predict.js';
 
 const AGENCY_ALIASES = new Map([
     ['Toronto Transit Commission', 'TTC'],
@@ -235,37 +235,34 @@ function status(element, message, type = '') {
     show(element, true);
 }
 
-// Every imported record starts as stopMatchStatus: 'pending' - matching
-// happens after import, not synchronously here. This runs the same
-// resolution the rest of the app uses (Atlas stop data + the shared
-// resolver) against the fare records at preview time only to tell the
-// rider how many will likely resolve immediately versus need the later
-// matching pass, without blocking or changing what actually gets saved.
+// Each fare row is matched to the stop library (the same matcher the map uses)
+// when it is imported, and the result is saved on the row. The preview runs
+// the same match so its count is what actually gets saved.
+let stopLibraryRead = null;
+function loadPrestoStops() {
+    if (!stopLibraryRead) {
+        const cached = PredictionEngine.stopsLibrary;
+        stopLibraryRead = Promise.resolve()
+            .then(() => (Array.isArray(cached) && cached.length
+                ? cached
+                : db.collection('stops').get().then(snap => snap.docs.map(doc => ({ id: doc.id, ...doc.data() })))))
+            .then(firestoreStops => preparePrestoStops({ firestoreStops }));
+        stopLibraryRead.catch(() => { stopLibraryRead = null; });
+    }
+    return stopLibraryRead;
+}
+
 async function checkLocationMatches(records) {
     const fareRecords = records.filter(record => record.type === 'fare_payment' && record.location);
-    if (fareRecords.length === 0) return { checked: 0, matched: 0, pending: 0 };
-
-    const agencies = [...new Set(fareRecords.map(record => record.agency).filter(Boolean))];
-    let index;
+    if (fareRecords.length === 0) return { checked: 0, matched: 0, unmatched: 0 };
+    let stops;
     try {
-        const atlasStops = await loadAtlasStops(agencies);
-        index = buildStopIndex({ atlasStops, normalizedStops: [] });
+        stops = await loadPrestoStops();
     } catch {
-        // Can't reach Atlas right now - don't block the preview over a
-        // count that's advisory anyway.
-        return { checked: 0, matched: 0, pending: 0 };
+        return { checked: 0, matched: 0, unmatched: 0 };
     }
-
-    let matched = 0;
-    fareRecords.forEach(record => {
-        const resolution = resolveStopLocation(
-            { agency: record.agency, startStopName: record.locationLabel },
-            'boarding',
-            index,
-        );
-        if (resolution.location) matched += 1;
-    });
-    return { checked: fareRecords.length, matched, pending: fareRecords.length - matched };
+    const matched = fareRecords.filter(record => prestoMatchFields(record, stops).stopMatchStatus === 'matched').length;
+    return { checked: fareRecords.length, matched, unmatched: fareRecords.length - matched };
 }
 
 export function initPrestoImporter({ user }) {
@@ -306,10 +303,10 @@ export function initPrestoImporter({ user }) {
                 .join(', ');
             const locationCheck = await checkLocationMatches(pendingRecords);
             const locationLine = locationCheck.checked === 0
-                ? 'Locations will be matched after import.'
-                : locationCheck.pending === 0
-                    ? `All ${locationCheck.matched} ride locations already recognized.`
-                    : `${locationCheck.matched} of ${locationCheck.checked} ride locations recognized now; ${locationCheck.pending} will be matched after import.`;
+                ? null
+                : locationCheck.unmatched === 0
+                    ? `All ${locationCheck.matched} ride locations match a stop.`
+                    : `${locationCheck.matched} of ${locationCheck.checked} ride locations match a stop; the other ${locationCheck.unmatched} are saved without one.`;
             const skippedLine = Object.keys(summary.skipped).length
                 ? `Skipped: ${Object.entries(summary.skipped).map(([label, count]) => `${count} ${label}`).join(', ')}.`
                 : null;
@@ -346,8 +343,10 @@ export function initPrestoImporter({ user }) {
             // Only fare payments are worth persisting. Invalid rows (bad date
             // or amount) are skipped rather than written with null fields.
             const fareRecords = pendingRecords.filter(record => record.type === 'fare_payment' && !record.refunded && isRecordUsable(record));
+            const stops = await loadPrestoStops().catch(() => null);
             const records = await Promise.all(fareRecords.map(async record => ({
                 ...record,
+                ...(stops ? prestoMatchFields(record, stops) : {}),
                 fingerprint: await fingerprint(record),
                 userId: user.uid,
                 importedAt: serverTimestamp(),

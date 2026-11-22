@@ -3,6 +3,7 @@ import {
     buildPrestoTrips,
     matchPrestoRecord,
     matchPrestoRecords,
+    prestoMatchFields,
     projectPrestoTripsForStats,
     resolvePrestoStopLocation,
 } from '../js/presto-stop-matcher.js';
@@ -132,5 +133,24 @@ describe('projectPrestoTripsForStats', () => {
         ]);
 
         expect(projected).toHaveLength(0);
+    });
+});
+
+describe('match saved at import', () => {
+    const stop = { id: 'bp', agency: 'TTC', name: 'Bloor St East at Parliament St', code: '123', lat: 43.67, lng: -79.37 };
+
+    it('saves the one matching stop with its status', () => {
+        expect(prestoMatchFields(baseRecord, [stop])).toEqual({
+            stopMatchStatus: 'matched',
+            matchedStop: { id: 'bp', name: 'Bloor St East at Parliament St', code: '123', location: { lat: 43.67, lng: -79.37 } },
+        });
+        expect(prestoMatchFields(baseRecord, [])).toEqual({ stopMatchStatus: 'unmatched', matchedStop: null });
+    });
+
+    it('uses a saved stop without re-matching, and re-matches rows that had none', () => {
+        const saved = { ...baseRecord, ...prestoMatchFields(baseRecord, [stop]) };
+        expect(resolvePrestoStopLocation(saved, []).location).toEqual({ lat: 43.67, lng: -79.37 });
+        const unsaved = { ...baseRecord, stopMatchStatus: 'unmatched', matchedStop: null };
+        expect(resolvePrestoStopLocation(unsaved, [stop]).location).toEqual({ lat: 43.67, lng: -79.37 });
     });
 });
