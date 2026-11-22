@@ -141,67 +141,58 @@
   padding: 12px 16px;
 }
 
-.settings-presto-import-row {
-  align-items: flex-start;
-  flex-wrap: wrap;
+/* PRESTO import: one screen per phase (choose, get file, review, saving, done). */
+.presto-flow { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.presto-steps { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+.presto-steps li {
+  counter-increment: step; flex: 1; padding-top: 8px; border-top: 3px solid var(--border);
+  color: var(--text-secondary); font-size: 0.7rem; font-weight: 700;
 }
-
-.presto-howto {
-  flex: 0 0 100%;
-  margin: 4px 0 2px;
-  padding-left: 20px;
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  line-height: 1.6;
+.presto-steps li::before { content: counter(step) ". "; }
+.presto-steps li.is-done { border-color: var(--accent-soft, var(--accent)); }
+.presto-steps li.is-current { border-color: var(--accent); color: var(--text-primary); }
+.presto-screen { display: flex; flex-direction: column; gap: 10px; }
+.presto-screen.hidden { display: none; }
+.presto-title { margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--text-primary); }
+.presto-lede, .presto-note, .presto-existing { margin: 0; color: var(--text-secondary); font-size: 0.8rem; line-height: 1.5; }
+.presto-existing { color: var(--text-primary); font-weight: 600; }
+.presto-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.presto-choice {
+  display: flex; flex-direction: column; gap: 4px; padding: 14px; text-align: left;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--bg-muted);
+  color: var(--text-primary); font-family: inherit; cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
-
+.presto-choice:hover, .presto-choice:focus-visible { border-color: var(--accent); background: var(--bg-card-hover); }
+.presto-choice-title { font-size: 0.9rem; font-weight: 800; }
+.presto-choice-blurb { color: var(--text-secondary); font-size: 0.76rem; line-height: 1.45; }
+.presto-choice-report { margin-top: 4px; color: var(--accent); font-size: 0.7rem; font-weight: 700; }
+.presto-back {
+  align-self: flex-start; padding: 0; border: 0; background: none; color: var(--text-secondary);
+  font-family: inherit; font-size: 0.74rem; font-weight: 700; cursor: pointer;
+}
+.presto-back:hover { color: var(--text-primary); }
+.presto-howto { margin: 0; padding-left: 20px; color: var(--text-secondary); font-size: 0.8rem; line-height: 1.7; }
 .presto-howto a { color: var(--accent); }
-
-#presto-file-input {
-  max-width: 100%;
-  color: var(--text-secondary);
-  font-size: 0.74rem;
-  font-family: inherit;
+.presto-drop {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 22px 14px; border: 2px dashed var(--border); border-radius: 14px; text-align: center; cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
-
-#presto-file-input::file-selector-button {
-  margin-right: 10px;
-  padding: 8px 14px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-muted);
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: 0.74rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-
-#presto-file-input::file-selector-button:hover {
-  background: var(--bg-card-hover);
-  border-color: var(--accent);
-}
-
-#presto-import-preview,
-#presto-import-status {
-  white-space: pre-line;
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  line-height: 1.5;
-}
-
-#presto-import-preview strong {
-  color: var(--text-primary);
-}
-
-#presto-import-actions {
-  justify-content: flex-end;
-}
-
-.presto-import-status.success {
-  color: var(--success);
-}
+.presto-drop:hover, .presto-drop.is-over, .presto-drop:focus-within { border-color: var(--accent); background: var(--bg-muted); }
+.presto-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.presto-drop-main { color: var(--text-primary); font-size: 0.84rem; font-weight: 700; }
+.presto-drop-sub { color: var(--text-secondary); font-size: 0.72rem; }
+.presto-big { margin: 0; color: var(--text-secondary); font-size: 0.9rem; }
+.presto-big strong { margin-right: 4px; color: var(--text-primary); font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; }
+.presto-facts, .presto-details ul { margin: 0; padding-left: 18px; color: var(--text-primary); font-size: 0.8rem; line-height: 1.6; }
+.presto-details { color: var(--text-secondary); font-size: 0.76rem; }
+.presto-details summary { cursor: pointer; font-weight: 700; }
+.presto-details ul { margin-top: 6px; color: var(--text-secondary); }
+.presto-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.presto-progress { width: 100%; height: 8px; accent-color: var(--accent); }
+.presto-import-status { margin: 0; color: var(--danger, #c0392b); font-size: 0.78rem; line-height: 1.5; }
+.presto-import-status.success { color: var(--success); }
 
 .settings-coming-soon {
   padding: 24px 20px;
@@ -434,3 +425,4 @@
 .settings-identity-taken {
   color: var(--danger);
 }
+.presto-import-status.info { color: var(--text-secondary); }

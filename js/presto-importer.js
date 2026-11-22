@@ -269,7 +269,7 @@ function show(element, visible) {
 function status(element, message, type = '') {
     if (!element) return;
     element.textContent = message;
-    element.className = `settings-row presto-import-status ${type}`;
+    element.className = `presto-import-status ${type}`;
     show(element, true);
 }
 
@@ -308,86 +308,253 @@ async function checkLocationMatches(records) {
     return { checked: fareRecords.length, matched, unmatched: fareRecords.length - matched };
 }
 
+// The import flow is a few screens, one per phase: choose what to import,
+// get the file, review it, save, done. Both hosts (Settings → Import and the
+// /import page) supply an empty #presto-import-group and this fills it.
+const EXPORTS = {
+    paid: {
+        title: 'Paid fares',
+        blurb: 'Rides you paid for from your card balance.',
+        report: 'Transit Usage Report',
+        steps: [
+            'Sign in at <a href="https://www.prestocard.ca" target="_blank" rel="noopener">prestocard.ca</a>',
+            'In the sidebar, open <strong>Transit Usage Report</strong>',
+            'Pick a year and click <strong>Get Report</strong>',
+            'Click <strong>Export CSV</strong> (not Download PDF)',
+        ],
+        note: 'One file per year. You can add several years at once.',
+    },
+    pass: {
+        title: 'Monthly pass rides',
+        blurb: 'Rides taken while you held a monthly pass. These are only in Transaction History.',
+        report: 'Transaction History',
+        steps: [
+            'Sign in at <a href="https://www.prestocard.ca" target="_blank" rel="noopener">prestocard.ca</a>',
+            'Open <strong>Transaction History</strong> and pick the card you used',
+            'Click <strong>Load More</strong> until your oldest ride shows',
+            'Click <strong>Export CSV</strong>',
+        ],
+        note: 'PRESTO only exports the rows shown on the page, so load them all first.',
+    },
+};
+
+const STEP_LABELS = ['Choose', 'Get file', 'Review', 'Done'];
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+}
+
+function monthLabel(sortKey) {
+    if (!Number.isFinite(sortKey)) return null;
+    return new Date(sortKey).toLocaleDateString('en-CA', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+function rangeLabel(records) {
+    const keys = records.map(record => record.occurredAtSortKey).filter(Number.isFinite);
+    if (!keys.length) return null;
+    const first = monthLabel(Math.min(...keys));
+    const last = monthLabel(Math.max(...keys));
+    return first === last ? first : `${first} – ${last}`;
+}
+
+function plural(count, word) {
+    return `${count.toLocaleString('en-CA')} ${word}${count === 1 ? '' : 's'}`;
+}
+
+function importerMarkup() {
+    return `
+        <div class="presto-flow">
+            <ol class="presto-steps" aria-label="Import progress">
+                ${STEP_LABELS.map((label, index) => `<li data-step="${index}">${label}</li>`).join('')}
+            </ol>
+
+            <section class="presto-screen" data-screen="choose">
+                <h3 class="presto-title">Import PRESTO rides</h3>
+                <p class="presto-lede">Add rides from your PRESTO card to your map. Importing the same file twice never adds a ride twice.</p>
+                <p class="presto-existing hidden" data-existing></p>
+                <div class="presto-choices">
+                    ${Object.entries(EXPORTS).map(([key, info]) => `
+                        <button type="button" class="presto-choice" data-choose="${key}">
+                            <span class="presto-choice-title">${info.title}</span>
+                            <span class="presto-choice-blurb">${info.blurb}</span>
+                            <span class="presto-choice-report">From: ${info.report}</span>
+                        </button>`).join('')}
+                </div>
+            </section>
+
+            <section class="presto-screen hidden" data-screen="file">
+                <button type="button" class="presto-back" data-go="choose">← Back</button>
+                <h3 class="presto-title" data-file-title></h3>
+                <ol class="presto-howto" data-file-steps></ol>
+                <p class="presto-note" data-file-note></p>
+                <label class="presto-drop" data-drop>
+                    <input id="presto-file-input" type="file" accept=".csv,text/csv" multiple>
+                    <span class="presto-drop-main">Drop your CSV here or <u>choose a file</u></span>
+                    <span class="presto-drop-sub">Nothing is saved until you confirm.</span>
+                </label>
+            </section>
+
+            <section class="presto-screen hidden" data-screen="review">
+                <button type="button" class="presto-back" data-go="file">← Choose a different file</button>
+                <p class="presto-big"><strong data-review-count></strong> <span data-review-noun></span></p>
+                <ul class="presto-facts" data-review-facts></ul>
+                <details class="presto-details">
+                    <summary>Details</summary>
+                    <ul data-review-details></ul>
+                </details>
+                <div class="presto-actions">
+                    <button id="presto-import-button" class="btn btn-primary" type="button"></button>
+                </div>
+            </section>
+
+            <section class="presto-screen hidden" data-screen="saving">
+                <h3 class="presto-title">Saving your rides…</h3>
+                <progress class="presto-progress" max="1" value="0"></progress>
+                <p class="presto-lede" data-saving-text></p>
+            </section>
+
+            <section class="presto-screen hidden" data-screen="done">
+                <h3 class="presto-title" data-done-title></h3>
+                <p class="presto-lede" data-done-text></p>
+                <div class="presto-actions">
+                    <button type="button" class="btn btn-ghost" data-go="choose">Import another file</button>
+                    <a class="btn btn-primary" href="/dashboard">See your map</a>
+                </div>
+            </section>
+
+            <p id="presto-import-status" class="presto-import-status hidden" role="status" aria-live="polite"></p>
+        </div>`;
+}
+
 export function initPrestoImporter({ user }) {
     const group = document.getElementById('presto-import-group');
-    const input = document.getElementById('presto-file-input');
-    const previewButton = document.getElementById('presto-preview-button');
-    const preview = document.getElementById('presto-import-preview');
-    const actions = document.getElementById('presto-import-actions');
-    const importButton = document.getElementById('presto-import-button');
-    const statusElement = document.getElementById('presto-import-status');
-    if (!group || !input || !previewButton || !preview || !actions || !importButton || !statusElement) return;
-
+    if (!group) return;
+    group.innerHTML = importerMarkup();
     show(group, true);
-    let pendingRecords = [];
 
-    input.addEventListener('change', () => {
-        pendingRecords = [];
-        show(preview, false);
-        show(actions, false);
+    const $ = selector => group.querySelector(selector);
+    const input = $('#presto-file-input');
+    const importButton = $('#presto-import-button');
+    const statusElement = $('#presto-import-status');
+    const drop = $('[data-drop]');
+    let pendingRecords = [];
+    let fareRecords = [];
+
+    const showScreen = name => {
+        group.querySelectorAll('.presto-screen').forEach(screen => show(screen, screen.dataset.screen === name));
+        const stepIndex = { choose: 0, file: 1, review: 2, saving: 2, done: 3 }[name];
+        group.querySelectorAll('.presto-steps li').forEach(item => {
+            const index = Number(item.dataset.step);
+            item.classList.toggle('is-current', index === stepIndex);
+            item.classList.toggle('is-done', index < stepIndex);
+        });
         show(statusElement, false);
-        previewButton.disabled = input.files.length === 0;
+        if (name === 'choose') refreshExisting();
+    };
+
+    const refreshExisting = async () => {
+        const line = $('[data-existing]');
+        try {
+            const snap = await db.collection('prestoTransactions').where('userId', '==', user.uid).get();
+            const rows = snap.docs.map(doc => doc.data());
+            if (!rows.length) return show(line, false);
+            const pass = rows.filter(row => row.passRide).length;
+            const parts = [pass ? `${plural(rows.length - pass, 'paid fare')} and ${plural(pass, 'pass ride')}` : plural(rows.length, 'ride')];
+            const range = rangeLabel(rows);
+            line.textContent = `Already on your map: ${parts[0]}${range ? `, ${range}` : ''}.`;
+            show(line, true);
+        } catch {
+            show(line, false);
+        }
+    };
+
+    const chooseExport = key => {
+        const info = EXPORTS[key];
+        $('[data-file-title]').textContent = `${info.title}: get your ${info.report}`;
+        $('[data-file-steps]').innerHTML = info.steps.map(step => `<li>${step}</li>`).join('');
+        $('[data-file-note]').textContent = info.note;
+        input.value = '';
+        showScreen('file');
+    };
+
+    group.addEventListener('click', event => {
+        const choice = event.target.closest('[data-choose]');
+        if (choice) return chooseExport(choice.dataset.choose);
+        const go = event.target.closest('[data-go]');
+        if (go) {
+            if (go.dataset.go === 'file') input.value = '';
+            showScreen(go.dataset.go);
+        }
     });
 
-    previewButton.addEventListener('click', async () => {
-        previewButton.disabled = true;
+    ['dragenter', 'dragover'].forEach(type => drop.addEventListener(type, event => { event.preventDefault(); drop.classList.add('is-over'); }));
+    ['dragleave', 'drop'].forEach(type => drop.addEventListener(type, () => drop.classList.remove('is-over')));
+    drop.addEventListener('drop', event => {
+        event.preventDefault();
+        if (event.dataTransfer?.files?.length) review([...event.dataTransfer.files]);
+    });
+    input.addEventListener('change', () => { if (input.files.length) review([...input.files]); });
+
+    async function review(files) {
+        status(statusElement, `Reading ${files.length === 1 ? files[0].name : `${files.length} files`}…`, 'info');
         try {
-            const files = [...input.files];
             const recordsByFile = await Promise.all(files.map(async file => {
                 const rows = parseCsv(await file.text());
                 return rows.map((row, index) => toRecord(row, index + 2, file.name));
             }));
-            pendingRecords = recordsByFile.flat();
+            pendingRecords = markRefundedFares(recordsByFile.flat());
             assertDatesReadable(pendingRecords);
-            pendingRecords = markRefundedFares(pendingRecords);
+            fareRecords = pendingRecords.filter(record => record.type === 'fare_payment' && !record.refunded && isRecordUsable(record));
+            if (!fareRecords.length) {
+                const summary = summarize(pendingRecords);
+                const skipped = Object.entries(summary.skipped).map(([label, count]) => `${count} ${label}`).join(', ');
+                throw new Error(`No rides to import in this file${skipped ? ` (it has ${skipped})` : ''}. Check it's the right export.`);
+            }
             const summary = summarize(pendingRecords);
-            const agencySummary = Object.entries(summary.agencies)
-                .map(([agency, count]) => `${agency} (${count})`)
-                .join(', ');
-            const locationCheck = await checkLocationMatches(pendingRecords);
-            const locationLine = locationCheck.checked === 0
-                ? null
-                : locationCheck.unmatched === 0
-                    ? `All ${locationCheck.matched} ride locations match a stop.`
-                    : `${locationCheck.matched} of ${locationCheck.checked} ride locations match a stop; the other ${locationCheck.unmatched} are saved without one.`;
-            const skippedLine = Object.keys(summary.skipped).length
-                ? `Skipped: ${Object.entries(summary.skipped).map(([label, count]) => `${count} ${label}`).join(', ')}.`
-                : null;
-            preview.textContent = [
-                `${summary.rows} rows ready`,
-                summary.passRides
-                    ? `${summary.passRides} rides taken on a pass${summary.farePayments > summary.passRides ? ` · ${summary.farePayments - summary.passRides} fare payments` : ''}`
-                    : `${summary.farePayments} fare payments · ${summary.epurseLoads} balance top-ups · ${summary.passLoads} pass purchases`,
-                `${money(summary.fareChargedCents)} net fares charged (GO tap-in/tap-out pairs are combined into one trip)`,
-                `${money(summary.epurseLoadedCents)} added to reloadable balance · ${money(summary.passLoadedCents)} spent on passes`,
-                `${summary.first || 'Unknown'} to ${summary.last || 'unknown'}`,
-                `Agencies: ${agencySummary || 'none'}`,
-                summary.refundedFares ? `${summary.refundedFares} refunded fare${summary.refundedFares === 1 ? '' : 's'} (${money(summary.refundedCents)}) cancelled out and will not be imported.` : null,
-                skippedLine,
-                summary.invalidRows ? `${summary.invalidRows} rows need review and will not be imported.` : 'All rows passed basic validation.',
-                locationLine,
-            ].filter(Boolean).join('\n');
-            show(preview, true);
-            show(actions, summary.farePayments - summary.invalidRows > 0);
-            status(statusElement, 'Preview only. Nothing has been saved.', 'success');
+            const locationCheck = await checkLocationMatches(fareRecords);
+            const passRides = fareRecords.filter(record => record.passRide).length;
+            const paid = fareRecords.length - passRides;
+
+            $('[data-review-count]').textContent = fareRecords.length.toLocaleString('en-CA');
+            $('[data-review-noun]').textContent = `ride${fareRecords.length === 1 ? '' : 's'} ready to add`;
+            const facts = [
+                passRides && paid ? `${plural(paid, 'paid fare')} and ${plural(passRides, 'pass ride')}` : passRides ? 'All taken on a monthly pass' : 'All paid fares',
+                rangeLabel(fareRecords),
+                locationCheck.checked
+                    ? `${locationCheck.matched.toLocaleString('en-CA')} of ${locationCheck.checked.toLocaleString('en-CA')} matched to a stop${locationCheck.unmatched ? `; ${plural(locationCheck.unmatched, 'ride')} will be saved without one` : ''}`
+                    : null,
+                `Agencies: ${Object.entries(summary.agencies).sort((a, b) => b[1] - a[1]).map(([agency]) => agency).join(', ')}`,
+            ];
+            $('[data-review-facts]').innerHTML = facts.filter(Boolean).map(fact => `<li>${escapeHtml(fact)}</li>`).join('');
+
+            const details = [
+                `${plural(summary.rows, 'row')} read from ${plural(files.length, 'file')}`,
+                summary.fareChargedCents ? `${money(summary.fareChargedCents)} in fares charged (GO tap-on/tap-off pairs count as one ride)` : null,
+                summary.epurseLoadedCents || summary.passLoadedCents ? `${money(summary.epurseLoadedCents)} added to your balance · ${money(summary.passLoadedCents)} spent on passes` : null,
+                summary.refundedFares ? `${plural(summary.refundedFares, 'refunded fare')} (${money(summary.refundedCents)}) left out` : null,
+                summary.invalidRows ? `${plural(summary.invalidRows, 'ride')} with an unreadable date or amount left out` : null,
+                Object.keys(summary.skipped).length ? `Not rides, left out: ${Object.entries(summary.skipped).map(([label, count]) => `${count} ${label}`).join(', ')}` : null,
+            ];
+            $('[data-review-details]').innerHTML = details.filter(Boolean).map(line => `<li>${escapeHtml(line)}</li>`).join('');
+            importButton.textContent = `Add ${plural(fareRecords.length, 'ride')}`;
+            showScreen('review');
         } catch (error) {
             pendingRecords = [];
-            status(statusElement, error.message || 'Could not read this PRESTO report.');
-        } finally {
-            previewButton.disabled = input.files.length === 0;
+            fareRecords = [];
+            input.value = '';
+            status(statusElement, error.message || 'Could not read this PRESTO file.');
         }
-    });
+    }
 
     importButton.addEventListener('click', async () => {
-        if (!pendingRecords.length || importButton.disabled) return;
+        if (!fareRecords.length || importButton.disabled) return;
         importButton.disabled = true;
+        const progress = $('.presto-progress');
+        const savingText = $('[data-saving-text]');
+        showScreen('saving');
         try {
-            // Card loads (pass purchases, balance top-ups) aren't rides, and
-            // nothing reads them back out of storage once imported — the
-            // preview above already summarized them from the file in memory.
-            // Only fare payments are worth persisting. Invalid rows (bad date
-            // or amount) are skipped rather than written with null fields.
-            const fareRecords = pendingRecords.filter(record => record.type === 'fare_payment' && !record.refunded && isRecordUsable(record));
+            savingText.textContent = 'Matching rides to stops…';
+            progress.removeAttribute('value');
             const stops = await loadPrestoStops(fareRecords).catch(() => null);
             const records = await Promise.all(fareRecords.map(async record => ({
                 ...record,
@@ -396,35 +563,40 @@ export function initPrestoImporter({ user }) {
                 userId: user.uid,
                 importedAt: serverTimestamp(),
             })));
-            const batchCount = Math.ceil(records.length / 400);
+            const before = await db.collection('prestoTransactions').where('userId', '==', user.uid).get();
             for (let start = 0; start < records.length; start += 400) {
-                const batchNumber = Math.floor(start / 400) + 1;
-                status(statusElement, `Importing batch ${batchNumber} of ${batchCount}…`);
+                progress.value = start / records.length;
+                savingText.textContent = `Saved ${start.toLocaleString('en-CA')} of ${records.length.toLocaleString('en-CA')}`;
                 const batch = db.batch();
                 records.slice(start, start + 400).forEach(record => {
-                    // The fingerprint alone is content-only (date, agency, location,
-                    // type, amount) and does not include the user. Two different
-                    // riders could in principle produce the same fingerprint, which
-                    // would otherwise collide on the same document and fail the
-                    // whole batch (Firestore rules deny writing over another user's
-                    // doc, and a denied op fails the entire batch atomically).
-                    // Prefixing with the uid keeps documents unique per user while
-                    // still deduping a single user's repeat imports.
+                    // Doc ids are uid + content fingerprint: one user's re-imports
+                    // overwrite instead of duplicating, and two riders with an
+                    // identical fare never collide on the same document.
                     const ref = db.collection('prestoTransactions').doc(`${user.uid}_${record.fingerprint}`);
                     batch.set(ref, record, { merge: true });
                 });
                 await batch.commit();
             }
-            const imported = await db.collection('prestoTransactions').where('userId', '==', user.uid).get();
-            status(statusElement, `${pendingRecords.length} rows processed; ${imported.size} fare payments now stored. Stop matching will continue later, and re-imports will not create duplicates.`, 'success');
-            show(actions, false);
+            progress.value = 1;
+            const after = await db.collection('prestoTransactions').where('userId', '==', user.uid).get();
+            const added = after.size - before.size;
+            $('[data-done-title]').textContent = added > 0 ? `Added ${plural(added, 'ride')}` : 'Already up to date';
+            $('[data-done-text]').textContent = added > 0
+                ? `${added < records.length ? `${plural(records.length - added, 'ride')} were already imported. ` : ''}You now have ${plural(after.size, 'PRESTO ride')} on your map.`
+                : `Every ride in this file was already imported. You have ${plural(after.size, 'PRESTO ride')} on your map.`;
+            pendingRecords = [];
+            fareRecords = [];
+            showScreen('done');
         } catch (error) {
             console.error('PRESTO import failed:', error);
-            status(statusElement, "Something went wrong partway through the import. It's safe to try again — already-imported rows won't be duplicated.");
+            showScreen('review');
+            status(statusElement, "Something went wrong partway through. It's safe to try again: rides already saved won't be added twice.");
         } finally {
             importButton.disabled = false;
         }
     });
+
+    showScreen('choose');
 }
 
 export { classifyType, parseAmountCents, parseCsv, parseDate, summarize, toRecord };

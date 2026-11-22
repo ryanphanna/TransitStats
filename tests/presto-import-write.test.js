@@ -10,7 +10,10 @@ vi.mock('../js/firebase.js', () => ({
         collection: (name) => ({
             doc: (id) => ({ name, id }),
             where: () => ({
-                get: async () => ({ size: [...store.keys()].filter(key => key.startsWith('prestoTransactions/')).length }),
+                get: async () => {
+                    const docs = [...store.entries()].filter(([key]) => key.startsWith('prestoTransactions/')).map(([, data]) => ({ data: () => data }));
+                    return { size: docs.length, docs };
+                },
             }),
         }),
         batch: () => {
@@ -35,36 +38,37 @@ const csv = (...rows) => [HEADER, ...rows].join('\n');
 const fare = (date, amount = '$-3.30', agency = 'Toronto Transit Commission', location = 'BAY STATION') =>
     `${date},${agency},${location},Fare Payment,${amount}`;
 
-function setupDom() {
-    document.body.innerHTML = `
-        <div id="presto-import-group" class="hidden"></div>
-        <input id="presto-file-input" type="file">
-        <button id="presto-preview-button"></button>
-        <div id="presto-import-preview" class="hidden"></div>
-        <div id="presto-import-actions" class="hidden"></div>
-        <button id="presto-import-button"></button>
-        <div id="presto-import-status" class="hidden"></div>`;
+function setupDom(uid = 'user_1') {
+    document.body.innerHTML = '<div id="presto-import-group" class="hidden"></div>';
+    initPrestoImporter({ user: { uid } });
+    const group = document.getElementById('presto-import-group');
     return {
+        group,
         input: document.getElementById('presto-file-input'),
-        preview: document.getElementById('presto-preview-button'),
-        previewText: document.getElementById('presto-import-preview'),
         importButton: document.getElementById('presto-import-button'),
         status: document.getElementById('presto-import-status'),
+        screen: name => group.querySelector(`[data-screen="${name}"]`),
     };
+}
+
+const visible = element => !element.classList.contains('hidden');
+
+async function pickFile(dom, file) {
+    Object.defineProperty(dom.input, 'files', { value: [file], configurable: true });
+    dom.input.dispatchEvent(new Event('change'));
 }
 
 async function chooseFile(dom, text, name = 'PRESTO 2026.csv') {
     const file = new File([text], name, { type: 'text/csv' });
     file.text = async () => text;
-    Object.defineProperty(dom.input, 'files', { value: [file], configurable: true });
-    dom.input.dispatchEvent(new Event('change'));
-    dom.preview.click();
-    await vi.waitFor(() => expect(dom.previewText.textContent).not.toBe(''));
+    dom.group.querySelector('[data-choose="paid"]').click();
+    await pickFile(dom, file);
+    await vi.waitFor(() => expect(visible(dom.screen('review')) || /No rides/.test(dom.status.textContent)).toBe(true));
 }
 
 async function runImport(dom) {
     dom.importButton.click();
-    await vi.waitFor(() => expect(dom.status.textContent).toMatch(/now stored|went wrong/));
+    await vi.waitFor(() => expect(visible(dom.screen('done')) || /went wrong/.test(dom.status.textContent)).toBe(true));
 }
 
 describe('PRESTO import write', () => {
@@ -73,7 +77,6 @@ describe('PRESTO import write', () => {
         store.clear();
         batches.length = 0;
         dom = setupDom();
-        initPrestoImporter({ user: { uid: 'user_1' } });
     });
 
     it('writes only usable fare payments, under per-user ids', async () => {
@@ -102,7 +105,6 @@ describe('PRESTO import write', () => {
         const firstIds = [...store.keys()].sort();
 
         dom = setupDom();
-        initPrestoImporter({ user: { uid: 'user_1' } });
         await chooseFile(dom, text);
         await runImport(dom);
 
@@ -114,7 +116,6 @@ describe('PRESTO import write', () => {
         await runImport(dom);
 
         dom = setupDom();
-        initPrestoImporter({ user: { uid: 'user_1' } });
         await chooseFile(dom, csv(fare('1/2/2026 8:00:00 AM'), fare('1/3/2026 8:00:00 AM')));
         await runImport(dom);
 
@@ -126,8 +127,7 @@ describe('PRESTO import write', () => {
         await chooseFile(dom, text);
         await runImport(dom);
 
-        dom = setupDom();
-        initPrestoImporter({ user: { uid: 'user_2' } });
+        dom = setupDom('user_2');
         await chooseFile(dom, text);
         await runImport(dom);
 
@@ -144,9 +144,8 @@ describe('PRESTO import write', () => {
             fare('1/1/2026 8:00:00 AM'),
             '1/2/2026 8:00:00 AM,Toronto Transit Commission,BAY STATION,Refund,$3.30',
         ));
-        expect(dom.previewText.textContent).toMatch(/1 refunded fare/);
-        expect(dom.previewText.textContent).toMatch(/Skipped: 1 Refund/);
-        expect(document.getElementById('presto-import-actions').classList.contains('hidden')).toBe(true);
+        expect(dom.status.textContent).toMatch(/No rides to import.*1 Refund/);
+        expect(visible(dom.screen('review'))).toBe(false);
     });
 
     it('commits large files in batches of 400', async () => {
@@ -159,9 +158,39 @@ describe('PRESTO import write', () => {
     it('shows a plain message when the file is a PDF', async () => {
         const file = new File(['%PDF-1.7'], 'report.pdf');
         file.text = async () => '%PDF-1.7 binary';
-        Object.defineProperty(dom.input, 'files', { value: [file], configurable: true });
-        dom.input.dispatchEvent(new Event('change'));
-        dom.preview.click();
+        await pickFile(dom, file);
         await vi.waitFor(() => expect(dom.status.textContent).toMatch(/Export CSV/));
+    });
+});
+
+describe('PRESTO import screens', () => {
+    beforeEach(() => { store.clear(); batches.length = 0; });
+
+    it('walks choose → file → review → done and reports what was added', async () => {
+        const dom = setupDom();
+        expect(visible(dom.screen('choose'))).toBe(true);
+        await chooseFile(dom, csv(fare('1/1/2026 8:00:00 AM'), fare('1/2/2026 8:00:00 AM')));
+        expect(dom.screen('review').textContent).toMatch(/2\s*rides ready to add/);
+        expect(dom.importButton.textContent).toBe('Add 2 rides');
+        await runImport(dom);
+        expect(dom.screen('done').textContent).toMatch(/Added 2 rides/);
+    });
+
+    it('says when a file was already imported', async () => {
+        const text = csv(fare('1/1/2026 8:00:00 AM'));
+        let dom = setupDom();
+        await chooseFile(dom, text);
+        await runImport(dom);
+        dom = setupDom();
+        await chooseFile(dom, text);
+        await runImport(dom);
+        expect(dom.screen('done').textContent).toMatch(/Already up to date/);
+    });
+
+    it('the pass choice shows the Transaction History steps', () => {
+        const dom = setupDom();
+        dom.group.querySelector('[data-choose="pass"]').click();
+        expect(visible(dom.screen('file'))).toBe(true);
+        expect(dom.screen('file').textContent).toMatch(/Load More/);
     });
 });
