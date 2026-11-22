@@ -181,9 +181,15 @@ export function requireAuth(options = {}) {
     let resolved = false;
     return new Promise((resolve) => {
         const listen = () => auth.onAuthStateChanged(async (user) => {
-            if (checking || resolved) return;
-            checking = true;
             const loginUrl = options.returnToPage ? loginUrlFor(window.location.pathname) : '/';
+            // After the page is up, a sign-out (another tab, a revoked session)
+            // must leave the page instead of showing an empty dashboard.
+            if (resolved) {
+                if (!user && !await waitForRestoredUser(null)) window.location.href = loginUrl;
+                return;
+            }
+            if (checking) return;
+            checking = true;
             // A Vite live reload can recreate the page before Firebase has
             // finished hydrating its LOCAL session. Give that restoration a
             // short grace period instead of treating the transient null as a

@@ -233,6 +233,7 @@ export const Profile = {
             const mode = getMapStopMode(this.data || {}, localStorage.getItem('transitstats-map-stop-mode'));
             mapStopModeEl.value = mode;
             localStorage.setItem('transitstats-map-stop-mode', mode);
+            window.dispatchEvent(new CustomEvent('ts:map-stop-mode', { detail: mode }));
         }
 
         const username = this.data?.username;
@@ -354,7 +355,7 @@ export const Profile = {
 
     async updateSettings(changes) {
         const user = auth.currentUser;
-        if (!user) return;
+        if (!user) return false;
 
         try {
             await db.collection('profiles').doc(user.uid).set({
@@ -368,9 +369,11 @@ export const Profile = {
             window.currentUserProfile = this.data;
             
             UI.showNotification('Saved.', 'success');
+            return true;
         } catch (err) {
             console.error('Save failed:', err);
             UI.showNotification('Failed to save: ' + err.message);
+            return false;
         }
     },
 };

@@ -26,6 +26,20 @@ export const TripController = {
                 this.allTrips = docs.filter(t => isHistoryTrip(t, now));
 
                 if (onUpdate) onUpdate(this.allTrips, this.activeTrip);
+
+                // An open trip moves to history after 6 hours even with no new
+                // writes, so recheck while one is open.
+                clearInterval(this._ageTimer);
+                if (this.activeTrip) {
+                    this._ageTimer = setInterval(() => {
+                        const later = Date.now();
+                        if (isActiveTrip(this.activeTrip, later)) return;
+                        clearInterval(this._ageTimer);
+                        this.activeTrip = docs.find(t => isActiveTrip(t, later));
+                        this.allTrips = docs.filter(t => isHistoryTrip(t, later));
+                        if (onUpdate) onUpdate(this.allTrips, this.activeTrip);
+                    }, 10 * 60 * 1000);
+                }
             }, err => {
                 console.error("TripController Error:", err);
                 if (onError) onError(err);

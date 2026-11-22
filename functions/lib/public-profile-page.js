@@ -26,7 +26,12 @@ function escapeHtml(value) {
 async function handlePublicProfilePage(req, res) {
   const username = String(req.path || '').match(/^\/user\/([^/]+)/i)?.[1]
     || String(req.query.user || '').trim();
-  const decodedUsername = decodeURIComponent(username).trim().toLowerCase();
+  let decodedUsername = '';
+  try {
+    decodedUsername = decodeURIComponent(username).trim().toLowerCase();
+  } catch {
+    // A malformed link (bad % escape) is just a profile that doesn't exist.
+  }
   if (!decodedUsername) {
     res.status(404).send('Profile not found');
     return;
@@ -71,7 +76,7 @@ async function handlePublicProfilePage(req, res) {
     <meta name="twitter:image:alt" content="${escapeHtml(imageAlt)}">`;
 
   res.set('Content-Type', 'text/html; charset=utf-8');
-  res.set('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=300');
+  res.set('Cache-Control', 'public, max-age=60, s-maxage=60');
   res.status(200).send(getTemplate().replace('</head>', `${metadata}\n</head>`));
 }
 

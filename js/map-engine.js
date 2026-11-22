@@ -139,7 +139,9 @@ export const MapEngine = {
     },
 
     setFilter(filter) {
-        this.filter = filter === 'exiting' ? 'exiting' : 'boarding';
+        const next = filter === 'exiting' ? 'exiting' : 'boarding';
+        if (next === this.filter && this.map) return;
+        this.filter = next;
         localStorage.setItem('transitstats-map-stop-mode', this.filter);
         this.renderMarkers();
         if (this.trips.length === 0) this._loadCachedPoints();
@@ -277,7 +279,11 @@ export const MapEngine = {
         return this.map && this._stopSourcesReady ? this.renderMarkers() : Promise.resolve();
     },
 
-    setStopSources({ atlasStops = [], firestoreStops = [] } = {}) {
+    // Either source can arrive on its own (the stops library reloads after its
+    // cache expires); a call that leaves one out keeps the last one passed.
+    _atlasStops: [],
+    setStopSources({ atlasStops = this._atlasStops, firestoreStops = PredictionEngine.stopsLibrary || [] } = {}) {
+        this._atlasStops = atlasStops;
         PredictionEngine.stopsLibrary = firestoreStops;
         this._stopIndex = buildStopIndex({ atlasStops, normalizedStops: firestoreStops });
         this._prestoStops = preparePrestoStops({ atlasStops, firestoreStops });
@@ -531,3 +537,12 @@ export const MapEngine = {
     },
 
 };
+
+// Settings (and the saved profile) change the map's boarding/exiting mode
+// without importing the map; it listens here so the open map follows along.
+if (typeof window !== 'undefined') {
+    window.addEventListener('ts:map-stop-mode', event => {
+        if (MapEngine.map) MapEngine.setFilter(event.detail);
+        else MapEngine.filter = event.detail === 'exiting' ? 'exiting' : 'boarding';
+    });
+}

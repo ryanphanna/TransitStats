@@ -122,9 +122,10 @@ function publicProfileRides(tripDocs, prestoRecords, { now = Date.now(), countUn
 
 async function handlePublicProfile(req, res) {
   res.set('Access-Control-Allow-Origin', '*');
-  // Public profile data can be briefly stale; allowing intermediary caching
-  // avoids repeating the Firestore aggregation for every new device.
-  res.set('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=300');
+  // Only a successful public answer is cached (set just before it's sent). Errors
+  // and "private" answers are never cached, so making a profile public or
+  // private takes effect on the next request.
+  res.set('Cache-Control', 'no-store');
   if (req.method === 'OPTIONS') {
     res.set('Access-Control-Allow-Methods', 'GET');
     res.status(204).send('');
@@ -260,6 +261,9 @@ async function handlePublicProfile(req, res) {
       }
     });
 
+    // Briefly cacheable so new devices don't repeat the aggregation; short
+    // enough that turning a profile private hides it within a minute.
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=60');
     res.status(200).json({
       displayName: profile.displayName || profile.name || null,
       username: trustedUsername,

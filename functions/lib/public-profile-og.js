@@ -216,7 +216,7 @@ async function handlePublicProfileOg(req, res) {
   try {
     const image = await sharp(Buffer.from(await buildSvg(result.body))).png().toBuffer();
     res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', 'public, max-age=300, s-maxage=300, stale-while-revalidate=300');
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=60');
     res.status(200).send(image);
   } catch (error) {
     console.error('Public profile OG image failed:', error.message);

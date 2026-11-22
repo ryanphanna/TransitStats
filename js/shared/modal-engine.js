@@ -15,6 +15,8 @@ export const ModalManager = {
             document.body.appendChild(this._backdrop);
         }
 
+        if (this._listening) return;
+        this._listening = true;
         this._setupListeners();
     },
 

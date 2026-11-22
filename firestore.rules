@@ -182,7 +182,10 @@ service cloud.firestore {
 
     // Usernames - for public profiles
     match /usernames/{username} {
-      allow read: if true; // Public profiles must be resolvable without auth
+      // Public profiles resolve one name at a time; listing every username
+      // (and its uid) is not allowed.
+      allow get: if true;
+      allow list: if false;
       allow create: if isInvited()
         && request.resource.data.uid == request.auth.uid
         && username.size() >= 1

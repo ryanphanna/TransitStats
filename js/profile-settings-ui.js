@@ -74,7 +74,7 @@ export function setupProfileListeners(profile) {
     saveNameButton?.addEventListener('click', async () => {
         const name = nameInput?.value.trim();
         if (!name) return;
-        await profile.updateSetting('displayName', name);
+        if (!await profile.updateSetting('displayName', name)) return;
         nameDisplay.textContent = name;
         nameInput.classList.add('hidden');
         nameDisplay.classList.remove('hidden');
@@ -84,7 +84,10 @@ export function setupProfileListeners(profile) {
 
     publicProfile?.addEventListener('change', async event => {
         const isPublic = event.target.checked;
-        await profile.updateSetting('isPublic', isPublic);
+        if (!await profile.updateSetting('isPublic', isPublic)) {
+            event.target.checked = !isPublic;
+            return;
+        }
 
         try {
             UI.showNotification(`Syncing ${isPublic ? 'public' : 'private'} state to all trips...`, 'info');
@@ -107,6 +110,7 @@ export function setupProfileListeners(profile) {
     mapStopModeSelect?.addEventListener('change', event => {
         const mode = event.target.value === 'exiting' ? 'exiting' : 'boarding';
         localStorage.setItem('transitstats-map-stop-mode', mode);
+        window.dispatchEvent(new CustomEvent('ts:map-stop-mode', { detail: mode }));
         profile.updateSetting('mapStopMode', mode);
     });
 

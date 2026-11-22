@@ -18,6 +18,12 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Imported PRESTO rides now count toward your stop totals** wherever they matched a stop, on the dashboard, your public profile and in ASK. They still stay out of route and trip-time figures, since PRESTO doesn't record a route or where you got off.
 - **The PRESTO import is now a few short screens**: pick paid fares or monthly pass rides, follow the steps for that PRESTO export, drop in the file, check what will be added on a small map with your new stops highlighted, and see how many rides were added. It used to be one long form whose instructions only covered paid fares.
 - **Imported rides that couldn't be matched to a stop are tried again** once a day when your dashboard loads, so they find their stop once it's added. The import screens show how many matched right away and how many will be matched later.
+- **Changing "Map stops" in Settings updates the map right away**, and a new device shows the setting you saved instead of always starting on boarding stops.
+- **The map no longer loses stops** when your stop list refreshes in the background after a day.
+- **A failed save in Settings now says so and undoes the change**, instead of showing a new name or a public profile that never saved.
+- **Signing out in another tab now signs you out here too**, instead of leaving an empty dashboard.
+- **A trip left open past 6 hours moves into your totals** without reloading the page.
+- **Turning your public profile private hides it within a minute**; it used to stay visible for up to 10 minutes. The list of every username can no longer be read by anyone, and a malformed profile link shows "not found" instead of failing.
 - **The "Your TransitStats" title fits its card evenly** instead of running closer to the right edge.
 
 ### Texting
