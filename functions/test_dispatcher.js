@@ -22,6 +22,8 @@ function buildHarness({
   const calls = {
     checkIdempotency: 0,
     checkContentDuplicate: 0,
+    released: [],
+    endTripStops: [],
     handleEndTrip: 0,
     handleTripLog: 0,
     handleQuery: 0,
@@ -59,7 +61,7 @@ function buildHarness({
       calls.handleTripLog++;
       calls.handleTripLogArgs.push(args);
     },
-    handleEndTrip: async () => { calls.handleEndTrip++; },
+    handleEndTrip: async (_p, _u, stop) => { calls.handleEndTrip++; calls.endTripStops.push(stop); },
     handleQuery: async () => { calls.handleQuery++; },
     fillPredictions: async () => {},
     handleConfirmStart: async () => {},
@@ -73,6 +75,7 @@ function buildHarness({
       calls.checkIdempotency++;
       return idempotent;
     },
+    releaseDedupeMarkers: async (...args) => { calls.released.push(args); },
     checkContentDuplicate: async () => {
       calls.checkContentDuplicate++;
       return contentDuplicate;
@@ -868,4 +871,70 @@ test('dispatcher: tapped RCS END 2 button reaches handleEndTrip as the END 2 sho
   assert.equal(endArgs.length, 1);
   assert.equal(endArgs[0][0], '+14165551234');
   assert.equal(endArgs[0][2], '2');
+});
+
+// --- Dedupe markers: failures, repeats, END filler, numbered choices ---
+
+test('dispatcher: a failed message releases its MessageSid and content markers so a retry runs', async () => {
+  const { dispatch, calls } = buildHarness({
+    singleLineTrip: { stop: 'Spadina', route: '510', direction: 'Northbound', agency: 'TTC' },
+    handlers: { handleTripLog: async () => { throw new Error('boom'); } },
+  });
+  await assert.rejects(() => dispatch('+14165551234', '510 Spadina North', 'SM_FAIL'), /boom/);
+  assert.equal(calls.released.length, 1);
+  assert.equal(calls.released[0][0], 'SM_FAIL');
+  assert.equal(calls.released[0][2], '510 Spadina North');
+  assert.deepEqual(calls.released[0][3], { sid: true, content: true });
+});
+
+test('dispatcher: a message that succeeds keeps its markers', async () => {
+  const { dispatch, calls } = buildHarness({
+    singleLineTrip: { stop: 'Spadina', route: '510', direction: 'Northbound', agency: 'TTC' },
+  });
+  await dispatch('+14165551234', '510 Spadina North', 'SM_OK');
+  assert.equal(calls.released.length, 0);
+});
+
+test('dispatcher: STATUS, STATS, INFO, ASK and number replies skip the content-duplicate check', async () => {
+  for (const body of ['STATUS', 'stats', 'INFO', 'ASK when is the next 510', 'ASK', '1', ' 2 ', '2.']) {
+    const { dispatch, calls } = buildHarness({ contentDuplicate: true });
+    await dispatch('+14165551234', body, 'SM_' + body);
+    assert.equal(calls.checkContentDuplicate, 0, `"${body}" must not be content-deduped`);
+  }
+});
+
+test('dispatcher: ordinary trip texts are still content-deduped', async () => {
+  const { dispatch, calls } = buildHarness({ contentDuplicate: true });
+  await dispatch('+14165551234', '510 Spadina North', 'SM_X');
+  assert.equal(calls.checkContentDuplicate, 1);
+});
+
+test('dispatcher: END TRIP and "stop the bus" end the trip like plain END', async () => {
+  for (const body of ['END TRIP', 'end the trip', 'STOP the bus', 'END now', 'end here']) {
+    const { dispatch, calls } = buildHarness();
+    await dispatch('+14165551234', body, 'SM_' + body);
+    assert.equal(calls.handleEndTrip, 1, body);
+    assert.equal(calls.endTripStops[0], null, `"${body}" must not become a stop name`);
+  }
+});
+
+test('dispatcher: END with a real stop name still passes the stop', async () => {
+  const { dispatch, calls } = buildHarness();
+  await dispatch('+14165551234', 'END Trinity Bellwoods', 'SM_END_REAL');
+  assert.equal(calls.endTripStops[0], 'Trinity Bellwoods');
+});
+
+test('dispatcher: confirm_stop with extra text after the number is a new trip, not a pick', async () => {
+  const { dispatch, calls } = buildHarness({
+    singleLineTrip: { stop: 'Spadina West', route: '2', direction: null, agency: 'TTC' },
+    pendingState: {
+      type: 'confirm_stop', tripId: 'trip_1', route: '510', direction: 'Northbound', agency: 'TTC',
+      stopCandidates: [
+        { stopCode: '1', stopName: 'A' }, { stopCode: '2', stopName: 'B' }, { stopCode: '3', stopName: 'C' },
+      ],
+    },
+  });
+  await dispatch('+14165551234', '2 Spadina West', 'SM_NEW_TRIP');
+  assert.equal(calls.dbUpdates.length, 0, 'must not update the open trip with option 2');
+  assert.equal(calls.handleTripLog, 1, 'processed as a new trip');
 });

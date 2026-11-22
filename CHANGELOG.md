@@ -28,6 +28,14 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ### Texting
 
+- **FORGOT and "start over" no longer count as a finished trip.** The unfinished trip was being graded as a wrong prediction and checked for transfers, which skewed accuracy.
+- **A message that failed to process can be sent again.** Retries and resends used to be dropped as duplicates even though nothing had happened.
+- **STATUS, STATS, INFO, ASK and number replies like "1" always work**, instead of being ignored when sent twice within 5 minutes.
+- **"END TRIP" and "stop the bus" end your trip like plain END**, instead of saving "Trip" or "The Bus" as the stop.
+- **A new trip text like "2 Spadina West" no longer picks option 2** when a stop question is open; only a bare number does.
+- **Trip learning, habit updates and agency refresh now finish before the system shuts down**, instead of sometimes being cut off.
+- **Slow-trip warnings compare against the right hour of day**: trip times are now filed under the hour the trip started, in its own time zone.
+- **SETTINGS AGENCY works for riders who have no profile yet**, instead of failing.
 - **Likely route typos get a "Did you mean 510?" question** (admins only for now). The trip still starts with the route as texted; replying 1 switches it to the rider's usual route at that stop.
 - **"END 510" now ends an open 510A or 510B trip.** It used to reply that the routes didn't match. A branch still never ends a different branch.
 - **Route counts treat "510a" and "510A" as one route** on the dashboard, in ASK and in the STATS reply, instead of listing the same route twice. Branches (510A, 510B) and labels like "510 Shuttle" still count separately.

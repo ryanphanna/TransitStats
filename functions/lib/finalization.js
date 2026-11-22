@@ -22,6 +22,7 @@ const {
   getRouteDisplay,
 } = require('./utils');
 const { timezoneForAgency } = require('./constants');
+const { tripStartHour } = require('./trip-hour');
 const logger = require('./logger');
 const text = require('./sms-text');
 
@@ -131,7 +132,7 @@ async function detectJourneyLink(activeTrip, recentTrips = null) {
 
 async function detectAnomaly(activeTrip, endStopNameFinal, duration, agency) {
   try {
-    const startHour = new Date(activeTrip.startTime.toDate()).getHours();
+    const startHour = tripStartHour(activeTrip.startTime, { timezone: activeTrip.timezone, agency: agency || activeTrip.agency });
     // Use personal graph only — the global (all-users) graph would flag anomalies
     // based on other people's trips, not the user's own history.
     const personalDoc = await db.collection('networkGraph')
@@ -190,25 +191,36 @@ async function triggerPostEndLearning(activeTrip, user, endStopData, prevTrip, d
     stopName: activeTrip.endStopName,
   };
 
-  // Teach the network graph
+  // Teach the network graph and rebuild the habit model. Awaited (the trigger can be shut down
+  // as soon as it returns), but one failing never stops the other or the rest of finalization.
+  const tasks = [];
   if (activeTrip.startStopName && activeTrip.direction && endStop.stopName) {
-    const startStopCanonical = await lookupStop(activeTrip.startStopCode, activeTrip.startStopName, activeTrip.agency);
-    if (startStopCanonical) {
-      NetworkEngine.observe(db, user.userId, {
+    tasks.push(['NetworkEngine.observe', async () => {
+      const startStopCanonical = await lookupStop(activeTrip.startStopCode, activeTrip.startStopName, activeTrip.agency);
+      if (!startStopCanonical) return;
+      await NetworkEngine.observe(db, user.userId, {
         route: activeTrip.route,
         agency: activeTrip.agency,
         direction: activeTrip.direction,
         startStop: startStopCanonical,
         endStop: endStop,
         duration,
-      }, prevTrip?.route || null).catch(err => logger.error('NetworkEngine.observe failed', { error: err.message }));
-    }
+        startTime: activeTrip.startTime,
+        timezone: activeTrip.timezone,
+      }, prevTrip?.route || null);
+    }]);
   }
+  tasks.push(['HabitEngine.rebuild', async () => {
+    const allTrips = await getRecentCompletedTrips(user.userId, 200);
+    await HabitEngine.rebuild(db, user.userId, allTrips);
+  }]);
 
-  // Rebuild habit model (non-blocking)
-  getRecentCompletedTrips(user.userId, 200)
-    .then(allTrips => HabitEngine.rebuild(db, user.userId, allTrips))
-    .catch(err => logger.error('HabitEngine.rebuild failed', { error: err.message }));
+  const results = await Promise.allSettled(tasks.map(([, run]) => run()));
+  results.forEach((r, i) => {
+    if (r.status === 'rejected') {
+      logger.error(`${tasks[i][0]} failed`, { error: r.reason?.message });
+    }
+  });
 }
 
 async function autoConfirmStopMatch(tripData, endStopData) {
@@ -304,6 +316,13 @@ async function runPostEndFinalization(tripData, options = {}) {
   // with known-bad original data. Explicit reprocess uses triggerManualFinalization(force=true).
   if (tripData.backgroundFinalizedAt && !force) {
     logger.info('Background finalization skipped (already processed)', { tripId });
+    return;
+  }
+
+  // FORGOT / "start over" save an incomplete trip with endTime = startTime. It never really
+  // ended, so grading it as a miss or linking it as a journey leg would be wrong.
+  if (tripData.incomplete === true) {
+    logger.info('Background finalization skipped (trip marked incomplete)', { tripId });
     return;
   }
 

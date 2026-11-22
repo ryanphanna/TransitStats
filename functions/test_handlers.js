@@ -2112,3 +2112,64 @@ test('handleEndTrip: END 510 closes an open 510A trip; END 510B does not', async
   assert.ok(!other.calls.docUpdates.some(u => u.endTime));
   assert.match(other.calls.sendSmsReply[0].message, /510B/);
 });
+
+test('handleEndTrip: follow-up work (primary agency recompute) finishes before the function returns', async () => {
+  let recomputeFinished = false;
+  const doc = () => ({
+    update: async () => {}, set: async () => {}, delete: async () => {},
+    get: async () => ({ exists: false, data: () => ({}) }),
+  });
+  const slowQuery = {
+    where: () => slowQuery,
+    orderBy: () => slowQuery,
+    limit: () => slowQuery,
+    get: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      recomputeFinished = true;
+      return { empty: true, docs: [], forEach: () => {} };
+    },
+  };
+  const own = { ...OWNER_TRIP, sourcePhone: phoneTag('+14165550001') };
+  const { handlers, calls, restore } = loadHandlers({
+    dbModule: {
+      getActiveTrip: async () => own,
+      db: {
+        collection: () => ({ add: async () => {}, doc, ...slowQuery }),
+        batch: () => ({ update: () => {}, delete: () => {}, commit: async () => {} }),
+      },
+    },
+  });
+  try {
+    await handlers.handleEndTrip('+14165550001', { userId: 'u1', email: 'o@example.com', loginConfirmed: true }, 'Union', null, null);
+  } finally { restore(); }
+  assert.ok(calls.sendSmsReply.length >= 1, 'reply is still sent');
+  assert.equal(recomputeFinished, true, 'recompute must be awaited, not left running');
+});
+
+test('SETTINGS AGENCY writes with set(merge) so it works when the profile doc does not exist yet', async () => {
+  const writes = [];
+  const { handlers, calls, restore } = loadHandlers({
+    constants: { KNOWN_AGENCIES: ['TTC'] },
+    dbModule: {
+      getUserProfile: async () => null,
+      db: {
+        collection: (name) => ({
+          doc: (id) => ({
+            update: async () => { throw new Error('NOT_FOUND: no document to update'); },
+            set: async (data, options) => { writes.push({ name, id, data, options }); },
+          }),
+        }),
+      },
+    },
+  });
+  try {
+    await handlers.handleSettings('+14165550001', { userId: 'u_new' }, 'AGENCY TTC');
+    await handlers.handleSettings('+14165550001', { userId: 'u_new' }, 'AGENCY AUTO');
+  } finally { restore(); }
+  assert.equal(writes.length, 2);
+  assert.deepEqual(writes[0].options, { merge: true });
+  assert.equal(writes[0].data.defaultAgencyMode, 'manual');
+  assert.equal(writes[1].data.defaultAgencyMode, 'automatic');
+  assert.equal(writes[0].name, 'profiles');
+  assert.equal(calls.sendSmsReply.length, 2);
+});

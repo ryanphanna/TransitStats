@@ -2,7 +2,7 @@
  * Database module — re-exports all domain modules
  */
 const { admin, db, FieldValue, Timestamp } = require('./core');
-const { isRateLimited, isGeminiRateLimited, shouldRespondToUnknown, checkIdempotency, checkContentDuplicate } = require('./rate-limit');
+const { isRateLimited, isGeminiRateLimited, shouldRespondToUnknown, checkIdempotency, checkContentDuplicate, releaseDedupeMarkers } = require('./rate-limit');
 const {
   getAuthUidByEmail,
   getUserByPhone,
@@ -27,6 +27,7 @@ module.exports = {
   shouldRespondToUnknown,
   checkIdempotency,
   checkContentDuplicate,
+  releaseDedupeMarkers,
   getAuthUidByEmail,
   getUserByPhone,
   getUserProfile,

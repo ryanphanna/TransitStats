@@ -753,3 +753,24 @@ test('inferStopSequence: ignores edges in the opposite direction', () => {
   assert.ok(result.order.includes('A') && result.order.includes('B'));
   assert.ok(!result.order.includes('X') && !result.order.includes('Y'));
 });
+
+// ─── observe: hour bucket is the trip's start hour in its timezone ───────────
+
+test('observe: buckets by the trip start hour in the trip timezone, not the hour it was processed', async () => {
+  const db = makeWriteableDb();
+  // 13:30 UTC is 09:30 in Toronto (EDT).
+  await NetworkEngine.observe(db, 'user1', observeTrip({
+    startTime: { toDate: () => new Date('2026-07-19T13:30:00Z') },
+    timezone: 'America/Toronto',
+  }));
+  const graph = db._store[`networkGraph/${NetworkEngine._docId('user1', 'TTC', '510')}`];
+  const edge = Object.values(graph.edges)[0];
+  assert.deepEqual(Object.keys(edge.durationsByHour), ['9']);
+});
+
+test('tripStartHour: the same hour detectAnomaly looks up (agency timezone when the trip has none)', () => {
+  const { tripStartHour } = require('./lib/trip-hour');
+  const start = { toDate: () => new Date('2026-01-19T02:15:00Z') }; // 21:15 Toronto (EST), the day before
+  assert.equal(tripStartHour(start, { agency: 'TTC' }), 21);
+  assert.equal(tripStartHour(start, { timezone: 'America/Vancouver' }), 18);
+});

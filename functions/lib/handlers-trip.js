@@ -606,10 +606,17 @@ async function handleEndTrip(phoneNumber, user, endStopInput, routeVerification 
   );
 
   // Recompute the user's primary agency from recent trips (makes defaultAgency dynamic)
-  recomputeAndUpdatePrimaryAgency(user.userId).catch(() => {});
-
-  // Check if any ML check-in tasks have hit their trip threshold
-  checkMlTasks(user.userId).catch(() => {});
+  // and check whether any ML check-in tasks have hit their trip threshold. Awaited so the
+  // function isn't shut down mid-write; the reply is already sent, so a failure only logs.
+  const followUps = await Promise.allSettled([
+    recomputeAndUpdatePrimaryAgency(user.userId),
+    checkMlTasks(user.userId),
+  ]);
+  followUps.forEach((r, i) => {
+    if (r.status === 'rejected') {
+      console.error(`${i === 0 ? 'recomputeAndUpdatePrimaryAgency' : 'checkMlTasks'} failed:`, r.reason?.message);
+    }
+  });
 }
 
 /**

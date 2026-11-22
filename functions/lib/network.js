@@ -19,6 +19,8 @@
  *        feeds stop disambiguation without waiting for personal history.
  */
 
+const { tripStartHour } = require('./trip-hour');
+
 const NetworkEngine = {
   VERSION: '2.1.0',
 
@@ -46,7 +48,9 @@ const NetworkEngine = {
     if (!normDir) return;
 
     const edgeKey = this._edgeKey(startStopName, normDir, endStopName);
-    const hourKey = new Date().getHours().toString();
+    // File the duration under the hour the trip started (in its timezone), the same hour
+    // detectAnomaly looks up. Falls back to now when the caller has no start time.
+    const hourKey = tripStartHour(trip.startTime, { timezone: trip.timezone, agency }).toString();
 
     const writeGraph = async (docRef, baseData) => {
       await db.runTransaction(async tx => {

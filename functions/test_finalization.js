@@ -160,6 +160,55 @@ test('runPostEndFinalization confirms a code-matched trip without changing stop 
   assert.equal(finalWrite.data.stop_matched, true);
 });
 
+// --- incomplete trips (FORGOT / start over) are not finalized ---
+
+test('runPostEndFinalization skips an incomplete trip: no grading, no journey link, no learning', async () => {
+  let observed = 0;
+  const { finalization, calls } = loadFinalization({ network: { NetworkEngine: { observe: async () => { observed++; } } } });
+  await finalization.runPostEndFinalization({
+    id: 't-forgot', userId: 'u1', incomplete: true, duration: null,
+    endStopPrediction: { stop: 'X', confidence: 80 },
+  });
+  assert.equal(calls.collectionAdds.length, 0, 'nothing graded as a miss');
+  assert.equal(calls.docUpdates.length, 0);
+  assert.equal(calls.batchCommits, 0, 'no journey link');
+  assert.equal(observed, 0);
+});
+
+test('runPostEndFinalization skips an incomplete trip even when forced', async () => {
+  const { finalization, calls } = loadFinalization();
+  await finalization.runPostEndFinalization({ id: 't-forgot', userId: 'u1', incomplete: true }, { force: true });
+  assert.equal(calls.docUpdates.length, 0);
+});
+
+// --- learning is awaited, and one failure does not stop the other ---
+
+test('triggerPostEndLearning waits for both learning steps and logs a failure without throwing', async () => {
+  let habitDone = false;
+  const { finalization, calls } = loadFinalization({
+    network: { NetworkEngine: { observe: async () => { throw new Error('observe down'); } } },
+    habit: { HabitEngine: { rebuild: async () => { await new Promise((r) => setTimeout(r, 20)); habitDone = true; } } },
+  });
+  await finalization.triggerPostEndLearning(
+    { startStopName: 'A', direction: 'Northbound', route: '510', agency: 'TTC', endStopName: 'B' },
+    { userId: 'u1' }, { stopName: 'B' }, null, 10
+  );
+  assert.equal(habitDone, true, 'habit rebuild must finish before returning');
+  assert.ok(calls.loggerError.some((e) => /observe failed/.test(e.message)), 'failure is logged');
+});
+
+test('triggerPostEndLearning files the duration under the trip start hour and timezone', async () => {
+  let seen = null;
+  const { finalization } = loadFinalization({ network: { NetworkEngine: { observe: async (_db, _u, trip) => { seen = trip; } } } });
+  const startTime = { toDate: () => new Date('2026-07-19T13:30:00Z') };
+  await finalization.triggerPostEndLearning(
+    { startStopName: 'A', direction: 'Northbound', route: '510', agency: 'TTC', endStopName: 'B', startTime, timezone: 'America/Toronto' },
+    { userId: 'u1' }, { stopName: 'B' }, null, 10
+  );
+  assert.equal(seen.startTime, startTime);
+  assert.equal(seen.timezone, 'America/Toronto');
+});
+
 // --- computeJourneyLink: pure output ---
 
 test('computeJourneyLink returns empty note/id when there is no previous trip', async () => {

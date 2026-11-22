@@ -364,7 +364,7 @@ async function handleSettings(phoneNumber, user, rawArgs, traceId = null) {
   const profile = await getUserProfile(user.userId);
   const currentAgency = profile?.defaultAgencyMode === 'automatic'
     ? 'Automatic'
-    : (getConfiguredPrimaryAgency(profile) || 'Automatic');
+    : (getConfiguredPrimaryAgency(profile || {}) || 'Automatic');
 
   if (!rawArgs) {
     await sendSmsReply(phoneNumber, text.settingsSummary(currentAgency));
@@ -374,11 +374,11 @@ async function handleSettings(phoneNumber, user, rawArgs, traceId = null) {
   const agencyMatch = rawArgs.match(/^AGENCY\s+(\S.*)$/i);
   if (agencyMatch) {
     if (/^(AUTO|AUTOMATIC)$/i.test(agencyMatch[1].trim())) {
-      await db.collection('profiles').doc(user.userId).update({
+      await db.collection('profiles').doc(user.userId).set({
         defaultAgency: null,
         defaultAgencyMode: 'automatic',
         primaryAgency: null,
-      });
+      }, { merge: true });
       await sendSmsReply(phoneNumber, text.AGENCY_SET_AUTOMATIC);
       return;
     }
@@ -388,10 +388,10 @@ async function handleSettings(phoneNumber, user, rawArgs, traceId = null) {
       await sendSmsReply(phoneNumber, text.unknownAgency(agencyMatch[1].trim()));
       return;
     }
-    await db.collection('profiles').doc(user.userId).update({
+    await db.collection('profiles').doc(user.userId).set({
       defaultAgency: normalized,
       defaultAgencyMode: 'manual',
-    });
+    }, { merge: true });
     await sendSmsReply(phoneNumber, text.agencySet(normalized));
     return;
   }

@@ -157,7 +157,28 @@ async function checkContentDuplicate(phoneNumber, body) {
   }
 }
 
+/**
+ * Undo checkIdempotency / checkContentDuplicate for a message whose processing threw, so the
+ * retry (same MessageSid) or the rider's resend (same text) is processed instead of dropped.
+ * Best effort: never throws.
+ */
+async function releaseDedupeMarkers(messageSid, phoneNumber, body, { sid = true, content = true } = {}) {
+  if (process.env.TS_TEST_MODE) return;
+  try {
+    if (sid && messageSid) {
+      await db.collection('processedMessages').doc(messageSid).delete();
+    }
+    if (content && phoneNumber && body) {
+      const key = crypto.createHash('sha256').update(phoneNumber + '|' + body).digest('hex');
+      await db.collection('processedMessages').doc('content_' + key).delete();
+    }
+  } catch (e) {
+    console.warn('Could not release dedupe markers:', e.message);
+  }
+}
+
 module.exports = {
+  releaseDedupeMarkers,
   isRateLimited,
   isGeminiRateLimited,
   shouldRespondToUnknown,

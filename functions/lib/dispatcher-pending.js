@@ -91,7 +91,9 @@ function createPendingHandlers({
 
   async function handleConfirmStopState(phoneNumber, body, upperBody, state, traceId = null, user = null) {
     const trace = traceId || generateTraceId();
-    const chosen = numberedChoice(body, state.stopCandidates);
+    // Only a bare number picks a stop: "2 Spadina West" while this question is open is a new
+    // trip, not option 2. Stray punctuation or spaces around the digits are fine ("2.", " 2 ").
+    const chosen = numberedChoice(body.replace(/[\s.)!:,-]+$/g, '').replace(/^[\s(#]+/, ''), state.stopCandidates, { strict: true });
     if (chosen) {
       if (user) {
         await clearPendingState(phoneNumber);

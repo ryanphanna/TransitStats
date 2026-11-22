@@ -18,6 +18,7 @@ const {
   isRateLimited,
   checkIdempotency,
   checkContentDuplicate,
+  releaseDedupeMarkers,
   getFirestore,
   getPendingState,
   getUserByPhone,
@@ -117,6 +118,24 @@ async function promptUnlock(phoneNumber, link) {
  * @param {string} [traceId] - optional correlation ID from the webhook entry
  */
 async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = null) {
+  const marks = { sid: false, content: false };
+  try {
+    return await dispatchMessage(phoneNumber, body, messageSid, media, traceId, marks);
+  } catch (err) {
+    // Processing failed: free the dedupe markers so Twilio's retry (same MessageSid) and the
+    // rider's resend (same text) get processed instead of silently dropped.
+    if (typeof releaseDedupeMarkers === 'function' && (marks.sid || marks.content)) {
+      await releaseDedupeMarkers(messageSid, phoneNumber, body, marks);
+    }
+    throw err;
+  }
+}
+
+// Replies that must work every time: a number answers an open question, and the read-only
+// commands just report. Repeating them within the duplicate window is normal.
+const CONTENT_DEDUPE_EXEMPT = /^\s*(\d{1,2}[.)]?|(STATUS|STATS|INFO|ASK)(\s[\s\S]*)?)\s*$/i;
+
+async function dispatchMessage(phoneNumber, body, messageSid, media, traceId, marks) {
   const receivedAt = Date.now();
   const { numMedia = 0, mediaUrl = null, apiOwner = null } = media;
   const isMms = numMedia > 0 && !!mediaUrl;
@@ -162,15 +181,19 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
     logger.info('Duplicate Message', { MessageSid: messageSid, traceId: trace }, trace);
     return '';
   }
+  if (messageSid) marks.sid = true;
 
   // Content dedup and outbound loop checks don't apply to MMS
   if (!isMms) {
     // END/STOP commands bypass content dedup — if an end attempt fails, the user
     // must be able to retry immediately without waiting 60 seconds.
     const isEndCommand = /^(END|STOP)(\s|$)/i.test(body);
-    if (!isEndCommand && await checkContentDuplicate(phoneNumber, body)) {
-      logger.info('Duplicate content within window', { From: phoneNumber, traceId: trace }, trace);
-      return '';
+    if (!isEndCommand && !CONTENT_DEDUPE_EXEMPT.test(body)) {
+      if (await checkContentDuplicate(phoneNumber, body)) {
+        logger.info('Duplicate content within window', { From: phoneNumber, traceId: trace }, trace);
+        return '';
+      }
+      marks.content = true;
     }
 
     if (await checkOutboundLoop(body)) {
@@ -340,6 +363,19 @@ async function getDefaultAgency(userId) {
   return configuredAgency || (getLastTripAgency ? await getLastTripAgency(userId) : null);
 }
 
+// "END TRIP", "stop the bus", "end now": filler after END/STOP is not a stop name.
+const END_FILLER_WORDS = new Set([
+  'the', 'my', 'this', 'trip', 'ride', 'journey', 'bus', 'streetcar', 'train', 'subway',
+  'now', 'here', 'it', 'please', 'pls',
+]);
+
+/** True when the text after END/STOP is only filler words (so the message is a plain END). */
+function isEndFiller(stopInput) {
+  if (typeof stopInput !== 'string') return false;
+  const words = stopInput.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.every(w => END_FILLER_WORDS.has(w));
+}
+
 /**
  * Handles explicit stop/start formats
  */
@@ -351,7 +387,8 @@ async function handleTripFlow(phoneNumber, user, body, receivedAt = Date.now(), 
   const singleLineEndMatch = body.match(/^(END|STOP)\s+(\S.*)$/i);
 
   if (endTripData || singleLineEndMatch) {
-    const stopInput = singleLineEndMatch ? singleLineEndMatch[2] : endTripData?.stop;
+    const rawStopInput = singleLineEndMatch ? singleLineEndMatch[2] : endTripData?.stop;
+    const stopInput = isEndFiller(rawStopInput) ? null : rawStopInput;
     try {
       await handlers.handleEndTrip(phoneNumber, user, stopInput, endTripData?.route, endTripData?.notes, trace);
     } catch (err) {
