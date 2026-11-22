@@ -12,6 +12,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 - **Settings → Sharing shows your real sharing setting.** It could show sharing as off and your identity as ??? when your profile was public.
 - **Imported PRESTO rides are matched to your stops when you import them**, and the match is saved, instead of being worked out again every time the map loads. The import preview now shows how many rides match a stop, rather than promising a later matching step that never ran.
+- **The PRESTO importer now takes your Transaction History export too**, which is the only PRESTO export that lists rides taken on a monthly pass. Only those pass rides are taken from it; paid fares still come from the Transit Usage Report, so nothing is counted twice.
 - **Far more imported PRESTO rides find their stop**: stops missing from your own stop list are looked up in the agency's full stop list, a station matches its platforms, both directions of a stop count as that stop, and names PRESTO cut short still match. On a full year of rides, matches went from 81% to 97%.
 - **Imported PRESTO rides now count toward your stop totals** wherever they matched a stop, on the dashboard, your public profile and in ASK. They still stay out of route and trip-time figures, since PRESTO doesn't record a route or where you got off.
 - **The "Your TransitStats" title fits its card evenly** instead of running closer to the right edge.

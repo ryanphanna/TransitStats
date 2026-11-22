@@ -245,3 +245,24 @@ describe('money', () => {
         expect(money(-5)).toBe('-$0.05');
     });
 });
+
+describe('Transaction History export', () => {
+    const csv = [
+        'TransactionDateTime,TransitAgency,Location,TapType,Amount,ConfirmationID',
+        '"21 Nov 2025 09:15 p.m.","Toronto Transit Commission","QUEENS PARK STATION","Transit Pass Tap","","X1"',
+        '"20 Nov 2025 12:05 a.m.","Toronto Transit Commission","College St at McCaul St","Fare Payment","$3.30","X2"',
+        '"20 Nov 2025 12:20 a.m.","Toronto Transit Commission","COLLEGE STATION","Free Transfer","","X3"',
+    ].join('\n');
+
+    it('imports rides on a pass and leaves paid fares to the usage report', () => {
+        const records = parseCsv(csv).map((row, index) => toRecord(row, index + 2, 'history.csv'));
+        expect(records.map(record => record.type)).toEqual(['fare_payment', 'history_other', 'history_other']);
+        expect(records[0]).toMatchObject({ passRide: true, amountCents: 0, agency: 'TTC', location: 'QUEENS PARK STATION' });
+        expect(records[0].occurredAtSortKey).toBe(Date.UTC(2025, 10, 21, 21, 15, 0));
+        expect(records[1].occurredAtSortKey).toBe(Date.UTC(2025, 10, 20, 0, 5, 0));
+        expect(records[0].raw.__history).toBeUndefined();
+        const summary = summarize(records);
+        expect(summary.passRides).toBe(1);
+        expect(summary.skipped['paid fares (import those from the Transit Usage Report)']).toBe(1);
+    });
+});

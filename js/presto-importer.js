@@ -60,12 +60,16 @@ function parseCsv(rawText) {
 
     const [rawHeaders, ...values] = rows;
     const headers = rawHeaders?.map(header => header.trim());
-    if (!headers?.includes('Date') || !headers.includes('Type')) {
-        throw new Error('This does not look like a PRESTO Transit Usage Report.');
+    const usageReport = headers?.includes('Date') && headers.includes('Type');
+    // Transaction History names the same columns differently.
+    const history = headers?.includes('TransactionDateTime') && headers.includes('TapType');
+    if (!usageReport && !history) {
+        throw new Error('This does not look like a PRESTO Transit Usage Report or Transaction History export.');
     }
     return values
         .filter(value => value.length === headers.length && value.some(Boolean))
-        .map(value => Object.fromEntries(headers.map((header, index) => [header, value[index]])));
+        .map(value => Object.fromEntries(headers.map((header, index) => [header, value[index]])))
+        .map(row => (history ? { ...row, Date: row.TransactionDateTime, Type: row.TapType, __history: true } : row));
 }
 
 function parseAmountCents(value) {
@@ -73,7 +77,22 @@ function parseAmountCents(value) {
     return Number.isFinite(amount) ? Math.round(amount * 100) : null;
 }
 
+const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+
+/** Transaction History dates: "21 May 2026 07:34 a.m." (no seconds). */
+function parseHistoryDate(value) {
+    const match = String(value || '').match(/^(\d{1,2}) ([A-Za-z]+) (\d{4}) (\d{1,2}):(\d{2}) ([ap])\.?m\.?$/i);
+    const month = match ? MONTHS.findIndex(name => name.startsWith(match[2].toLowerCase().slice(0, 3))) : -1;
+    if (!match || month < 0) return null;
+    let hour = Number(match[4]);
+    if (match[6].toLowerCase() === 'p' && hour !== 12) hour += 12;
+    if (match[6].toLowerCase() === 'a' && hour === 12) hour = 0;
+    return { local: value, sortKey: Date.UTC(Number(match[3]), month, Number(match[1]), hour, Number(match[5]), 0) };
+}
+
 function parseDate(value) {
+    const history = parseHistoryDate(value);
+    if (history) return history;
     const match = String(value || '').match(
         /^(\d{1,2})\/(\d{1,2})\/(\d{4}) (\d{1,2}):(\d{2}):(\d{2}) (AM|PM)$/i,
     );
@@ -85,6 +104,13 @@ function parseDate(value) {
         local: value,
         sortKey: Date.UTC(Number(match[3]), Number(match[1]) - 1, Number(match[2]), hour, Number(match[5]), Number(match[6])),
     };
+}
+
+// From Transaction History only rides on a pass are imported: the Transit
+// Usage Report already has every paid fare (with seconds, so they dedupe), and
+// importing both would count paid rides twice.
+function classifyHistoryType(value) {
+    return value === 'Transit Pass Tap' ? 'fare_payment' : 'history_other';
 }
 
 function classifyType(value) {
@@ -106,7 +132,8 @@ function toRecord(row, rowNumber, fileName) {
         occurredAtSortKey: date?.sortKey || null,
         agency: AGENCY_ALIASES.get(row.TransitAgency) || row.TransitAgency || null,
         agencySource: row.TransitAgency || null,
-        type: classifyType(row.Type),
+        type: row.__history ? classifyHistoryType(row.Type) : classifyType(row.Type),
+        ...(row.__history && row.Type === 'Transit Pass Tap' ? { passRide: true } : {}),
         amountCents: parseAmountCents(row.Amount),
         location: rawLocation,
         locationLabel: LOCATION_ALIASES.get(rawLocation) || rawLocation,
@@ -114,7 +141,7 @@ function toRecord(row, rowNumber, fileName) {
         // Stop resolution is deliberately deferred. The raw PRESTO activity
         // remains importable even when a location is ambiguous or unknown.
         stopMatchStatus: 'pending',
-        raw: row,
+        raw: Object.fromEntries(Object.entries(row).filter(([key]) => key !== '__history')),
     };
 }
 
@@ -179,7 +206,10 @@ function summarize(records) {
     records
         .filter(record => !['fare_payment', 'epurse_load', 'period_pass_load'].includes(record.type))
         .forEach(record => {
-            const label = String(record.raw?.Type || 'Unlabelled').trim() || 'Unlabelled';
+            const base = String(record.raw?.Type || 'Unlabelled').trim() || 'Unlabelled';
+            const label = record.type === 'history_other' && base === 'Fare Payment'
+                ? 'paid fares (import those from the Transit Usage Report)'
+                : base;
             skipped[label] = (skipped[label] || 0) + 1;
         });
     // Epurse loads fund the reloadable balance that fares are paid from, so
@@ -200,6 +230,7 @@ function summarize(records) {
     return {
         rows: records.length,
         farePayments: farePayments.length,
+        passRides: farePayments.filter(record => record.passRide).length,
         epurseLoads: epurseLoads.length,
         passLoads: passLoads.length,
         // GO's tap-in/tap-out pairs can include a small positive adjustment at
@@ -318,7 +349,9 @@ export function initPrestoImporter({ user }) {
                 : null;
             preview.textContent = [
                 `${summary.rows} rows ready`,
-                `${summary.farePayments} fare payments · ${summary.epurseLoads} balance top-ups · ${summary.passLoads} pass purchases`,
+                summary.passRides
+                    ? `${summary.passRides} rides taken on a pass${summary.farePayments > summary.passRides ? ` · ${summary.farePayments - summary.passRides} fare payments` : ''}`
+                    : `${summary.farePayments} fare payments · ${summary.epurseLoads} balance top-ups · ${summary.passLoads} pass purchases`,
                 `${money(summary.fareChargedCents)} net fares charged (GO tap-in/tap-out pairs are combined into one trip)`,
                 `${money(summary.epurseLoadedCents)} added to reloadable balance · ${money(summary.passLoadedCents)} spent on passes`,
                 `${summary.first || 'Unknown'} to ${summary.last || 'unknown'}`,
