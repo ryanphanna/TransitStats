@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 // module for its parsing/summary functions doesn't require a real project.
 vi.mock('../js/firebase.js', () => ({ db: {}, serverTimestamp: () => null }));
 
-import { assertDatesReadable, classifyType, money, markRefundedFares, parseAmountCents, parseCsv, parseDate, summarize, toRecord } from '../js/presto-importer.js';
+import { assertDatesReadable, classifyType, money, markRefundedFares, parseAmountCents, parseCsv, parseDate, summarize, toRecord, withoutCrossExportDuplicates } from '../js/presto-importer.js';
 
 describe('parseCsv', () => {
     it('parses a PRESTO Transit Usage Report into row objects', () => {
@@ -254,16 +254,17 @@ describe('Transaction History export', () => {
         '"20 Nov 2025 12:20 a.m.","Toronto Transit Commission","COLLEGE STATION","Free Transfer","","X3"',
     ].join('\n');
 
-    it('imports rides on a pass and leaves paid fares to the usage report', () => {
+    it('imports rides on a pass and paid fares', () => {
         const records = parseCsv(csv).map((row, index) => toRecord(row, index + 2, 'history.csv'));
-        expect(records.map(record => record.type)).toEqual(['fare_payment', 'history_other', 'history_other']);
+        expect(records.map(record => record.type)).toEqual(['fare_payment', 'fare_payment', 'history_other']);
+        expect(records[1].amountCents).toBe(-330);
         expect(records[0]).toMatchObject({ passRide: true, amountCents: 0, agency: 'TTC', location: 'QUEENS PARK STATION' });
         expect(records[0].occurredAtSortKey).toBe(Date.UTC(2025, 10, 21, 21, 15, 0));
         expect(records[1].occurredAtSortKey).toBe(Date.UTC(2025, 10, 20, 0, 5, 0));
         expect(records[0].raw.__history).toBeUndefined();
         const summary = summarize(records);
         expect(summary.passRides).toBe(1);
-        expect(summary.skipped['paid fares (import those from the Transit Usage Report)']).toBe(1);
+        expect(summary.farePayments).toBe(2);
     });
 });
 
@@ -277,6 +278,26 @@ describe('PRESTO card Transaction History export', () => {
         const records = parseCsv(csv).map((row, index) => toRecord(row, index + 2, 'card.csv'));
         expect(records[0]).toMatchObject({ type: 'fare_payment', passRide: true, agency: 'TTC', amountCents: 0 });
         expect(records[0].occurredAtSortKey).toBe(Date.UTC(2026, 10, 21, 21, 15, 0));
-        expect(records[1].type).toBe('history_other');
+        expect(records[1]).toMatchObject({ type: 'fare_payment', amountCents: -330 });
+    });
+
+    it('skips a paid fare the Usage Report already has, in either order', () => {
+        const history = parseCsv([
+            'Date,Sequence Number,Service Provider Name,Location,Type,Discount Sum,Amount,Balance',
+            '"1 November 2026 02:00 p.m.","1","Toronto Transit Commission","BATHURST STATION","Fare Payment","0","$3.30","$13.20"',
+            '"2 November 2026 08:00 a.m.","2","Toronto Transit Commission","BATHURST STATION","Fare Payment","0","$3.30","$9.90"',
+        ].join('\n')).map((row, index) => toRecord(row, index + 2, 'card.csv'));
+        const usage = parseCsv([
+            'Date,TransitAgency,Location,Type,Amount',
+            '"11/1/2026 2:00:41 PM","Toronto Transit Commission","14583","Fare Payment","$-3.30"',
+        ].join('\n')).map((row, index) => toRecord(row, index + 2, 'usage.csv'));
+        // Usage Report already saved: only the second history fare is new.
+        expect(withoutCrossExportDuplicates(history, usage).map(r => r.occurredAtLocal)).toEqual(['2 November 2026 08:00 a.m.']);
+        // History already saved: the usage fare is a repeat.
+        expect(withoutCrossExportDuplicates(usage, history)).toEqual([]);
+        // Both files at once: the usage row wins.
+        expect(withoutCrossExportDuplicates([...history, ...usage]).map(r => r.raw.Location)).toEqual(['BATHURST STATION', '14583']);
+        // Re-importing the same export is not treated as a repeat.
+        expect(withoutCrossExportDuplicates(history, history)).toHaveLength(2);
     });
 });

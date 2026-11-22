@@ -426,3 +426,5 @@
   color: var(--danger);
 }
 .presto-import-status.info { color: var(--text-secondary); }
+.presto-map { height: 220px; border-radius: 14px; overflow: hidden; background: var(--bg-muted); }
+.presto-map.hidden { display: none; }
