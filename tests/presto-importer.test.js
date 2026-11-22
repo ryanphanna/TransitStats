@@ -266,3 +266,17 @@ describe('Transaction History export', () => {
         expect(summary.skipped['paid fares (import those from the Transit Usage Report)']).toBe(1);
     });
 });
+
+describe('PRESTO card Transaction History export', () => {
+    it('reads the card layout (Service Provider Name, full month names)', () => {
+        const csv = [
+            'Date,Sequence Number,Service Provider Name,Location,Type,Discount Sum,Amount,Balance',
+            '"21 November 2026 09:15 p.m.","0","Toronto Transit Commission","Spadina Ave at King St West North Side","Transit Pass Tap","0","","$13.20"',
+            '"1 November 2026 02:00 p.m.","1","Toronto Transit Commission","BATHURST STATION","Fare Payment","0","$3.30","$13.20"',
+        ].join('\n');
+        const records = parseCsv(csv).map((row, index) => toRecord(row, index + 2, 'card.csv'));
+        expect(records[0]).toMatchObject({ type: 'fare_payment', passRide: true, agency: 'TTC', amountCents: 0 });
+        expect(records[0].occurredAtSortKey).toBe(Date.UTC(2026, 10, 21, 21, 15, 0));
+        expect(records[1].type).toBe('history_other');
+    });
+});

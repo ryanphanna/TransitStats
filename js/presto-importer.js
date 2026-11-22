@@ -60,16 +60,22 @@ function parseCsv(rawText) {
 
     const [rawHeaders, ...values] = rows;
     const headers = rawHeaders?.map(header => header.trim());
-    const usageReport = headers?.includes('Date') && headers.includes('Type');
-    // Transaction History names the same columns differently.
-    const history = headers?.includes('TransactionDateTime') && headers.includes('TapType');
-    if (!usageReport && !history) {
+    // Transaction History comes in two layouts (a PRESTO card's and a
+    // contactless bank card's), both naming the usage report's columns differently.
+    const cardHistory = headers?.includes('Service Provider Name') && headers.includes('Type') && headers.includes('Date');
+    const contactlessHistory = headers?.includes('TransactionDateTime') && headers.includes('TapType');
+    const usageReport = !cardHistory && headers?.includes('Date') && headers.includes('Type');
+    if (!usageReport && !cardHistory && !contactlessHistory) {
         throw new Error('This does not look like a PRESTO Transit Usage Report or Transaction History export.');
     }
     return values
         .filter(value => value.length === headers.length && value.some(Boolean))
         .map(value => Object.fromEntries(headers.map((header, index) => [header, value[index]])))
-        .map(row => (history ? { ...row, Date: row.TransactionDateTime, Type: row.TapType, __history: true } : row));
+        .map(row => {
+            if (cardHistory) return { ...row, TransitAgency: row['Service Provider Name'], __history: true };
+            if (contactlessHistory) return { ...row, Date: row.TransactionDateTime, Type: row.TapType, __history: true };
+            return row;
+        });
 }
 
 function parseAmountCents(value) {
