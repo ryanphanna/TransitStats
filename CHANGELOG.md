@@ -8,6 +8,11 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ## [Unreleased]
 
+### Website
+
+- **Settings → Sharing shows your real sharing setting.** It could show sharing as off and your identity as ??? when your profile was public.
+- **The "Your TransitStats" title fits its card evenly** instead of running closer to the right edge.
+
 ### Texting
 
 - **Likely route typos get a "Did you mean 510?" question** (admins only for now). The trip still starts with the route as texted; replying 1 switches it to the rider's usual route at that stop.

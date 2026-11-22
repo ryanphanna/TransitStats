@@ -52,6 +52,9 @@ export const Profile = {
             // Check cache first to avoid redundant reads
             if (this.data && this.phone) {
                 window.currentUserProfile = this.data;
+                // The settings panel is built after the dashboard first loads the
+                // profile, so its controls still need filling from the cached data.
+                this.syncUI(user.email);
                 return;
             }
 
