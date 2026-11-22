@@ -154,3 +154,17 @@ describe('match saved at import', () => {
         expect(resolvePrestoStopLocation(unsaved, [stop]).location).toEqual({ lat: 43.67, lng: -79.37 });
     });
 });
+
+describe('imported rides in stop totals', () => {
+    it('carries a stop matched at import as the boarding stop, and nothing else', () => {
+        const ride = (extra) => ({ source: 'presto', agency: 'TTC', startRecord: { occurredAtSortKey: Date.UTC(2025, 0, 2, 15), ...extra }, endRecord: null });
+        const [matched, unmatched] = projectPrestoTripsForStats([
+            ride({ stopMatchStatus: 'matched', matchedStop: { name: 'Bay Station' } }),
+            ride({ stopMatchStatus: 'unmatched', matchedStop: null }),
+        ]);
+        expect(matched.startStopName).toBe('Bay Station');
+        expect(matched.endStopName).toBeUndefined();
+        expect(matched.route).toBeUndefined();
+        expect(unmatched.startStopName).toBeUndefined();
+    });
+});

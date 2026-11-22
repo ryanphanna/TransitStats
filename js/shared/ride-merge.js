@@ -141,20 +141,24 @@ export function mergeImportedRides(loggedTrips, importedRides, windowMs = RIDE_M
 /**
  * A lightweight `{ agency, startTime, imported }` projection of PRESTO trips, shaped to
  * match what the summary stats (js/shared/trip-stats.js) expect from logged
- * trips. This only covers the summary counts (trip counts, agencies, days
- * ridden, countries) that don't depend on duration, route, or stop names —
- * PRESTO trips have none of those, so they stay out of the richer metrics
- * (top routes/stops, peak times, streaks, highlights).
+ * trips. A ride whose tap-on location was matched to a stop at import also
+ * carries that stop as its boarding stop, so it counts in stop totals. PRESTO
+ * records no route, exit or duration, so imported rides stay out of route,
+ * stop-pair and trip-time figures.
  */
 export function projectPrestoTripsForStats(prestoTrips = []) {
     return prestoTrips
         .map(trip => ({ trip, time: importedRideTime(trip) }))
         .filter(({ time }) => Number.isFinite(time))
-        .map(({ trip, time }) => ({
-            agency: trip.agency,
-            startTime: new Date(time),
-            imported: true,
-        }));
+        .map(({ trip, time }) => {
+            const stop = trip.startRecord?.stopMatchStatus === 'matched' ? trip.startRecord.matchedStop?.name : null;
+            return {
+                agency: trip.agency,
+                startTime: new Date(time),
+                imported: true,
+                ...(stop ? { startStopName: stop } : {}),
+            };
+        });
 }
 
 /**

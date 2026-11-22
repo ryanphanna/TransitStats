@@ -12,6 +12,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 - **Settings → Sharing shows your real sharing setting.** It could show sharing as off and your identity as ??? when your profile was public.
 - **Imported PRESTO rides are matched to your stops when you import them**, and the match is saved, instead of being worked out again every time the map loads. The import preview now shows how many rides match a stop, rather than promising a later matching step that never ran.
+- **Imported PRESTO rides now count toward your stop totals** wherever they matched a stop, on the dashboard, your public profile and in ASK. They still stay out of route and trip-time figures, since PRESTO doesn't record a route or where you got off.
 - **The "Your TransitStats" title fits its card evenly** instead of running closer to the right edge.
 
 ### Texting

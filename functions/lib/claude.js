@@ -474,7 +474,7 @@ const ASK_TRIP_FIELDS = [
   'timezone',
 ];
 // Fields of an imported PRESTO row that decide whether and when it counts as a ride.
-const ASK_PRESTO_FIELDS = ['type', 'agency', 'agencySource', 'amountCents', 'occurredAtSortKey'];
+const ASK_PRESTO_FIELDS = ['type', 'agency', 'agencySource', 'amountCents', 'occurredAtSortKey', 'stopMatchStatus', 'matchedStop'];
 // Most run times or routes one tool result may list.
 const MAX_LISTED_RUN_TIMES = 100;
 const MAX_LISTED_ROUTES = 50;
