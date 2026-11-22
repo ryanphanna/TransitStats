@@ -41,23 +41,27 @@ function sourceForStop(stop, fallback) {
     return stop?.__prestoSource === 'atlas' ? 'atlas' : (fallback || 'firestore');
 }
 
-/**
- * Match one imported PRESTO location without inventing a direction.
- *
- * This is intentionally exact-name/alias matching. Multiple directional
- * records remain ambiguous candidates; pairing them is a separate map concern.
- */
-export function matchPrestoRecord(record, stops = []) {
-    const agency = record?.agency || record?.agencySource || null;
-    const target = normalizeStopLibraryLabel(record?.locationLabel || record?.location);
-    if (!target) return { status: 'unmatched', candidates: [] };
+// PRESTO cuts location names off at 39 characters ("... South Si").
+const PRESTO_LABEL_LIMIT = 39;
 
+/** One physical place: a station and its platform records, or one stop name. */
+function placeKey(label) {
+    return normalizeStopLibraryLabel(label)
+        .replace(/(north|south|east|west)?(bound)?(subway|bus)?platform\d*$/, '')
+        .replace(/station$/, '');
+}
+
+/** A place's name without a platform suffix: "Museum Station - Northbound Platform" -> "Museum Station". */
+function placeName(name) {
+    return String(name || '').replace(/\s*-\s*((north|south|east|west)bound|subway|bus)\s+platform.*$/i, '').trim();
+}
+
+function collectCandidates(stops, agency, test) {
     const candidates = [];
     const seen = new Map();
     for (const stop of stops) {
         if (!stopBelongsToAgency(stop, agency)) continue;
-        if (!stopLabels(stop).includes(target)) continue;
-
+        if (!test(stop)) continue;
         const key = candidateKey(stop);
         const candidate = serializeCandidate(stop, sourceForStop(stop, stop.__prestoSource));
         const existingIndex = seen.get(key);
@@ -72,10 +76,68 @@ export function matchPrestoRecord(record, stops = []) {
         seen.set(key, candidates.length);
         candidates.push(candidate);
     }
+    return candidates;
+}
+
+/**
+ * Several records for one place (a station's platforms, or both directions
+ * of a stop) count as that one place: the stop library's record wins, then
+ * any record with coordinates. Records for different places stay ambiguous.
+ */
+function onePlace(candidates) {
+    const keys = new Set(candidates.map(candidate => placeKey(candidate.name)));
+    if (keys.size !== 1) return null;
+    const ranked = [...candidates].sort((a, b) =>
+        (b.source === 'firestore') - (a.source === 'firestore') || (!!b.location) - (!!a.location));
+    const best = ranked[0];
+    const location = best.location || ranked.find(candidate => candidate.location)?.location || null;
+    const named = ranked.find(candidate => candidate.source === 'firestore') || best;
+    // The place is known; which direction or platform is not, so none is claimed.
+    return { ...best, name: placeName(named.name), code: null, direction: null, location };
+}
+
+/**
+ * Match one imported PRESTO location without inventing a direction.
+ *
+ * Exact name, alias or code first (names the rider's own stop library uses
+ * win over Atlas-only names). If nothing matches exactly, a name PRESTO cut
+ * short matches the full name it starts, and a station matches its platform
+ * records. Matches that are all one place resolve to that place.
+ */
+export function matchPrestoRecord(record, stops = []) {
+    const agency = record?.agency || record?.agencySource || null;
+    const raw = String(record?.locationLabel || record?.location || '').trim();
+    const target = normalizeStopLibraryLabel(raw);
+    if (!target || /^\d+$/.test(target) && Number(target) === 0) return { status: 'unmatched', candidates: [] };
+
+    let candidates = collectCandidates(stops, agency, stop => stopLabels(stop).includes(target));
+    if (candidates.length > 1) {
+        // A record named exactly this beats one that only lists it as an alias.
+        const named = candidates.filter(candidate => normalizeStopLibraryLabel(candidate.name) === target);
+        if (named.length) candidates = named;
+        const library = candidates.filter(candidate => candidate.source === 'firestore');
+        if (library.length && library.length < candidates.length && onePlace(library)) candidates = library;
+    }
+    if (candidates.length === 0 && raw.length >= PRESTO_LABEL_LIMIT - 1) {
+        candidates = collectCandidates(stops, agency, stop => normalizeStopLibraryLabel(stop.name).startsWith(target));
+    }
+    if (candidates.length === 0) {
+        const place = placeKey(raw);
+        if (place) candidates = collectCandidates(stops, agency, stop => placeKey(stop.name) === place);
+    }
 
     if (candidates.length === 0) return { status: 'unmatched', candidates: [] };
-    if (candidates.length > 1) return { status: 'ambiguous', candidates };
-    return { status: 'matched', candidate: candidates[0], candidates };
+    if (candidates.length === 1) {
+        const [only] = candidates;
+        if (only.location) return { status: 'matched', candidate: only, candidates };
+        // A library record without coordinates borrows them from another record for the same place.
+        const place = placeKey(only.name);
+        const located = collectCandidates(stops, agency, stop => placeKey(stop.name) === place).find(candidate => candidate.location);
+        return { status: 'matched', candidate: { ...only, location: located?.location || null }, candidates };
+    }
+    const place = onePlace(candidates);
+    if (place) return { status: 'matched', candidate: place, candidates };
+    return { status: 'ambiguous', candidates };
 }
 
 export function matchPrestoRecords(records = [], stops = []) {

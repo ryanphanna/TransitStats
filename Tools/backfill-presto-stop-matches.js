@@ -1,7 +1,7 @@
 /**
  * backfill-presto-stop-matches.js
  *
- * Matches already-imported PRESTO rows to the stop library and saves the result on each row
+ * Matches already-imported PRESTO rows to the stop library (then Atlas stops) and saves the result on each row
  * (stopMatchStatus + matchedStop), the same way the importer now does at import. Also the re-match
  * pass for rows that didn't match before (say, after adding a stop alias): rows already matched are
  * left alone.
@@ -25,6 +25,7 @@ const UNDO_FILE = value('--undo');
 const ROOT = path.join(__dirname, '..');
 const KEY_PATH = value('--key') || path.join(os.homedir(), 'Developer/Credentials/Firebase for TransitStats.json');
 const UNDO_DIR = path.join(__dirname, 'undo');
+const ATLAS_STOPS_URL = 'https://us-central1-transitstats-21ba4.cloudfunctions.net/atlasStops';
 const fromFunctions = id => require(require.resolve(id, { paths: [path.join(ROOT, 'functions')] }));
 
 async function main() {
@@ -57,7 +58,15 @@ async function main() {
     db.collection('prestoTransactions').where('userId', '==', uid).get(),
     db.collection('stops').get(),
   ]);
-  const stops = preparePrestoStops({ firestoreStops: stopSnap.docs.map(d => ({ id: d.id, ...d.data() })) });
+  // Atlas (each agency's full GTFS stop list) fills in stops the library doesn't have, as at import.
+  const agencies = [...new Set(rowSnap.docs.map(d => d.data().agency).filter(Boolean))];
+  const atlasStops = (await Promise.all(agencies.map(async agency => {
+    const res = await fetch(`${ATLAS_STOPS_URL}?agency=${encodeURIComponent(agency)}`);
+    if (!res.ok) { console.log(`(Atlas stops unavailable for ${agency})`); return []; }
+    return Object.entries(await res.json()).map(([code, stop]) => ({ code, name: stop.name, lat: Number(stop.lat), lng: Number(stop.lon), agency }))
+      .filter(stop => stop.name && Number.isFinite(stop.lat) && Number.isFinite(stop.lng));
+  }))).flat();
+  const stops = preparePrestoStops({ firestoreStops: stopSnap.docs.map(d => ({ id: d.id, ...d.data() })), atlasStops });
 
   const counts = { matched: 0, ambiguous: 0, unmatched: 0, alreadyMatched: 0 };
   const unmatched = new Map();

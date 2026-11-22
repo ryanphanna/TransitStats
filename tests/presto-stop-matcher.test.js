@@ -34,21 +34,38 @@ describe('PRESTO stop matcher', () => {
         expect(result.candidate.code).toBe('102300');
     });
 
-    it('preserves opposite-direction candidates as ambiguous', () => {
+    it('matches both directions of one stop as that stop, without claiming a direction', () => {
         const stops = [
             { id: 'east', agency: 'TTC', name: baseRecord.location, code: '482', direction: 'Eastbound', lat: 43.6717, lng: -79.3715 },
             { id: 'west', agency: 'TTC', name: baseRecord.location, code: '483', direction: 'Westbound', lat: 43.6722, lng: -79.3707 },
         ];
         const result = matchPrestoRecord(baseRecord, stops);
 
-        expect(result.status).toBe('ambiguous');
+        expect(result.status).toBe('matched');
+        expect(result.candidate).toMatchObject({ name: baseRecord.location, code: null, direction: null });
         expect(result.candidates.map(candidate => candidate.direction)).toEqual(['Eastbound', 'Westbound']);
-        expect(resolvePrestoStopLocation(baseRecord, stops)).toEqual({
-            source: 'unresolved',
-            location: null,
-            matchStatus: 'ambiguous',
-            candidates: result.candidates,
-        });
+    });
+
+    it('keeps different places with the same alias ambiguous', () => {
+        const stops = [
+            { id: 'a', agency: 'TTC', name: 'Bloor St East at Sherbourne St', aliases: [baseRecord.location], lat: 43.67, lng: -79.37 },
+            { id: 'b', agency: 'TTC', name: 'Parliament St at Bloor St East', aliases: [baseRecord.location], lat: 43.672, lng: -79.369 },
+        ];
+        expect(matchPrestoRecord(baseRecord, stops).status).toBe('ambiguous');
+    });
+
+    it('matches a name PRESTO cut short, and a station to its platform records', () => {
+        const stops = [
+            { agency: 'TTC', name: 'Bathurst St at Cedarcroft Blvd South Side', code: '1', lat: 43.78, lng: -79.44, __prestoSource: 'atlas' },
+            { agency: 'TTC', name: 'Museum Station - Northbound Platform', code: '2', lat: 43.667, lng: -79.393, __prestoSource: 'atlas' },
+            { agency: 'TTC', name: 'Museum Station - Southbound Platform', code: '3', lat: 43.667, lng: -79.394, __prestoSource: 'atlas' },
+        ];
+        const cut = matchPrestoRecord({ agency: 'TTC', locationLabel: 'Bathurst St at Cedarcroft Blvd South Si' }, stops);
+        expect(cut.candidate.name).toBe('Bathurst St at Cedarcroft Blvd South Side');
+        const station = matchPrestoRecord({ agency: 'TTC', locationLabel: 'MUSEUM STATION' }, stops);
+        expect(station.status).toBe('matched');
+        expect(station.candidate.name).toBe('Museum Station');
+        expect(matchPrestoRecord({ agency: 'TTC', locationLabel: '0' }, stops).status).toBe('unmatched');
     });
 
     it('does not match a label from another agency', () => {

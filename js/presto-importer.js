@@ -1,6 +1,7 @@
 import { db, serverTimestamp } from './firebase.js';
 import { preparePrestoStops, prestoMatchFields } from './presto-stop-matcher.js';
 import { PredictionEngine } from './predict.js';
+import { loadAtlasStops } from './atlas-stops.js';
 
 const AGENCY_ALIASES = new Map([
     ['Toronto Transit Commission', 'TTC'],
@@ -238,18 +239,23 @@ function status(element, message, type = '') {
 // Each fare row is matched to the stop library (the same matcher the map uses)
 // when it is imported, and the result is saved on the row. The preview runs
 // the same match so its count is what actually gets saved.
-let stopLibraryRead = null;
-function loadPrestoStops() {
-    if (!stopLibraryRead) {
+// Atlas (each agency's full stop list) fills in stops the library doesn't have.
+const stopReads = new Map();
+function loadPrestoStops(records) {
+    const agencies = [...new Set(records.map(record => record.agency).filter(Boolean))].sort();
+    const key = agencies.join('|');
+    if (!stopReads.has(key)) {
         const cached = PredictionEngine.stopsLibrary;
-        stopLibraryRead = Promise.resolve()
-            .then(() => (Array.isArray(cached) && cached.length
+        const read = Promise.all([
+            Promise.resolve().then(() => (Array.isArray(cached) && cached.length
                 ? cached
-                : db.collection('stops').get().then(snap => snap.docs.map(doc => ({ id: doc.id, ...doc.data() })))))
-            .then(firestoreStops => preparePrestoStops({ firestoreStops }));
-        stopLibraryRead.catch(() => { stopLibraryRead = null; });
+                : db.collection('stops').get().then(snap => snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))))),
+            Promise.resolve().then(() => loadAtlasStops(agencies)).catch(() => []),
+        ]).then(([firestoreStops, atlasStops]) => preparePrestoStops({ firestoreStops, atlasStops }));
+        read.catch(() => { if (stopReads.get(key) === read) stopReads.delete(key); });
+        stopReads.set(key, read);
     }
-    return stopLibraryRead;
+    return stopReads.get(key);
 }
 
 async function checkLocationMatches(records) {
@@ -257,7 +263,7 @@ async function checkLocationMatches(records) {
     if (fareRecords.length === 0) return { checked: 0, matched: 0, unmatched: 0 };
     let stops;
     try {
-        stops = await loadPrestoStops();
+        stops = await loadPrestoStops(fareRecords);
     } catch {
         return { checked: 0, matched: 0, unmatched: 0 };
     }
@@ -343,7 +349,7 @@ export function initPrestoImporter({ user }) {
             // Only fare payments are worth persisting. Invalid rows (bad date
             // or amount) are skipped rather than written with null fields.
             const fareRecords = pendingRecords.filter(record => record.type === 'fare_payment' && !record.refunded && isRecordUsable(record));
-            const stops = await loadPrestoStops().catch(() => null);
+            const stops = await loadPrestoStops(fareRecords).catch(() => null);
             const records = await Promise.all(fareRecords.map(async record => ({
                 ...record,
                 ...(stops ? prestoMatchFields(record, stops) : {}),
