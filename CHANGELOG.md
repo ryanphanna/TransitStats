@@ -17,7 +17,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Far more imported PRESTO rides find their stop**: stops missing from your own stop list are looked up in the agency's full stop list, a station matches its platforms, both directions of a stop count as that stop, and names PRESTO cut short still match. On a full year of rides, matches went from 81% to 97%.
 - **Imported PRESTO rides now count toward your stop totals** wherever they matched a stop, on the dashboard, your public profile and in ASK. They still stay out of route and trip-time figures, since PRESTO doesn't record a route or where you got off.
 - **The PRESTO import is now a few short screens**: pick paid fares or monthly pass rides, follow the steps for that PRESTO export, drop in the file, check what will be added, and see how many rides were added. It used to be one long form whose instructions only covered paid fares.
-- **Imported rides that couldn't be matched to a stop are tried again** once a day when your dashboard loads, so they find their stop after it's fixed by hand. The import screens show how many matched right away and how many need a manual match.
+- **Imported rides that couldn't be matched to a stop are tried again** once a day when your dashboard loads, so they find their stop once it's added. The import screens show how many matched right away and how many will be matched later.
 - **The "Your TransitStats" title fits its card evenly** instead of running closer to the right edge.
 
 ### Texting

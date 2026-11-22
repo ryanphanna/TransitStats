@@ -556,7 +556,7 @@ export function initPrestoImporter({ user }) {
                 passRides && paid ? `${plural(paid, 'paid fare')} and ${plural(passRides, 'pass ride')}` : passRides ? 'All taken on a monthly pass' : 'All paid fares',
                 rangeLabel(fareRecords),
                 locationCheck.checked
-                    ? `${locationCheck.matched.toLocaleString('en-CA')} of ${locationCheck.checked.toLocaleString('en-CA')} matched to a stop now${locationCheck.unmatched ? `; the other ${locationCheck.unmatched.toLocaleString('en-CA')} need a manual match. They still count as rides now and get their stop once it's fixed` : ''}`
+                    ? `${locationCheck.matched.toLocaleString('en-CA')} of ${locationCheck.checked.toLocaleString('en-CA')} matched to a stop now${locationCheck.unmatched ? `; the other ${locationCheck.unmatched.toLocaleString('en-CA')} will be matched later and still count as rides` : ''}`
                     : null,
                 `Agencies: ${Object.entries(summary.agencies).sort((a, b) => b[1] - a[1]).map(([agency]) => agency).join(', ')}`,
             ];
@@ -618,7 +618,7 @@ export function initPrestoImporter({ user }) {
             const matchedNow = records.filter(record => record.stopMatchStatus === 'matched').length;
             const later = records.length - matchedNow;
             const matchLine = stops
-                ? ` ${matchedNow.toLocaleString('en-CA')} ${matchedNow === 1 ? 'was' : 'were'} matched to a stop${later ? `; the other ${later.toLocaleString('en-CA')} need a manual match and will pick up their stop once it's fixed` : ''}.`
+                ? ` ${matchedNow.toLocaleString('en-CA')} ${matchedNow === 1 ? 'was' : 'were'} matched to a stop${later ? `; the other ${later.toLocaleString('en-CA')} will be matched later` : ''}.`
                 : ' Stops will be matched later.';
             $('[data-done-title]').textContent = added > 0 ? `Added ${plural(added, 'ride')}` : 'Already up to date';
             $('[data-done-text]').textContent = added > 0
