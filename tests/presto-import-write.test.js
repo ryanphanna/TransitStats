@@ -63,7 +63,6 @@ async function pickFile(dom, file) {
 async function chooseFile(dom, text, name = 'PRESTO 2026.csv') {
     const file = new File([text], name, { type: 'text/csv' });
     file.text = async () => text;
-    dom.group.querySelector('[data-choose="paid"]').click();
     await pickFile(dom, file);
     await vi.waitFor(() => expect(visible(dom.screen('review')) || /No rides|already on your map/.test(dom.status.textContent)).toBe(true));
 }
@@ -168,14 +167,23 @@ describe('PRESTO import write', () => {
 describe('PRESTO import screens', () => {
     beforeEach(() => { store.clear(); batches.length = 0; });
 
-    it('walks choose → file → review → done and reports what was added', async () => {
+    it('walks file → review → done and reports what was added', async () => {
         const dom = setupDom();
-        expect(visible(dom.screen('choose'))).toBe(true);
+        expect(visible(dom.screen('file'))).toBe(true);
         await chooseFile(dom, csv(fare('1/1/2026 8:00:00 AM'), fare('1/2/2026 8:00:00 AM')));
         expect(dom.screen('review').textContent).toMatch(/2\s*new rides to add/);
         expect(dom.importButton.textContent).toBe('Add 2 rides');
         await runImport(dom);
         expect(dom.screen('done').textContent).toMatch(/Added 2 rides/);
+    });
+
+    it('counts a ride PRESTO lists twice only once', async () => {
+        const dom = setupDom();
+        await chooseFile(dom, csv(fare('1/1/2026 8:00:00 AM'), fare('1/1/2026 8:00:00 AM'), fare('1/2/2026 8:00:00 AM')));
+        expect(dom.screen('review').textContent).toMatch(/2\s*new rides to add/);
+        await runImport(dom);
+        expect(dom.screen('done').textContent).toMatch(/Added 2 rides/);
+        expect(dom.screen('done').textContent).not.toMatch(/already imported/);
     });
 
     it('says when a file was already imported', async () => {
@@ -189,11 +197,12 @@ describe('PRESTO import screens', () => {
         expect(visible(dom.screen('review'))).toBe(false);
     });
 
-    it('the pass choice shows the Transaction History steps', () => {
+    it('opens on the Transaction History steps, with older years from the Usage Report', () => {
         const dom = setupDom();
-        dom.group.querySelector('[data-choose="pass"]').click();
         expect(visible(dom.screen('file'))).toBe(true);
+        expect(dom.screen('file').textContent).toMatch(/Transaction History/);
         expect(dom.screen('file').textContent).toMatch(/Load More/);
+        expect(dom.screen('file').textContent).toMatch(/Transit Usage Report/);
     });
 });
 

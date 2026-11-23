@@ -156,17 +156,6 @@
 .presto-title { margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--text-primary); }
 .presto-lede, .presto-note, .presto-existing { margin: 0; color: var(--text-secondary); font-size: 0.8rem; line-height: 1.5; }
 .presto-existing { color: var(--text-primary); font-weight: 600; }
-.presto-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
-.presto-choice {
-  display: flex; flex-direction: column; gap: 4px; padding: 14px; text-align: left;
-  border: 1px solid var(--border); border-radius: 14px; background: var(--bg-muted);
-  color: var(--text-primary); font-family: inherit; cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-.presto-choice:hover, .presto-choice:focus-visible { border-color: var(--accent); background: var(--bg-card-hover); }
-.presto-choice-title { font-size: 0.9rem; font-weight: 800; }
-.presto-choice-blurb { color: var(--text-secondary); font-size: 0.76rem; line-height: 1.45; }
-.presto-choice-report { margin-top: 4px; color: var(--accent); font-size: 0.7rem; font-weight: 700; }
 .presto-back {
   align-self: flex-start; padding: 0; border: 0; background: none; color: var(--text-secondary);
   font-family: inherit; font-size: 0.74rem; font-weight: 700; cursor: pointer;

@@ -379,37 +379,19 @@ export async function rematchUnmatchedPresto(userId, docs, { now = Date.now() } 
     }
 }
 
-// The import flow is a few screens, one per phase: choose what to import,
-// get the file, review it, save, done. Both hosts (Settings → Import and the
+// The import flow is a few screens, one per phase: get the file, review it,
+// save, done. Both hosts (Settings → Import and the
 // /import page) supply an empty #presto-import-group and this fills it.
-const EXPORTS = {
-    paid: {
-        title: 'Paid fares',
-        blurb: 'Rides you paid for from your card balance.',
-        report: 'Transit Usage Report',
-        steps: [
-            'Sign in at <a href="https://www.prestocard.ca" target="_blank" rel="noopener">prestocard.ca</a>',
-            'In the sidebar, open <strong>Transit Usage Report</strong>',
-            'Pick a year and click <strong>Get Report</strong>',
-            'Click <strong>Export CSV</strong> (not Download PDF)',
-        ],
-        note: 'One file per year. You can add several years at once.',
-    },
-    pass: {
-        title: 'Monthly pass rides',
-        blurb: 'Rides taken while you held a monthly pass. These are only in Transaction History.',
-        report: 'Transaction History',
-        steps: [
-            'Sign in at <a href="https://www.prestocard.ca" target="_blank" rel="noopener">prestocard.ca</a>',
-            'Open <strong>Transaction History</strong> and pick the card you used',
-            'Click <strong>Load More</strong> until your oldest ride shows',
-            'Click <strong>Export CSV</strong>',
-        ],
-        note: 'PRESTO only exports the rows shown on the page, so load them all first.',
-    },
-};
+const PRESTO_LINK = '<a href="https://www.prestocard.ca" target="_blank" rel="noopener">prestocard.ca</a>';
+const HOWTO_STEPS = [
+    `Sign in at ${PRESTO_LINK} and open <strong>Transaction History</strong>`,
+    'Pick the card you ride with',
+    'Click <strong>Filter</strong>, choose <strong>Custom Date Range</strong> and set the start date as early as it goes',
+    'Click <strong>Load More</strong> until it stops: PRESTO only exports the rides showing on the page',
+    'Click <strong>Export CSV</strong>',
+];
 
-const STEP_LABELS = ['Choose', 'Get file', 'Review', 'Done'];
+const STEP_LABELS = ['Get file', 'Review', 'Done'];
 
 function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -439,28 +421,17 @@ function importerMarkup() {
                 ${STEP_LABELS.map((label, index) => `<li data-step="${index}">${label}</li>`).join('')}
             </ol>
 
-            <section class="presto-screen" data-screen="choose">
+            <section class="presto-screen" data-screen="file">
                 <h3 class="presto-title">Import PRESTO rides</h3>
                 <p class="presto-lede">Add rides from your PRESTO card to your map. Importing the same file twice never adds a ride twice.</p>
                 <p class="presto-existing hidden" data-existing></p>
-                <div class="presto-choices">
-                    ${Object.entries(EXPORTS).map(([key, info]) => `
-                        <button type="button" class="presto-choice" data-choose="${key}">
-                            <span class="presto-choice-title">${info.title}</span>
-                            <span class="presto-choice-blurb">${info.blurb}</span>
-                            <span class="presto-choice-report">From: ${info.report}</span>
-                        </button>`).join('')}
-                </div>
-            </section>
-
-            <section class="presto-screen hidden" data-screen="file">
-                <button type="button" class="presto-back" data-go="choose">← Back</button>
-                <h3 class="presto-title" data-file-title></h3>
-                <ol class="presto-howto" data-file-steps></ol>
-                <p class="presto-note" data-file-note></p>
+                <ol class="presto-howto">
+                    ${HOWTO_STEPS.map(step => `<li>${step}</li>`).join('')}
+                </ol>
+                <p class="presto-note">Transaction History goes back two years. For older rides, also add a <strong>Transit Usage Report</strong> for each earlier year.</p>
                 <label class="presto-drop" data-drop>
                     <input id="presto-file-input" type="file" accept=".csv,text/csv" multiple>
-                    <span class="presto-drop-main">Drop your CSV here or <u>choose a file</u></span>
+                    <span class="presto-drop-main">Drop your CSV files here or <u>choose files</u></span>
                     <span class="presto-drop-sub">Nothing is saved until you confirm.</span>
                 </label>
             </section>
@@ -485,7 +456,7 @@ function importerMarkup() {
                 <h3 class="presto-title" data-done-title></h3>
                 <p class="presto-lede" data-done-text></p>
                 <div class="presto-actions">
-                    <button type="button" class="btn btn-ghost" data-go="choose">Import another file</button>
+                    <button type="button" class="btn btn-ghost" data-go="file">Import another file</button>
                     <a class="btn btn-primary" href="/dashboard">See your map</a>
                 </div>
             </section>
@@ -510,7 +481,7 @@ export function initPrestoImporter({ user }) {
 
     const showScreen = name => {
         group.querySelectorAll('.presto-screen').forEach(screen => show(screen, screen.dataset.screen === name));
-        const stepIndex = { choose: 0, file: 1, review: 2, saving: 2, done: 3 }[name];
+        const stepIndex = { file: 0, review: 1, saving: 1, done: 2 }[name];
         group.querySelectorAll('.presto-steps li').forEach(item => {
             const index = Number(item.dataset.step);
             item.classList.toggle('is-current', index === stepIndex);
@@ -518,7 +489,7 @@ export function initPrestoImporter({ user }) {
         });
         show(statusElement, false);
         if (name !== 'review') clearPreviewMap();
-        if (name === 'choose') refreshExisting();
+        if (name === 'file') refreshExisting();
     };
 
     const refreshExisting = async () => {
@@ -537,18 +508,7 @@ export function initPrestoImporter({ user }) {
         }
     };
 
-    const chooseExport = key => {
-        const info = EXPORTS[key];
-        $('[data-file-title]').textContent = `${info.title}: get your ${info.report}`;
-        $('[data-file-steps]').innerHTML = info.steps.map(step => `<li>${step}</li>`).join('');
-        $('[data-file-note]').textContent = info.note;
-        input.value = '';
-        showScreen('file');
-    };
-
     group.addEventListener('click', event => {
-        const choice = event.target.closest('[data-choose]');
-        if (choice) return chooseExport(choice.dataset.choose);
         const go = event.target.closest('[data-go]');
         if (go) {
             if (go.dataset.go === 'file') input.value = '';
@@ -643,8 +603,16 @@ export function initPrestoImporter({ user }) {
             // fare from the other export) aren't counted or written again.
             const savedFingerprints = new Set(saved.map(row => row.fingerprint).filter(Boolean));
             const fingerprints = await Promise.all(fareRecords.map(record => fingerprint(record)));
+            // PRESTO's Transaction History can list the same ride twice (same
+            // time, place and balance); it saves as one ride, so count it once.
+            const seen = new Set();
             fareRecords = withoutCrossExportDuplicates(
-                fareRecords.filter((record, index) => !savedFingerprints.has(fingerprints[index])),
+                fareRecords.filter((record, index) => {
+                    const key = fingerprints[index];
+                    if (savedFingerprints.has(key) || seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                }),
                 saved,
             );
             if (!fareRecords.length) throw new Error('Every ride in this file is already on your map.');
@@ -715,11 +683,11 @@ export function initPrestoImporter({ user }) {
             const matchedNow = records.filter(record => record.stopMatchStatus === 'matched').length;
             const later = records.length - matchedNow;
             const matchLine = stops
-                ? ` ${matchedNow.toLocaleString('en-CA')} ${matchedNow === 1 ? 'was' : 'were'} matched to a stop${later ? `; the other ${later.toLocaleString('en-CA')} will be matched later` : ''}.`
-                : ' Stops will be matched later.';
+                ? `${matchedNow.toLocaleString('en-CA')} matched to a stop${later ? `; ${later.toLocaleString('en-CA')} will be matched later` : ''}. `
+                : 'Stops will be matched later. ';
             $('[data-done-title]').textContent = added > 0 ? `Added ${plural(added, 'ride')}` : 'Already up to date';
             $('[data-done-text]').textContent = added > 0
-                ? `${added < records.length ? `${plural(records.length - added, 'ride')} were already imported. ` : ''}You now have ${plural(after.size, 'PRESTO ride')} on your map.${matchLine}`
+                ? `${matchLine}${added < records.length ? `${plural(records.length - added, 'ride')} were already imported. ` : ''}You now have ${plural(after.size, 'PRESTO ride')} on your map.`
                 : `Every ride in this file was already imported. You have ${plural(after.size, 'PRESTO ride')} on your map.`;
             pendingRecords = [];
             fareRecords = [];
@@ -733,7 +701,7 @@ export function initPrestoImporter({ user }) {
         }
     });
 
-    showScreen('choose');
+    showScreen('file');
 }
 
 export { classifyType, parseAmountCents, parseCsv, parseDate, summarize, toRecord };
