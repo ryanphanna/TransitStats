@@ -2,7 +2,7 @@
 
 Questions about how the rider rides, separate from the prediction pipeline. Data and results stay
 on this Mac: `ml/lab/data/` and `ml/.venv/` are gitignored, and the notebook is a marimo `.py` file
-that stores no outputs. Anything written here is aggregates only (no stop names, trip IDs or
+whose output cache (`__marimo__/`) is gitignored. Anything written here is aggregates only (no stop names, trip IDs or
 per-stop counts), the same rule as `ml/EVAL.md`.
 
 ## Setup and refresh

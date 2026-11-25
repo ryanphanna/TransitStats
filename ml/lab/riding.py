@@ -21,7 +21,7 @@ def _():
         # Riding lab
 
         Questions about how the rider rides, on the lab database (`build_db.py`).
-        Marimo notebooks save no outputs, so nothing private reaches the public repo.
+        Outputs stay local: marimo caches them in `__marimo__/`, which is gitignored.
         Write findings up as aggregates only (no stop names, no per-stop counts).
         """
     )

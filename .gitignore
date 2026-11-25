@@ -81,3 +81,4 @@ ml/eval_rows.json
 # Analysis lab: private trip exports, local DB and Python env
 /ml/lab/data/
 /ml/.venv/
+**/__marimo__/
