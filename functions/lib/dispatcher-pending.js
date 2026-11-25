@@ -89,11 +89,22 @@ function createPendingHandlers({
     return true;
   }
 
+  // "2.", " 2 ", "(2)", "#2" -> "2". A character loop, not a trailing `[...]+$` regex, which runs
+  // in quadratic time on long whitespace runs (CodeQL js/polynomial-redos).
+  function stripChoicePunctuation(body) {
+    const s = String(body);
+    let start = 0;
+    let end = s.length;
+    while (end > start && /[\s.)!:,-]/.test(s[end - 1])) end--;
+    while (start < end && /[\s(#]/.test(s[start])) start++;
+    return s.slice(start, end);
+  }
+
   async function handleConfirmStopState(phoneNumber, body, upperBody, state, traceId = null, user = null) {
     const trace = traceId || generateTraceId();
     // Only a bare number picks a stop: "2 Spadina West" while this question is open is a new
     // trip, not option 2. Stray punctuation or spaces around the digits are fine ("2.", " 2 ").
-    const chosen = numberedChoice(body.replace(/[\s.)!:,-]+$/g, '').replace(/^[\s(#]+/, ''), state.stopCandidates, { strict: true });
+    const chosen = numberedChoice(stripChoicePunctuation(body), state.stopCandidates, { strict: true });
     if (chosen) {
       if (user) {
         await clearPendingState(phoneNumber);

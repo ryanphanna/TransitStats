@@ -73,6 +73,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 - **Removed an unused admin stats endpoint** that could still read sign-in activity and ASK logs, and stopped allowing the retired beta and admin sites to use the shared sign-in.
 - **Patched a slow-pattern bug in the Firebase library** the website uses, where a crafted search pattern could tie up the page.
 - **Patched the text-message server's web request library** so login details can't be passed along when a request is redirected to another site, and closed two lower-risk file-search issues.
+- **A text padded with thousands of spaces or tabs can no longer slow the text-message server down.** Two message checks (repeat-text detection and picking a numbered stop) used patterns that took far longer on long runs of blank space.
 
 ## [1.50.0] — 2026-10-25
 

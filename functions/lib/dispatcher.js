@@ -133,7 +133,10 @@ async function dispatch(phoneNumber, body, messageSid, media = {}, traceId = nul
 
 // Replies that must work every time: a number answers an open question, and the read-only
 // commands just report. Repeating them within the duplicate window is normal.
-const CONTENT_DEDUPE_EXEMPT = /^\s*(\d{1,2}[.)]?|(STATUS|STATS|INFO|ASK)(\s[\s\S]*)?)\s*$/i;
+// Tested against the trimmed body: matching surrounding whitespace inside the pattern made it
+// slow on long runs of spaces (CodeQL js/polynomial-redos).
+const CONTENT_DEDUPE_EXEMPT_RE = /^(\d{1,2}[.)]?|(STATUS|STATS|INFO|ASK)(\s[\s\S]*)?)$/i;
+const CONTENT_DEDUPE_EXEMPT = { test: (body) => CONTENT_DEDUPE_EXEMPT_RE.test(String(body).trim()) };
 
 async function dispatchMessage(phoneNumber, body, messageSid, media, traceId, marks) {
   const receivedAt = Date.now();
