@@ -703,7 +703,7 @@ def summarize(results, seg_of, n_rows, references):
             for c in (25, 50, 75):
                 sel = [r for r in rs if r["covered"] and r["conf"] is not None and r["conf"] >= c]
                 m["thresholds"][c] = {"coverage": len(sel) / n, "precision": (sum(r["top1"] for r in sel) / len(sel)) if sel else None}
-            for key in ("day", "age", "agency", "last90"):
+            for key in ("day", "age", "agency", "last90", "pair"):
                 for val in sorted({seg_of[r["id"]][key] for r in rs}):
                     sub = [r for r in rs if seg_of[r["id"]][key] == val]
                     m["segments"][f"{key}:{val}"] = {"n": len(sub), "top1": sum(r["top1"] for r in sub) / len(sub),
@@ -748,13 +748,18 @@ def main():
         s += timedelta(days=FOLD_DAYS)
 
     seg_of = {}
+    pair_of = lambda x: (data.canon.v3(start_stop_of(x), x.get("agency")), data.canon.v3(end_stop_of(x), x.get("agency")))
     for t in eval_rows:
         lt = local_time(t["_start"], t, "local")
+        # Ridden before: this start->end pair appears in a clean trip that ended before this one started.
+        # A model that learns only from the rider's own history can rarely get a never-ridden pair right.
+        seen_pairs = {pair_of(x) for x in _full_history(data, t)}
         seg_of[t["_id"]] = {
             "day": "weekend" if lt.weekday() >= 5 else "weekday",
             "age": "recent (Aug-Oct)" if t["_start"] >= datetime(2026, 8, 1, tzinfo=timezone.utc) else "older (May-Jul)",
             "agency": "TTC" if t.get("agency") == "TTC" else "other agency",
             "last90": t["_start"] >= EVAL_END - timedelta(days=90),
+            "pair": "ridden before" if pair_of(t) in seen_pairs else "never ridden",
         }
 
     results = {task: defaultdict(list) for task in tasks}
