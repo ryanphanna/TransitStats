@@ -78,17 +78,17 @@ function normalizeDirection(input) {
 
   const upper = input.trim().toUpperCase();
 
-  // North/Northbound
-  if (['N', 'NB', 'N/B', 'NORTH', 'NORTHBOUND', 'NORTHWARD'].includes(upper)) return 'Northbound';
+  // North/Northbound. French nord/sud/est/ouest count too ("Sud" was once stored as an agency).
+  if (['N', 'NB', 'N/B', 'NORTH', 'NORTHBOUND', 'NORTHWARD', 'NORD'].includes(upper)) return 'Northbound';
 
   // South/Southbound
-  if (['S', 'SB', 'S/B', 'SOUTH', 'SOUTHBOUND', 'SOUTHWARD'].includes(upper)) return 'Southbound';
+  if (['S', 'SB', 'S/B', 'SOUTH', 'SOUTHBOUND', 'SOUTHWARD', 'SUD'].includes(upper)) return 'Southbound';
 
   // East/Eastbound
-  if (['E', 'EB', 'E/B', 'EAST', 'EASTBOUND', 'EASTWARD'].includes(upper)) return 'Eastbound';
+  if (['E', 'EB', 'E/B', 'EAST', 'EASTBOUND', 'EASTWARD', 'EST'].includes(upper)) return 'Eastbound';
 
   // West/Westbound
-  if (['W', 'WB', 'W/B', 'WEST', 'WESTBOUND', 'WESTWARD'].includes(upper)) return 'Westbound';
+  if (['W', 'WB', 'W/B', 'WEST', 'WESTBOUND', 'WESTWARD', 'OUEST'].includes(upper)) return 'Westbound';
 
   // Clockwise
   if (['CW', 'CLOCKWISE'].includes(upper)) return 'Clockwise';

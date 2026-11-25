@@ -28,6 +28,7 @@ See [CHANGELOG_ARCHIVE.md](CHANGELOG_ARCHIVE.md) for earlier history.
 
 ### Texting
 
+- **"Nord", "Sud", "Est" and "Ouest" are read as directions.** "Sud" used to be saved as a transit agency, which left the trip's stops unmatched and passed the made-up agency on to the next trips.
 - **FORGOT and "start over" no longer count as a finished trip.** The unfinished trip was being graded as a wrong prediction and checked for transfers, which skewed accuracy.
 - **A message that failed to process can be sent again.** Retries and resends used to be dropped as duplicates even though nothing had happened.
 - **STATUS, STATS, INFO, ASK and number replies like "1" always work**, instead of being ignored when sent twice within 5 minutes.

@@ -223,6 +223,17 @@ test('multi-line: an unknown third line is stored as typed (riders use systems o
   }
 });
 
+test('multi-line: French Nord, Sud, Est and Ouest are directions, not agencies', () => {
+  const cases = { Nord: 'Northbound', Sud: 'Southbound', sud: 'Southbound', Est: 'Eastbound', Ouest: 'Westbound' };
+  for (const [word, direction] of Object.entries(cases)) {
+    const result = parseMultiLineTripFormat(`1\nYork U\n${word}`, DEFAULT_AGENCY);
+    assert.equal(result.direction, direction, word);
+    assert.equal(result.agency, DEFAULT_AGENCY, word);
+    assert.equal(result.agencyExplicit, false, word);
+  }
+  assert.equal(parseMultiLineTripFormat('1\nSud\nYork U', DEFAULT_AGENCY).direction, 'Southbound');
+});
+
 test('multi-line: Downtown, Uptown and Inbound/Outbound are directions, not agencies', () => {
   const cases = { Downtown: 'Downtown', Uptown: 'Uptown', Inbound: 'Inbound', Outbound: 'Outbound' };
   for (const [typed, expected] of Object.entries(cases)) {
