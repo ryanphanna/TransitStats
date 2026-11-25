@@ -22,7 +22,7 @@ def _():
 
         Questions about how the rider rides, on the lab database (`build_db.py`).
         Outputs stay local: marimo caches them in `__marimo__/`, which is gitignored.
-        Write findings up as aggregates only (no stop names, no per-stop counts).
+        Record findings in Linear, not in the repo.
         """
     )
     return con, mo, np, sm, smf
