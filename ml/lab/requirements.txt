@@ -1,0 +1,6 @@
+duckdb
+marimo
+pandas
+pyarrow
+altair
+statsmodels

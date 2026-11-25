@@ -77,3 +77,7 @@ Tools/undo/
 
 # Retrain gate per-trip results (private: uploaded only to models/<version>/)
 ml/eval_rows.json
+
+# Analysis lab: private trip exports, local DB and Python env
+/ml/lab/data/
+/ml/.venv/
