@@ -82,3 +82,6 @@ ml/eval_rows.json
 /ml/lab/data/
 /ml/.venv/
 **/__marimo__/
+
+# Colab CLI output notebooks hold trip stats
+/ml/colab/*_output.ipynb

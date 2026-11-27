@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Packs the V5 tuning job for Colab: the training code plus your exported trips and stops.
-# Output: ml/lab/data/colab/ts-bundle.zip (gitignored; it holds trip data). Upload it to Google Drive
-# under My Drive/TransitStats/, then open ml/colab/v5_tuning.ipynb in Colab.
+# Output: ml/lab/data/colab/ts-bundle.zip (gitignored; it holds trip data). Upload it
+# with the Colab CLI (see ml/lab/README.md, Colab), or to My Drive/TransitStats/ for a browser run.
 # Needs ml/trips.csv (ml/export_trips.py) and ml/lab/data/colab/stops.json.
 set -e
 cd "$(dirname "$0")/../.."

@@ -24,15 +24,26 @@ ml/.venv/bin/marimo edit ml/lab/riding.py
 
 ## Colab (V5 tuning)
 
-`ml/colab/v5_tuning.ipynb` searches XGBoost settings for the V5 end-stop model on Google's machines
-(free GPU), using `train_endstop.py`'s own cleaning, features and chronological split. Report only.
+`ml/colab/v5_tuning.ipynb` searches XGBoost settings for the V5 end-stop model on Google's machines,
+using `train_endstop.py`'s own cleaning, features and chronological split. Report only.
 
 ```
 TRAIN_USER_IDS=<uid> GOOGLE_APPLICATION_CREDENTIALS=<key> ml/.venv/bin/python ml/export_trips.py
 ml/colab/make_bundle.sh        # -> ml/lab/data/colab/ts-bundle.zip (holds trip data; gitignored)
 ```
 
-Upload the zip to My Drive/TransitStats/, open
+Run it with the Colab CLI (`uv tool install google-colab-cli`; one-time sign-in with `colab usage`).
+Nothing goes to Drive:
+
+```
+colab new -s ts-v5             # add --gpu T4 if one is free; free GPUs are often unavailable
+colab upload -s ts-v5 ml/lab/data/colab/ts-bundle.zip /content/ts-bundle.zip
+colab exec -s ts-v5 -f ml/colab/v5_tuning.ipynb    # ~40 min on CPU; writes v5_tuning_output.ipynb (gitignored)
+colab download -s ts-v5 /content/v5_tuning_results.csv ml/lab/data/colab/v5_tuning_results.csv
+colab stop -s ts-v5            # idle machines use compute units
+```
+
+Browser fallback: upload the zip to My Drive/TransitStats/, open
 https://colab.research.google.com/github/ryanphanna/TransitStats/blob/main/ml/colab/v5_tuning.ipynb
 and choose Runtime → Run all. Results land in the same Drive folder.
 
